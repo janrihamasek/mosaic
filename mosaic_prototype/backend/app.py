@@ -43,17 +43,39 @@ def add_entry():
     value = data.get("value")
     note = data.get("note")
 
-    if not date:
-        return jsonify({"error": "Missing 'date' field"}), 400
+    if not date or not category:
+        return jsonify({"error": "Missing 'date' or 'category' field"}), 400
+    
+    # Ensure value is treated as a number; if missing, default to 0
+    # The React component sends value as a string representation of a number or 0
+    try:
+        # Convert value to float for storage consistency, default to 0 if none is sent
+        float_value = float(value) if value is not None else 0.0
+    except ValueError:
+        return jsonify({"error": "'value' must be a number"}), 400
+
 
     conn = get_db_connection()
     try:
-        conn.execute(
-            "INSERT INTO entries (date, category, value, note) VALUES (?, ?, ?, ?)",
-            (date, category, value, note),
+        # 1. Attempt to UPDATE the existing entry (the "upsert" logic)
+        cur = conn.execute(
+            "UPDATE entries SET value = ?, note = ? WHERE date = ? AND category = ?",
+            (float_value, note, date, category),
         )
         conn.commit()
-        return jsonify({"message": "Záznam uložen"}), 201
+
+        if cur.rowcount > 0:
+            # An entry was updated
+            return jsonify({"message": "Záznam aktualizován"}), 200
+        else:
+            # 2. If no entry was updated, INSERT a new entry
+            conn.execute(
+                "INSERT INTO entries (date, category, value, note) VALUES (?, ?, ?, ?)",
+                (date, category, float_value, note),
+            )
+            conn.commit()
+            return jsonify({"message": "Záznam uložen"}), 201
+            
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500
     finally:

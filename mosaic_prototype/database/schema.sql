@@ -1,7 +1,8 @@
 CREATE TABLE entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
-    category TEXT,
+    category TEXT NOT NULL,
     value REAL,
-    note TEXT
+    note TEXT,
+    UNIQUE(date, category)
 );
