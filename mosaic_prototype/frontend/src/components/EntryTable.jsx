@@ -5,11 +5,11 @@ export default function EntryTable({ entries, onDelete }) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
                 <tr style={{ backgroundColor: "#f0f0f0" }}>
-                    <th>Datum</th>
-                    <th>Kategorie</th>
-                    <th>Hodnota</th>
-                    <th>Poznámka</th>
-                    <th>Akce</th>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Value</th>
+                    <th>Note</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
