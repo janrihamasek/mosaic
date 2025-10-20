@@ -21,7 +21,20 @@ export default function EntryForm({ onSave }) {
             <input type="text" placeholder="Kategorie" value={category} onChange={e => setCategory(e.target.value)} />
             <input type="number" placeholder="Hodnota" value={value} onChange={e => setValue(e.target.value)} />
             <input type="text" placeholder="Poznámka" value={note} onChange={e => setNote(e.target.value)} />
-            <button type="submit" style={{ marginLeft: "10px" }}>💾 Přidat</button>
+            <button 
+                type="submit" 
+                style={{
+                    marginLeft: "10px",
+                    background: "#e53935",
+                    color: "#fff",
+                    border: "none",
+                    padding: "6px 10px",
+                    borderRadius: 4,
+                    cursor: "pointer"
+                }}
+            >
+                Enter
+            </button>
         </form>
     );
 }

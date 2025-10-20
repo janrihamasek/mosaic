@@ -16,6 +16,11 @@ export default function App() {
         loadEntries();
     };
 
+    const handleDelete = async (id) => {
+        await deleteEntry(id);
+        loadEntries();
+    };
+
     useEffect(() => {
         loadEntries();
     }, []);

@@ -60,5 +60,20 @@ def add_entry():
         conn.close()
 
 
+@app.delete("/entries/<int:entry_id>")
+def delete_entry(entry_id):
+    conn = get_db_connection()
+    try:
+        cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Záznam nenalezen"}), 404
+        return jsonify({"message": "Záznam smazán"}), 200
+    except sqlite3.OperationalError as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
