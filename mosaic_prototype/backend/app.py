@@ -96,6 +96,51 @@ def delete_entry(entry_id):
     finally:
         conn.close()
 
+@app.get("/categories")
+def get_categories():
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT * FROM categories ORDER BY name ASC").fetchall()
+        return jsonify([dict(r) for r in rows])
+    except sqlite3.OperationalError as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.post("/add_category")
+def add_category():
+    data = request.get_json()
+    name = data.get("name")
+    description = data.get("description", "")
+    if not name:
+        return jsonify({"error": "Missing 'name'"}), 400
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO categories (name, description) VALUES (?, ?)",
+            (name, description)
+        )
+        conn.commit()
+        return jsonify({"message": "Kategorie přidána"}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Kategorie s tímto názvem již existuje"}), 409
+    finally:
+        conn.close()
+
+
+@app.delete("/categories/<int:category_id>")
+def delete_category(category_id):
+    conn = get_db_connection()
+    try:
+        cur = conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Kategorie nenalezena"}), 404
+        return jsonify({"message": "Kategorie smazána"}), 200
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)

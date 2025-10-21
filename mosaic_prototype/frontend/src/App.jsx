@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 import EntryTable from './components/EntryTable';
 import EntryForm from './components/EntryForm';
 import { fetchEntries, addEntry, deleteEntry } from './api';
+import CategoryForm from './components/CategoryForm';
+import CategoryTable from './components/CategoryTable';
+import { fetchCategories, addCategory, deleteCategory } from './api';
+
 
 export default function App() {
     const [entries, setEntries] = useState([]);
@@ -31,6 +35,23 @@ export default function App() {
     // Funkce pro nastavení aktivní karty
     const handleTabChange = (tabName) => {
         setActiveTab(tabName);
+    };
+
+    const [categories, setCategories] = useState([]);
+
+    const loadCategories = async () => {
+        const data = await fetchCategories();
+        setCategories(data);
+    };
+
+    const handleSaveCategory = async (category) => {
+        await addCategory(category);
+        loadCategories();
+    };
+
+    const handleDeleteCategory = async (id) => {
+        await deleteCategory(id);
+        loadCategories();
     };
 
     // Styly pro menu a aktivní kartu
@@ -74,10 +95,10 @@ export default function App() {
                 )}
 
                 {activeTab === 'Categories' && (
-                    // Karta Categories - prozatím prázdná
-                    <div style={{ padding: '20px', border: '1px dashed #ccc', textAlign: 'center' }}>
-                        <p>Obsah karty Categories bude brzy k dispozici...</p>
-                    </div>
+                    <>
+                        <CategoryForm onSave={handleSaveCategory} />
+                        <CategoryTable categories={categories} onDelete={handleDeleteCategory} />
+                    </>
                 )}
             </div>
         </div>

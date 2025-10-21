@@ -6,3 +6,8 @@ CREATE TABLE entries (
     note TEXT,
     UNIQUE(date, category)
 );
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT
+);
