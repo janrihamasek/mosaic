@@ -89,7 +89,7 @@ export default function App() {
             <div>
                 {activeTab === 'Entries' && (
                     <>
-                        <EntryForm onSave={handleSave} />
+                        <EntryForm onSave={handleSave} activities={activities} />
                         <EntryTable entries={entries} onDelete={handleDelete} />
                     </>
                 )}

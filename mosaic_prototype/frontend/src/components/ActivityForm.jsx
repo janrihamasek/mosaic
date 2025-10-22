@@ -30,7 +30,7 @@ export default function ActivityForm({ onSave }) {
                 onChange={e => setDescription(e.target.value)}
                 style={styles.input}
             />
-            <button type="submit" style={styles.button}>
+            <button type="submit" style={{ ...styles.button, marginLeft: "380px"}}>
                 Enter
             </button>
         </form>

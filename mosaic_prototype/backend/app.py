@@ -57,10 +57,14 @@ def add_entry():
 
     conn = get_db_connection()
     try:
+        cur = conn.execute("SELECT description FROM activities WHERE name = ?", (activity,))
+        desc = cur.fetchone()
+        description = desc["description"] if desc else ""
+
         # 1. Attempt to UPDATE the existing entry (the "upsert" logic)
         cur = conn.execute(
-            "UPDATE entries SET value = ?, note = ? WHERE date = ? AND activity = ?",
-            (float_value, note, date, activity),
+            "UPDATE entries SET value = ?, note = ?, description = ? WHERE date = ? AND activity = ?",
+            (float_value, note, description, date, activity),
         )
         conn.commit()
 
@@ -70,8 +74,8 @@ def add_entry():
         else:
             # 2. If no entry was updated, INSERT a new entry
             conn.execute(
-                "INSERT INTO entries (date, activity, value, note) VALUES (?, ?, ?, ?)",
-                (date, activity, float_value, note),
+                "INSERT INTO entries (date, activity, description, value, note) VALUES (?, ?, ?, ?, ?)",
+                (date, activity, description, float_value, note),
             )
             conn.commit()
             return jsonify({"message": "Záznam uložen"}), 201

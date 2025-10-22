@@ -6,7 +6,7 @@ export default function ActivityTable({ activities, onDelete }) {
         <table style={styles.table}>
             <thead>
                 <tr style={styles.tableHeader}>
-                    <th>Name</th>
+                    <th style={{ width: "25%", textAlign: "left" }}>Name</th>
                     <th>Description</th>
                     <th></th>
                 </tr>

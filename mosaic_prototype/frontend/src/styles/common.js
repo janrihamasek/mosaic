@@ -1,6 +1,6 @@
 export const styles = {
     button: {
-        marginLeft: "10px",
+        // marginLeft: "25px",
         background: "#e53935",
         color: "#fff",
         border: "none",
@@ -22,7 +22,7 @@ export const styles = {
     tableHeader: {
         backgroundColor: "#f0f0f0",
         textAlign: "left",
-        display: "table-row"
+        display: "table-row",
         },
 
     tableRow: {

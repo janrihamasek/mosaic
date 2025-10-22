@@ -2,6 +2,7 @@ CREATE TABLE entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
     activity TEXT NOT NULL,
+    description TEXT,
     value REAL,
     note TEXT,
     UNIQUE(date, activity)
