@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import EntryTable from './components/EntryTable';
 import EntryForm from './components/EntryForm';
 import { fetchEntries, addEntry, deleteEntry } from './api';
-import CategoryForm from './components/CategoryForm';
-import CategoryTable from './components/CategoryTable';
-import { fetchCategories, addCategory, deleteCategory } from './api';
+import ActivityForm from './components/ActivityForm';
+import ActivityTable from './components/ActivityTable';
+import { fetchActivities, addActivity, deleteActivity } from './api';
 
 
 export default function App() {
@@ -37,21 +37,21 @@ export default function App() {
         setActiveTab(tabName);
     };
 
-    const [categories, setCategories] = useState([]);
+    const [activities, setActivities] = useState([]);
 
-    const loadCategories = async () => {
-        const data = await fetchCategories();
-        setCategories(data);
+    const loadActivities = async () => {
+        const data = await fetchActivities();
+        setActivities(data);
     };
 
-    const handleSaveCategory = async (category) => {
-        await addCategory(category);
-        loadCategories();
+    const handleSaveActivity = async (activity) => {
+        await addActivity(activity);
+        loadActivities();
     };
 
-    const handleDeleteCategory = async (id) => {
-        await deleteCategory(id);
-        loadCategories();
+    const handleDeleteActivity = async (id) => {
+        await deleteActivity(id);
+        loadActivities();
     };
 
     // Styly pro menu a aktivní kartu
@@ -78,10 +78,10 @@ export default function App() {
                     Entries
                 </div>
                 <div 
-                    style={tabStyle('Categories')} 
-                    onClick={() => handleTabChange('Categories')}
+                    style={tabStyle('Activities')} 
+                    onClick={() => handleTabChange('Activities')}
                 >
-                    Categories
+                    Activities
                 </div>
             </div>
 
@@ -94,10 +94,10 @@ export default function App() {
                     </>
                 )}
 
-                {activeTab === 'Categories' && (
+                {activeTab === 'Activities' && (
                     <>
-                        <CategoryForm onSave={handleSaveCategory} />
-                        <CategoryTable categories={categories} onDelete={handleDeleteCategory} />
+                        <ActivityForm onSave={handleSaveActivity} />
+                        <ActivityTable activities={activities} onDelete={handleDeleteActivity} />
                     </>
                 )}
             </div>

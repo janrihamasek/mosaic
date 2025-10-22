@@ -39,12 +39,12 @@ def add_entry():
         return jsonify({"error": "Missing JSON body"}), 400
 
     date = data.get("date")
-    category = data.get("category")
+    activity = data.get("activity")
     value = data.get("value")
     note = data.get("note")
 
-    if not date or not category:
-        return jsonify({"error": "Missing 'date' or 'category' field"}), 400
+    if not date or not activity:
+        return jsonify({"error": "Missing 'date' or 'activity' field"}), 400
     
     # Ensure value is treated as a number; if missing, default to 0
     # The React component sends value as a string representation of a number or 0
@@ -59,8 +59,8 @@ def add_entry():
     try:
         # 1. Attempt to UPDATE the existing entry (the "upsert" logic)
         cur = conn.execute(
-            "UPDATE entries SET value = ?, note = ? WHERE date = ? AND category = ?",
-            (float_value, note, date, category),
+            "UPDATE entries SET value = ?, note = ? WHERE date = ? AND activity = ?",
+            (float_value, note, date, activity),
         )
         conn.commit()
 
@@ -70,8 +70,8 @@ def add_entry():
         else:
             # 2. If no entry was updated, INSERT a new entry
             conn.execute(
-                "INSERT INTO entries (date, category, value, note) VALUES (?, ?, ?, ?)",
-                (date, category, float_value, note),
+                "INSERT INTO entries (date, activity, value, note) VALUES (?, ?, ?, ?)",
+                (date, activity, float_value, note),
             )
             conn.commit()
             return jsonify({"message": "Záznam uložen"}), 201
@@ -96,11 +96,11 @@ def delete_entry(entry_id):
     finally:
         conn.close()
 
-@app.get("/categories")
+@app.get("/activities")
 def get_categories():
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT * FROM categories ORDER BY name ASC").fetchall()
+        rows = conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
         return jsonify([dict(r) for r in rows])
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500
@@ -108,8 +108,8 @@ def get_categories():
         conn.close()
 
 
-@app.post("/add_category")
-def add_category():
+@app.post("/add_activity")
+def add_activity():
     data = request.get_json()
     name = data.get("name")
     description = data.get("description", "")
@@ -119,7 +119,7 @@ def add_category():
     conn = get_db_connection()
     try:
         conn.execute(
-            "INSERT INTO categories (name, description) VALUES (?, ?)",
+            "INSERT INTO activities (name, description) VALUES (?, ?)",
             (name, description)
         )
         conn.commit()
@@ -130,11 +130,11 @@ def add_category():
         conn.close()
 
 
-@app.delete("/categories/<int:category_id>")
-def delete_category(category_id):
+@app.delete("/activities/<int:activity_id>")
+def delete_activity(activity_id):
     conn = get_db_connection()
     try:
-        cur = conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+        cur = conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
         conn.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Kategorie nenalezena"}), 404

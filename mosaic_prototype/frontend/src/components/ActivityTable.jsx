@@ -1,7 +1,7 @@
 import React from 'react';
 import { styles } from '../styles/common';
 
-export default function CategoryTable({ categories, onDelete }) {
+export default function ActivityTable({ activities, onDelete }) {
     return (
         <table style={styles.table}>
             <thead>
@@ -12,7 +12,7 @@ export default function CategoryTable({ categories, onDelete }) {
                 </tr>
             </thead>
             <tbody>
-                {categories.map((c, idx) => (
+                {activities.map((c, idx) => (
                     <tr key={c.id ?? idx} style={styles.tableRow}>
                         <td>{c.name}</td>
                         <td>{c.description}</td>

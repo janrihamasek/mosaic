@@ -7,7 +7,7 @@ export default function EntryTable({ entries, onDelete }) {
             <thead>
                 <tr style={styles.tableHeader}>
                     <th>Date</th>
-                    <th>Category</th>
+                    <th>Activity</th>
                     <th>Value</th>
                     <th>Note</th>
                 </tr>
@@ -16,7 +16,7 @@ export default function EntryTable({ entries, onDelete }) {
                 {entries.map((e, idx) => (
                     <tr key={e.id ?? idx} style={styles.tableRow}>
                         <td>{e.date}</td>
-                        <td>{e.category}</td>
+                        <td>{e.activity}</td>
                         <td>{e.value}</td>
                         <td>{e.note}</td>
                         <td style={{width: "10%", textAlign: "right"}}>

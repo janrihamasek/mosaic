@@ -3,7 +3,7 @@ import { styles } from '../styles/common';
 
 export default function EntryForm({ onSave }) {
     const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10)); // výchozí dnešní datum
-    const [category, setCategory] = useState('first'); // výchozí volba
+    const [activity, setActivity] = useState('first'); // výchozí volba
     const [value, setValue] = useState(0); // výchozí hodnota 0
     const [note, setNote] = useState(''); // prázdné poznámky
 
@@ -11,13 +11,13 @@ export default function EntryForm({ onSave }) {
         e.preventDefault();
         onSave({
             date,
-            category,
+            activity,
             value: parseFloat(value) || 0,
             note: note.trim()
         });
         // reset hodnot po odeslání
         setDate(new Date().toISOString().slice(0, 10));
-        setCategory('first');
+        setActivity('first');
         setValue(0);
         setNote('');
     };
@@ -32,8 +32,8 @@ export default function EntryForm({ onSave }) {
                 style={styles.input}
             />
             <select
-                value={category}
-                onChange={e => setCategory(e.target.value)}
+                value={activity}
+                onChange={e => setActivity(e.target.value)}
                 style={styles.input}
                 required
             >

@@ -1,12 +1,12 @@
 CREATE TABLE entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
-    category TEXT NOT NULL,
+    activity TEXT NOT NULL,
     value REAL,
     note TEXT,
-    UNIQUE(date, category)
+    UNIQUE(date, activity)
 );
-CREATE TABLE IF NOT EXISTS categories (
+CREATE TABLE IF NOT EXISTS activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     description TEXT

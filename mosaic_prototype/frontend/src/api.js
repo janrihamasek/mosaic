@@ -23,25 +23,25 @@ export async function deleteEntry(id) {
     return res.json?.() ?? null;
 }
 
-// --- CATEGORIES API ---
-export async function fetchCategories() {
-    const res = await fetch(`${BASE_URL}/categories`);
+// --- ACTIVITIES API ---
+export async function fetchActivities() {
+    const res = await fetch(`${BASE_URL}/activities`);
     return res.json();
 }
 
-export async function addCategory(category) {
-    const res = await fetch(`${BASE_URL}/add_category`, {
+export async function addActivity(activity) {
+    const res = await fetch(`${BASE_URL}/add_activity`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(category),
+        body: JSON.stringify(activity),
     });
     return res.json();
 }
 
-export async function deleteCategory(id) {
-    const res = await fetch(`${BASE_URL}/categories/${id}`, {
+export async function deleteActivity(id) {
+    const res = await fetch(`${BASE_URL}/activities/${id}`, {
         method: "DELETE",
     });
-    if (!res.ok) throw new Error(`Failed to delete category ${id}`);
+    if (!res.ok) throw new Error(`Failed to delete activity ${id}`);
     return res.json?.() ?? null;
 }

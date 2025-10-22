@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { styles } from '../styles/common';
 
-export default function CategoryForm({ onSave }) {
+export default function ActivityForm({ onSave }) {
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
 
@@ -17,7 +17,7 @@ export default function CategoryForm({ onSave }) {
         <form onSubmit={handleSubmit} style={{ marginBottom: "20px" }}>
             <input
                 type="text"
-                placeholder="Category name"
+                placeholder="Activity name"
                 value={name}
                 onChange={e => setName(e.target.value)}
                 required
