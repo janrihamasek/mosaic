@@ -42,16 +42,21 @@ export default function EntryForm({ onSave, activities = [] }) {
                     <option key={a.id} value={a.name}>{a.name}</option>
                 ))}
             </select>
-            <input
+            <select
                 type="number"
                 placeholder="Value"
                 value={value}
                 onChange={e => setValue(e.target.value)}
-                min={0}
-                step="1"
                 style={{ ...styles.input, width: "15%"}}
                 required
-            />
+            >
+                <option>0</option>
+                <option>1</option>
+                <option>2</option>
+                <option>3</option>
+                <option>4</option>
+                <option>5</option>
+            </select>
             <input
                 type="text"
                 placeholder="Note (max 100 chars)"
