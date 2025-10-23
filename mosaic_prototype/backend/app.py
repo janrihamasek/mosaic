@@ -208,5 +208,32 @@ def delete_activity(activity_id):
         conn.close()
 
 
+@app.post("/finalize_day")
+def finalize_day():
+    data = request.get_json() or {}
+    date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
+
+    conn = get_db_connection()
+    try:
+        # získej všechny aktivní aktivity
+        active_activities = conn.execute("SELECT name, description FROM activities WHERE active = 1").fetchall()
+        existing = conn.execute("SELECT activity FROM entries WHERE date = ?", (date,)).fetchall()
+        existing_names = {e["activity"] for e in existing}
+
+        created = 0
+        for a in active_activities:
+            if a["name"] not in existing_names:
+                conn.execute(
+                    "INSERT INTO entries (date, activity, description, value, note) VALUES (?, ?, ?, 0, '')",
+                    (date, a["name"], a["description"])
+                )
+                created += 1
+        conn.commit()
+        return jsonify({"message": f"{created} missing entries added for {date}"}), 200
+    finally:
+        conn.close()
+
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)

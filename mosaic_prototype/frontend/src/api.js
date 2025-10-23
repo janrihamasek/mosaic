@@ -60,3 +60,12 @@ export async function fetchToday(dateStr) {
   const res = await fetch(`${BASE_URL}/today${qs}`);
   return res.json();
 }
+
+export async function finalizeDay(dateStr) {
+  const res = await fetch(`${BASE_URL}/finalize_day`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date: dateStr }),
+  });
+  return res.json();
+}
