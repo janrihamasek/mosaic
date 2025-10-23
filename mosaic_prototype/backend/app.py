@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sqlite3
 import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -100,11 +101,16 @@ def delete_entry(entry_id):
     finally:
         conn.close()
 
+
 @app.get("/activities")
-def get_categories():
+def get_activities():
+    show_all = request.args.get("all", "false").lower() in ("1", "true", "yes")
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
+        if show_all:
+            rows = conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM activities WHERE active = 1 ORDER BY name ASC").fetchall()
         return jsonify([dict(r) for r in rows])
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500
@@ -134,17 +140,73 @@ def add_activity():
         conn.close()
 
 
+@app.patch("/activities/<int:activity_id>/deactivate")
+def deactivate_activity(activity_id):
+    conn = get_db_connection()
+    try:
+        cur = conn.execute("UPDATE activities SET active = 0 WHERE id = ?", (activity_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Aktivita nenalezena"}), 404
+        return jsonify({"message": "Aktivita deaktivována"}), 200
+    finally:
+        conn.close()
+
+
+@app.patch("/activities/<int:activity_id>/activate")
+def activate_activity(activity_id):
+    conn = get_db_connection()
+    try:
+        cur = conn.execute("UPDATE activities SET active = 1 WHERE id = ?", (activity_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Aktivita nenalezena"}), 404
+        return jsonify({"message": "Aktivita aktivována"}), 200
+    finally:
+        conn.close()
+
+
+@app.get("/today")
+def get_today():
+    date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("""
+            SELECT 
+                a.id AS activity_id,
+                a.name,
+                a.description,
+                a.active,
+                e.id AS entry_id,
+                e.value,
+                e.note
+            FROM activities a
+            LEFT JOIN entries e
+              ON e.activity = a.name AND e.date = ?
+            WHERE a.active = 1
+            ORDER BY a.name ASC
+        """, (date,)).fetchall()
+        return jsonify([dict(r) for r in rows])
+    finally:
+        conn.close()
+
+
 @app.delete("/activities/<int:activity_id>")
 def delete_activity(activity_id):
     conn = get_db_connection()
     try:
+        row = conn.execute("SELECT active FROM activities WHERE id = ?", (activity_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Aktivita nenalezena"}), 404
+        if row["active"] == 1:
+            return jsonify({"error": "Aktivitu nelze smazat, nejprve ji deaktivujte"}), 400
+
         cur = conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
         conn.commit()
-        if cur.rowcount == 0:
-            return jsonify({"error": "Kategorie nenalezena"}), 404
-        return jsonify({"message": "Kategorie smazána"}), 200
+        return jsonify({"message": "Aktivita smazána"}), 200
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)

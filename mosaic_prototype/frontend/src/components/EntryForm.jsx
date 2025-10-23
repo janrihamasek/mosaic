@@ -3,7 +3,7 @@ import { styles } from '../styles/common';
 
 export default function EntryForm({ onSave, activities = [] }) {
     const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10)); // výchozí dnešní datum
-    const [activity, setActivity] = useState('first'); // výchozí volba
+    const [activity, setActivity] = useState(''); // výchozí volba
     const [value, setValue] = useState(0); // výchozí hodnota 0
     const [note, setNote] = useState(''); // prázdné poznámky
 

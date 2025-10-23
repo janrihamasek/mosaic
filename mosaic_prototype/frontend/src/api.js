@@ -1,47 +1,62 @@
 const BASE_URL = "http://127.0.0.1:5000";
 
-// --- ENTRIES API ---
+// --- ENTRIES ---
 export async function fetchEntries() {
-    const res = await fetch(`${BASE_URL}/entries`);
-    return res.json();
+  const res = await fetch(`${BASE_URL}/entries`);
+  return res.json();
 }
 
 export async function addEntry(entry) {
-    const res = await fetch(`${BASE_URL}/add_entry`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entry),
-    });
-    return res.json();
+  const res = await fetch(`${BASE_URL}/add_entry`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  });
+  return res.json();
 }
 
 export async function deleteEntry(id) {
-    const res = await fetch(`${BASE_URL}/entries/${id}`, {
-        method: 'DELETE',
-    });
-    if (!res.ok) throw new Error(`Failed to delete entry ${id}`);
-    return res.json?.() ?? null;
+  const res = await fetch(`${BASE_URL}/entries/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete entry ${id}`);
+  return res.json?.() ?? null;
 }
 
-// --- ACTIVITIES API ---
-export async function fetchActivities() {
-    const res = await fetch(`${BASE_URL}/activities`);
-    return res.json();
+// --- ACTIVITIES ---
+export async function fetchActivities({ all = false } = {}) {
+  const res = await fetch(`${BASE_URL}/activities${all ? "?all=true" : ""}`);
+  return res.json();
 }
 
 export async function addActivity(activity) {
-    const res = await fetch(`${BASE_URL}/add_activity`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(activity),
-    });
-    return res.json();
+  const res = await fetch(`${BASE_URL}/add_activity`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(activity),
+  });
+  return res.json();
+}
+
+export async function deactivateActivity(id) {
+  const res = await fetch(`${BASE_URL}/activities/${id}/deactivate`, { method: "PATCH" });
+  if (!res.ok) throw new Error(`Failed to deactivate activity ${id}`);
+  return res.json();
+}
+
+export async function activateActivity(id) {
+  const res = await fetch(`${BASE_URL}/activities/${id}/activate`, { method: "PATCH" });
+  if (!res.ok) throw new Error(`Failed to activate activity ${id}`);
+  return res.json();
 }
 
 export async function deleteActivity(id) {
-    const res = await fetch(`${BASE_URL}/activities/${id}`, {
-        method: "DELETE",
-    });
-    if (!res.ok) throw new Error(`Failed to delete activity ${id}`);
-    return res.json?.() ?? null;
+  const res = await fetch(`${BASE_URL}/activities/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete activity ${id}`);
+  return res.json?.() ?? null;
+}
+
+// --- TODAY ---
+export async function fetchToday(dateStr) {
+  const qs = dateStr ? `?date=${encodeURIComponent(dateStr)}` : "";
+  const res = await fetch(`${BASE_URL}/today${qs}`);
+  return res.json();
 }
