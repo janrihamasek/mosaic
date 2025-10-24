@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { fetchToday, addEntry, finalizeDay } from "../api";
 import { styles } from "../styles/common";
 
-export default function Today() {
+export default function Today({ onDataChanged }) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rows, setRows] = useState([]);
   const [saved, setSaved] = useState(false);
@@ -50,6 +50,9 @@ export default function Today() {
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
     await load();
+    if (onDataChanged) {
+      await onDataChanged();
+    }
   };
 
   const handleSort = (col) => {
@@ -65,20 +68,24 @@ export default function Today() {
 
   return (
     <div>
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <input
           type="date"
           value={date}
           onChange={e => { setDate(e.target.value); load(e.target.value); }}
           style={styles.input}
         />
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {saved && <div style={{ color: "green" }}>✅ Changes saved</div>}
+          <button style={styles.button} onClick={handleSaveAll}>Save all changes</button>
+        </div>
       </div>
 
       <table style={styles.table}>
         <thead>
           <tr style={styles.tableHeader}>
-            <th onClick={() => handleSort("activity")} style={{ cursor: "pointer" }}>Activity</th>
-            <th onClick={() => handleSort("value")} style={{ cursor: "pointer" }}>Value</th>
+            <th>Activity</th>
+            <th>Value</th>
             <th>Note</th>
           </tr>
         </thead>
@@ -116,11 +123,6 @@ export default function Today() {
           ))}
         </tbody>
       </table>
-
-      <div style={{ marginTop: 16, textAlign: "right" }}>
-        <button style={styles.button} onClick={handleSaveAll}>Save all changes</button>
-        {saved && <div style={{ color: "green", marginTop: 8 }}>✅ Changes saved successfully</div>}
-      </div>
     </div>
   );
 }

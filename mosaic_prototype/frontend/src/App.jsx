@@ -84,7 +84,7 @@ export default function App() {
         <div style={tabStyle('Activities')} onClick={() => setActiveTab('Activities')}>Activities</div>
       </div>
 
-      {activeTab === 'Today' && <Today />}
+      {activeTab === 'Today' && <Today onDataChanged={loadEntries} />}
 
       {activeTab === 'Entries' && (
         <>
