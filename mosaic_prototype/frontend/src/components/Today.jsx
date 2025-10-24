@@ -11,16 +11,11 @@ export default function Today({ onDataChanged }) {
     const data = await fetchToday(d);
     setRows(
       data
-        .map(r => ({
-          ...r,
-          value: r.value ?? 0,
-          note: r.note ?? ""
-        }))
+        .map(r => ({ ...r, value: r.value ?? 0, note: r.note ?? "" }))
         .sort((a, b) => (a.value > 0 ? 1 : -1))
     );
   };
 
-  // automatická kontrola půlnoci
   useEffect(() => {
     const checkFinalize = async () => {
       const now = new Date();
@@ -50,33 +45,20 @@ export default function Today({ onDataChanged }) {
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
     await load();
-    if (onDataChanged) {
-      await onDataChanged();
-    }
-  };
-
-  const handleSort = (col) => {
-    setRows(prev => {
-      const sorted = [...prev].sort((a, b) => {
-        if (col === "value") return a.value - b.value;
-        if (col === "activity") return a.name.localeCompare(b.name);
-        return 0;
-      });
-      return sorted;
-    });
+    if (onDataChanged) await onDataChanged();
   };
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={styles.rowBetween}>
         <input
           type="date"
           value={date}
           onChange={e => { setDate(e.target.value); load(e.target.value); }}
           style={styles.input}
         />
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {saved && <div style={{ color: "green" }}>✅ Changes saved</div>}
+        <div style={styles.flexRow}>
+          {saved && <div style={styles.successMessage}>✅ Changes saved</div>}
           <button style={styles.button} onClick={handleSaveAll}>Save all changes</button>
         </div>
       </div>
@@ -91,11 +73,13 @@ export default function Today({ onDataChanged }) {
         </thead>
         <tbody>
           {rows.map((r, idx) => (
-            <tr key={r.activity_id ?? idx}
-                style={{
-                  ...styles.tableRow,
-                  backgroundColor: r.value > 0 ? "#d6f5d6" : "transparent"
-                }}>
+            <tr
+              key={r.activity_id ?? idx}
+              style={{
+                ...styles.tableRow,
+                ...(r.value > 0 ? styles.highlightRow : {}),
+              }}
+            >
               <td>{r.name}</td>
               <td style={{ width: 120 }}>
                 <select
@@ -104,7 +88,8 @@ export default function Today({ onDataChanged }) {
                     const v = e.target.value;
                     setRows(prev => prev.map(p => p.name === r.name ? { ...p, value: v } : p));
                   }}
-                  style={{ ...styles.input, width: "100%" }}>
+                  style={{ ...styles.input, width: "100%" }}
+                >
                   {[0,1,2,3,4,5].map(v => <option key={v}>{v}</option>)}
                 </select>
               </td>

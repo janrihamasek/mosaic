@@ -45,10 +45,7 @@ export default function EntryTable({ entries, onDelete }) {
             <td>{e.value}</td>
             <td>{e.note}</td>
             <td style={{ width: "10%", textAlign: "right" }}>
-              <button
-                onClick={() => onDelete?.(e.id ?? idx)}
-                style={styles.button}
-              >
+              <button onClick={() => onDelete?.(e.id ?? idx)} style={styles.button}>
                 Delete
               </button>
             </td>

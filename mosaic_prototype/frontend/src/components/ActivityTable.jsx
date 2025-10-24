@@ -15,13 +15,15 @@ export default function ActivityTable({ activities, onActivate, onDeactivate, on
       <tbody>
         {activities.map((a) => (
           <tr key={a.id} style={styles.tableRow}>
-            <td style={{ cursor: "pointer", textDecoration: "underline" }}
-                onClick={() => onOpenDetail?.(a)}>
+            <td
+              style={{ cursor: "pointer", textDecoration: "underline" }}
+              onClick={() => onOpenDetail?.(a)}
+            >
               {a.name}
             </td>
             <td>{a.description}</td>
             <td>{a.active ? "Active" : "Inactive"}</td>
-            <td style={{ width: "28%", textAlign: "right", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <td style={styles.tableCellActions}>
               {a.active ? (
                 <button onClick={() => onDeactivate?.(a.id)} style={styles.button}>Deactivate</button>
               ) : (

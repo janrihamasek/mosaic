@@ -7,19 +7,16 @@ import ActivityTable from './components/ActivityTable';
 import ActivityDetail from './components/ActivityDetail';
 import Today from './components/Today';
 import { fetchActivities, addActivity, deleteActivity, activateActivity, deactivateActivity } from './api';
+import { styles } from './styles/common';
 
 export default function App() {
   const [entries, setEntries] = useState([]);
-  const [activeTab, setActiveTab] = useState('Today'); // default Today
+  const [activeTab, setActiveTab] = useState('Today');
   const [activeActivities, setActiveActivities] = useState([]);
   const [allActivities, setAllActivities] = useState([]);
   const [selectedActivity, setSelectedActivity] = useState(null);
 
-  const loadEntries = async () => {
-    const data = await fetchEntries();
-    setEntries(data);
-  };
-
+  const loadEntries = async () => setEntries(await fetchEntries());
   const loadActivities = async () => {
     const [onlyActive, all] = await Promise.all([
       fetchActivities({ all: false }),
@@ -34,77 +31,40 @@ export default function App() {
     loadActivities();
   }, []);
 
-  const handleSave = async (entry) => {
-    await addEntry(entry);
-    await loadEntries();
-  };
-
-  const handleDelete = async (id) => {
-    await deleteEntry(id);
-    await loadEntries();
-  };
-
-  const handleSaveActivity = async (activity) => {
-    await addActivity(activity);
-    await loadActivities();
-  };
-
-  const handleDeleteActivity = async (id) => {
-    await deleteActivity(id);
-    await loadActivities();
-  };
-
-  const handleDeactivateActivity = async (id) => {
-    await deactivateActivity(id);
-    await loadActivities();
-  };
-
-  const handleActivateActivity = async (id) => {
-    await activateActivity(id);
-    await loadActivities();
-  };
-
-  const tabStyle = (tabName) => ({
-    padding: '10px 15px',
-    cursor: 'pointer',
-    borderBottom: activeTab === tabName ? '3px solid #007bff' : '3px solid transparent',
-    fontWeight: activeTab === tabName ? 'bold' : 'normal',
-    color: activeTab === tabName ? '#007bff' : '#333',
-    transition: 'all 0.3s ease',
-    textTransform: 'uppercase',
-  });
+  const tabStyle = (tabName) =>
+    activeTab === tabName
+      ? { ...styles.tab, ...styles.tabActive }
+      : styles.tab;
 
   return (
-    <div style={{ maxWidth: "900px", margin: "20px auto", fontFamily: "Segoe UI, sans-serif" }}>
+    <div style={styles.container}>
       <h1>🧩 Mosaic</h1>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #ccc', marginBottom: '20px' }}>
+      <div style={styles.tabBar}>
         <div style={tabStyle('Today')} onClick={() => setActiveTab('Today')}>Today</div>
         <div style={tabStyle('Entries')} onClick={() => setActiveTab('Entries')}>Entries</div>
         <div style={tabStyle('Activities')} onClick={() => setActiveTab('Activities')}>Activities</div>
       </div>
 
       {activeTab === 'Today' && <Today onDataChanged={loadEntries} />}
-
       {activeTab === 'Entries' && (
         <>
-          <EntryForm onSave={handleSave} activities={activeActivities} />
-          <EntryTable entries={entries} onDelete={handleDelete} />
+          <EntryForm onSave={addEntry} activities={activeActivities} />
+          <EntryTable entries={entries} onDelete={deleteEntry} />
         </>
       )}
-
       {activeTab === 'Activities' && (
         <>
-          <ActivityForm onSave={handleSaveActivity} />
+          <ActivityForm onSave={addActivity} />
           {selectedActivity && (
             <ActivityDetail activity={selectedActivity} onClose={() => setSelectedActivity(null)} />
           )}
           <ActivityTable
             activities={allActivities}
-            onActivate={handleActivateActivity}
-            onDeactivate={handleDeactivateActivity}
-            onDelete={handleDeleteActivity}
-            onOpenDetail={(a) => setSelectedActivity(a)}
+            onActivate={activateActivity}
+            onDeactivate={deactivateActivity}
+            onDelete={deleteActivity}
+            onOpenDetail={setSelectedActivity}
           />
         </>
       )}
