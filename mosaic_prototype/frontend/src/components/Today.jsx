@@ -43,9 +43,9 @@ export default function Today({ onDataChanged }) {
       });
     }
     setSaved(true);
+    await onDataChanged?.();
     setTimeout(() => setSaved(false), 3000);
     await load();
-    if (onDataChanged) await onDataChanged();
   };
 
   return (

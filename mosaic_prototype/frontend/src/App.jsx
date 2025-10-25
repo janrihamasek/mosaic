@@ -26,6 +26,10 @@ export default function App() {
     setAllActivities(all);
   };
 
+  const refreshAll = async () => {
+    await Promise.all([loadEntries(), loadActivities()]);
+  };
+
   useEffect(() => {
     loadEntries();
     loadActivities();
@@ -46,16 +50,22 @@ export default function App() {
         <div style={tabStyle('Activities')} onClick={() => setActiveTab('Activities')}>Activities</div>
       </div>
 
-      {activeTab === 'Today' && <Today onDataChanged={loadEntries} />}
-      {activeTab === 'Entries' && (
-        <>
-          <EntryForm onSave={addEntry} activities={activeActivities} />
-          <EntryTable entries={entries} onDelete={deleteEntry} />
-        </>
+      {activeTab === 'Today' && (
+        <div style={styles.cardContainer}>
+          <Today onDataChanged={refreshAll} />
+        </div>
       )}
+
+      {activeTab === 'Entries' && (
+        <div style={styles.cardContainer}>
+          <EntryForm onSave={addEntry} onDataChanged={refreshAll} activities={activeActivities} />
+          <EntryTable entries={entries} onDelete={deleteEntry} onDataChanged={refreshAll} />
+        </div>
+      )}
+
       {activeTab === 'Activities' && (
-        <>
-          <ActivityForm onSave={addActivity} />
+        <div style={styles.cardContainer}>
+          <ActivityForm onSave={addActivity} onDataChanged={refreshAll} />
           {selectedActivity && (
             <ActivityDetail activity={selectedActivity} onClose={() => setSelectedActivity(null)} />
           )}
@@ -65,8 +75,9 @@ export default function App() {
             onDeactivate={deactivateActivity}
             onDelete={deleteActivity}
             onOpenDetail={setSelectedActivity}
+            onDataChanged={refreshAll}
           />
-        </>
+        </div>
       )}
     </div>
   );

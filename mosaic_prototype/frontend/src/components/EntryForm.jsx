@@ -1,23 +1,28 @@
 import React, { useState } from 'react';
 import { styles } from '../styles/common';
 
-export default function EntryForm({ onSave, activities = [] }) {
+export default function EntryForm({ onSave, onDataChanged, activities = [] }) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [activity, setActivity] = useState('');
   const [value, setValue] = useState(0);
   const [note, setNote] = useState('');
+  const [saved, setSaved] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave({ date, activity, value: parseFloat(value) || 0, note: note.trim() });
+    await onSave({ date, activity, value: parseFloat(value) || 0, note: note.trim() });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+    await onDataChanged?.();
     setDate(new Date().toISOString().slice(0, 10));
-    setActivity('first');
+    setActivity('');
     setValue(0);
     setNote('');
   };
 
   return (
     <form onSubmit={handleSubmit} style={styles.form}>
+      {saved && <div style={styles.successMessage}>✅ Entry was saved</div>}
       <input
         type="date"
         value={date}
@@ -37,7 +42,6 @@ export default function EntryForm({ onSave, activities = [] }) {
         ))}
       </select>
       <select
-        type="number"
         value={value}
         onChange={e => setValue(e.target.value)}
         style={{ ...styles.input, width: "15%" }}
