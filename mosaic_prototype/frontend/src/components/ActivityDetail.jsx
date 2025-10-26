@@ -36,6 +36,7 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
         <button style={styles.button} onClick={onClose}>Close</button>
       </div>
       <p style={{ marginTop: 8 }}><b>Category:</b> {activity.category || 'N/A'}</p>
+      <p style={{ marginTop: 8 }}><b>Goal:</b> {activity.goal ?? 0}</p>
       <p style={{ marginTop: 8 }}>{activity.description || 'N/A'}</p>
       {loading && <div style={styles.loadingText}>⏳ Loading activity history...</div>}
       <ul style={{ marginTop: 8 }}>

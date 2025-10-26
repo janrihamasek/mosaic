@@ -25,6 +25,7 @@ def client(tmp_path):
             "TESTING": True,
             "DB_PATH": str(db_path),
             "API_KEY": None,
+            "_SCHEMA_READY": False,
         }
     )
 

@@ -67,7 +67,7 @@ class ValidationError(Exception):
 
 
 def require_fields(payload: Dict[str, Any], fields: Tuple[str, ...]):
-    missing = [f for f in fields if not payload.get(f)]
+    missing = [f for f in fields if payload.get(f) is None]
     if missing:
         raise ValidationError(f"Missing required field(s): {', '.join(missing)}")
 
@@ -85,6 +85,16 @@ def ensure_number(value: Any, field: str) -> float:
         return float(value)
     except (TypeError, ValueError):
         raise ValidationError(f"{field} must be a number")
+
+
+def ensure_int(value: Any, field: str, min_value: int = 0) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError(f"{field} must be an integer")
+    if number < min_value:
+        raise ValidationError(f"{field} must be at least {min_value}")
+    return number
 
 
 def ensure_length(value: str, field: str, max_len: int):
@@ -120,7 +130,7 @@ def validate_activity_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValidationError("Invalid JSON payload")
 
-    require_fields(payload, ("name", "category"))
+    require_fields(payload, ("name", "category", "goal"))
     name = payload["name"].strip()
     if not name:
         raise ValidationError("Activity name must not be empty")
@@ -131,11 +141,14 @@ def validate_activity_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValidationError("Category must not be empty")
     ensure_length(category, "category", 80)
 
+    goal = ensure_int(payload.get("goal"), "goal", min_value=0)
+
     description = (payload.get("description") or "").strip()
     ensure_length(description, "description", 180)
 
     return {
         "name": name,
         "category": category,
+        "goal": goal,
         "description": description,
     }

@@ -48,6 +48,9 @@ def ensure_schema(conn):
     if "category" not in columns:
         conn.execute("ALTER TABLE activities ADD COLUMN category TEXT NOT NULL DEFAULT ''")
         conn.commit()
+    if "goal" not in columns:
+        conn.execute("ALTER TABLE activities ADD COLUMN goal INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
 
     app.config["_SCHEMA_READY"] = True
 
@@ -83,7 +86,7 @@ def get_entries():
     try:
         entries = conn.execute(
             """
-            SELECT e.*, IFNULL(a.category, '') AS category, IFNULL(a.description, '') AS activity_description
+            SELECT e.*, IFNULL(a.category, '') AS category, IFNULL(a.goal, 0) AS goal, IFNULL(a.description, '') AS activity_description
             FROM entries e
             LEFT JOIN activities a ON a.name = e.activity
             ORDER BY e.date DESC, a.category ASC, e.activity ASC
@@ -192,13 +195,14 @@ def add_activity():
     payload = validate_activity_payload(data)
     name = payload["name"]
     category = payload["category"]
+    goal = payload["goal"]
     description = payload["description"]
 
     conn = get_db_connection()
     try:
         conn.execute(
-            "INSERT INTO activities (name, category, description) VALUES (?, ?, ?)",
-            (name, category, description)
+            "INSERT INTO activities (name, category, goal, description) VALUES (?, ?, ?, ?)",
+            (name, category, goal, description)
         )
         conn.commit()
         return jsonify({"message": "Kategorie přidána"}), 201

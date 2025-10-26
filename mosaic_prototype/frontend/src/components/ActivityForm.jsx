@@ -4,25 +4,32 @@ import { styles } from '../styles/common';
 export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
+  const [goal, setGoal] = useState('');
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !category.trim()) return;
+    if (!name.trim() || !category.trim() || goal === '') return;
     if (isSaving) return;
 
     setIsSaving(true);
     try {
+      const goalValue = Math.max(0, Math.floor(Number(goal)));
+      if (Number.isNaN(goalValue)) {
+        throw new Error("Goal must be a number");
+      }
       await onSave({
         name: name.trim(),
         category: category.trim(),
+        goal: goalValue,
         description: description.trim(),
       });
       onNotify?.('Activity was created', 'success');
       await onDataChanged?.();
       setName('');
       setCategory('');
+      setGoal('');
       setDescription('');
     } catch (err) {
       onNotify?.(`Failed to create activity: ${err.message}`, 'error');
@@ -48,6 +55,16 @@ export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
         onChange={e => setCategory(e.target.value)}
         required
         style={styles.input}
+      />
+      <input
+        type="number"
+        min="0"
+        step="1"
+        placeholder="Goal"
+        value={goal}
+        onChange={e => setGoal(e.target.value)}
+        required
+        style={{ ...styles.input, width: "120px" }}
       />
       <input
         type="text"

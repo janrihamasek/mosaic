@@ -8,7 +8,7 @@ def test_get_entries_empty(client):
 
 
 def test_add_activity_and_toggle(client):
-    payload = {"name": "Reading", "category": "Leisure", "description": "Read a book"}
+    payload = {"name": "Reading", "category": "Leisure", "goal": 15, "description": "Read a book"}
     response = client.post("/add_activity", json=payload)
     assert response.status_code == 201
 
@@ -18,6 +18,7 @@ def test_add_activity_and_toggle(client):
     activity_id = data[0]["id"]
     assert data[0]["active"] == 1
     assert data[0]["category"] == "Leisure"
+    assert data[0]["goal"] == 15
 
     response = client.patch(f"/activities/{activity_id}/deactivate")
     assert response.status_code == 200
@@ -32,12 +33,17 @@ def test_add_activity_and_toggle(client):
 
 
 def test_add_activity_requires_category(client):
-    resp = client.post("/add_activity", json={"name": "Yoga"})
+    resp = client.post("/add_activity", json={"name": "Yoga", "goal": 10})
+    assert resp.status_code == 400
+
+
+def test_add_activity_requires_goal(client):
+    resp = client.post("/add_activity", json={"name": "Yoga", "category": "Health"})
     assert resp.status_code == 400
 
 
 def test_add_entry_upsert(client):
-    client.post("/add_activity", json={"name": "Exercise", "category": "Health", "description": "Gym"})
+    client.post("/add_activity", json={"name": "Exercise", "category": "Health", "goal": 20, "description": "Gym"})
     date_str = "2024-01-15"
 
     response = client.post(
@@ -61,8 +67,8 @@ def test_add_entry_upsert(client):
 
 
 def test_today_and_finalize_day(client):
-    client.post("/add_activity", json={"name": "Coding", "category": "Work", "description": "Side project"})
-    client.post("/add_activity", json={"name": "Workout", "category": "Health", "description": "Morning"})
+    client.post("/add_activity", json={"name": "Coding", "category": "Work", "goal": 30, "description": "Side project"})
+    client.post("/add_activity", json={"name": "Workout", "category": "Health", "goal": 40, "description": "Morning"})
 
     target_date = "2024-02-20"
     response = client.get(f"/today?date={target_date}")
@@ -133,8 +139,8 @@ def test_api_key_enforced(client):
 
 def test_import_csv_endpoint(client):
     csv_data = (
-        "date,activity,value,note,description,category\n"
-        "2024-03-01,Swim,2,,Morning swim,Fitness\n"
+        "date,activity,value,note,description,category,goal\n"
+        "2024-03-01,Swim,2,,Morning swim,Fitness,12\n"
     )
     data = {
         "file": (io.BytesIO(csv_data.encode("utf-8")), "activities.csv"),
@@ -147,3 +153,4 @@ def test_import_csv_endpoint(client):
     # CSV import should have created an activity with category
     activities = client.get("/activities").get_json()
     assert activities[0]["category"] == "Fitness"
+    assert activities[0]["goal"] == 12

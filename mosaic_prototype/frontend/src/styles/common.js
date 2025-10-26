@@ -54,7 +54,7 @@ export const styles = {
     margin: "12px 0",
   },
   tableCellActions: {
-    width: "35%",
+    width: "40%",
     display: "flex",
     gap: 8,
     justifyContent: "flex-end",

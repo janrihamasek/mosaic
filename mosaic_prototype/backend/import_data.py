@@ -24,9 +24,9 @@ def get_db_connection(db_path: Optional[str] = None):
     return conn
 
 
-def ensure_activity_exists(conn, activity_name, category="", description=""):
+def ensure_activity_exists(conn, activity_name, category="", description="", goal=0):
     cur = conn.execute(
-        "SELECT id, category, description FROM activities WHERE name = ?", (activity_name,)
+        "SELECT id, category, description, goal FROM activities WHERE name = ?", (activity_name,)
     )
     row = cur.fetchone()
     if row:
@@ -38,6 +38,9 @@ def ensure_activity_exists(conn, activity_name, category="", description=""):
         if description and (row["description"] or "") != description:
             updates.append("description = ?")
             params.append(description)
+        if goal is not None and row["goal"] != goal:
+            updates.append("goal = ?")
+            params.append(goal)
         if updates:
             params.append(activity_name)
             conn.execute(f"UPDATE activities SET {', '.join(updates)} WHERE name = ?", params)
@@ -45,8 +48,8 @@ def ensure_activity_exists(conn, activity_name, category="", description=""):
         return
 
     conn.execute(
-        "INSERT INTO activities (name, category, description, active) VALUES (?, ?, ?, 1)",
-        (activity_name, category, description),
+        "INSERT INTO activities (name, category, goal, description, active) VALUES (?, ?, ?, ?, 1)",
+        (activity_name, category, goal, description),
     )
     print(f"✅ Přidána nová aktivita: {activity_name}")
     conn.commit()
@@ -72,6 +75,13 @@ def import_csv(csv_path, db_path: Optional[str] = None):
             note = (row.get("note", "") or "").strip()
             desc = (row.get("description", "") or "").strip()
             category = (row.get("category", "") or "").strip()
+            goal_raw = (row.get("goal", "0") or "0").strip()
+            try:
+                goal = int(goal_raw or "0")
+            except (TypeError, ValueError):
+                print(f"⚠️ Neplatná hodnota goal '{goal_raw}' – řádek přeskočen")
+                skipped += 1
+                continue
             activity = (activity or "").strip()
 
             if not raw_date or not activity:
@@ -94,7 +104,7 @@ def import_csv(csv_path, db_path: Optional[str] = None):
                 continue
             # ----------------------------------------------------
 
-            ensure_activity_exists(conn, activity, category, desc)
+            ensure_activity_exists(conn, activity, category, desc, goal)
 
             cur = conn.execute(
                 "UPDATE entries SET value = ?, note = ?, description = ? WHERE date = ? AND activity = ?",

@@ -50,6 +50,7 @@ export default function ActivityTable({
           <tr style={styles.tableHeader}>
             <th>Activity</th>
             <th>Category</th>
+            <th>Goal</th>
             <th>Description</th>
             <th>Status</th>
             <th></th>
@@ -66,6 +67,7 @@ export default function ActivityTable({
                 {a.name}
               </td>
               <td>{a.category || "N/A"}</td>
+              <td>{a.goal ?? 0}</td>
               <td>{a.description || "N/A"}</td>
               <td>{a.active ? "Active" : "Inactive"}</td>
               <td style={styles.tableCellActions}>
@@ -100,7 +102,7 @@ export default function ActivityTable({
           ))}
           {!loading && sortedActivities.length === 0 && (
             <tr>
-              <td colSpan={5} style={{ padding: "12px", color: "#888" }}>
+              <td colSpan={6} style={{ padding: "12px", color: "#888" }}>
                 No activities to display.
               </td>
             </tr>
