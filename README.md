@@ -7,6 +7,7 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
 - Daily sheet (`Today` tab) for quick scoring of all active activities, including debounced auto-save.
 - Entry history with sorting, pagination, and inline delete.
 - CSV import helper for bootstrapping historical data.
+- Optional API key protection with basic rate limiting on mutating endpoints.
 
 ## Architecture
 - **Frontend**: React 18 with Create React App, component-driven UI, shared inline style system in `frontend/src/styles/common.js`.
@@ -40,6 +41,7 @@ python app.py
 ```
 By default the API listens on `http://127.0.0.1:5000`.
 Set `MOSAIC_DB_PATH` to point the Flask app at a different SQLite file (useful for tests/CI).
+To secure the API, set `MOSAIC_API_KEY=<your-secret>` and include `X-API-Key` on requests. Rate limiting (configurable via `app.config["RATE_LIMITS"]`) guards mutating endpoints by default.
 
 To run the backend test suite:
 ```bash

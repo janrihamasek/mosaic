@@ -5,12 +5,33 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from security import (
+    ValidationError,
+    rate_limit,
+    require_api_key,
+    validate_activity_payload,
+    validate_entry_payload,
+)
+
 app = Flask(__name__)
 CORS(app)
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "../database/mosaic.db"
 DB_PATH = os.environ.get("MOSAIC_DB_PATH") or DEFAULT_DB_PATH
 app.config["DB_PATH"] = str(DB_PATH)
+app.config.setdefault(
+    "RATE_LIMITS",
+    {
+        "add_entry": {"limit": 60, "window": 60},
+        "add_activity": {"limit": 30, "window": 60},
+        "activity_status": {"limit": 60, "window": 60},
+        "delete_activity": {"limit": 30, "window": 60},
+        "delete_entry": {"limit": 90, "window": 60},
+        "finalize_day": {"limit": 10, "window": 60},
+    },
+)
+app.config["API_KEY"] = os.environ.get("MOSAIC_API_KEY")
+app.config.setdefault("PUBLIC_ENDPOINTS", {"home"})
 
 
 def get_db_connection():
@@ -23,6 +44,18 @@ def get_db_connection():
 @app.get("/")
 def home():
     return jsonify({"message": "Backend běží!", "database": DB_PATH})
+
+
+@app.before_request
+def _enforce_api_key():
+    auth_result = require_api_key()
+    if auth_result:
+        return auth_result
+
+
+@app.errorhandler(ValidationError)
+def handle_validation(error: ValidationError):
+    return jsonify({"error": error.message}), 400
 
 
 @app.get("/entries")
@@ -39,26 +72,17 @@ def get_entries():
 
 @app.post("/add_entry")
 def add_entry():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Missing JSON body"}), 400
+    limits = app.config["RATE_LIMITS"]["add_entry"]
+    limited = rate_limit("add_entry", limits["limit"], limits["window"])
+    if limited:
+        return limited
 
-    date = data.get("date")
-    activity = data.get("activity")
-    value = data.get("value")
-    note = data.get("note")
-
-    if not date or not activity:
-        return jsonify({"error": "Missing 'date' or 'activity' field"}), 400
-    
-    # Ensure value is treated as a number; if missing, default to 0
-    # The React component sends value as a string representation of a number or 0
-    try:
-        # Convert value to float for storage consistency, default to 0 if none is sent
-        float_value = float(value) if value is not None else 0.0
-    except ValueError:
-        return jsonify({"error": "'value' must be a number"}), 400
-
+    data = request.get_json() or {}
+    payload = validate_entry_payload(data)
+    date = payload["date"]
+    activity = payload["activity"]
+    note = payload["note"]
+    float_value = payload["value"]
 
     conn = get_db_connection()
     try:
@@ -93,6 +117,11 @@ def add_entry():
 
 @app.delete("/entries/<int:entry_id>")
 def delete_entry(entry_id):
+    limits = app.config["RATE_LIMITS"]["delete_entry"]
+    limited = rate_limit("delete_entry", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
     conn = get_db_connection()
     try:
         cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
@@ -124,11 +153,15 @@ def get_activities():
 
 @app.post("/add_activity")
 def add_activity():
-    data = request.get_json()
-    name = data.get("name")
-    description = data.get("description", "")
-    if not name:
-        return jsonify({"error": "Missing 'name'"}), 400
+    limits = app.config["RATE_LIMITS"]["add_activity"]
+    limited = rate_limit("add_activity", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    data = request.get_json() or {}
+    payload = validate_activity_payload(data)
+    name = payload["name"]
+    description = payload["description"]
 
     conn = get_db_connection()
     try:
@@ -146,6 +179,11 @@ def add_activity():
 
 @app.patch("/activities/<int:activity_id>/deactivate")
 def deactivate_activity(activity_id):
+    limits = app.config["RATE_LIMITS"]["activity_status"]
+    limited = rate_limit("activities_deactivate", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
     conn = get_db_connection()
     try:
         cur = conn.execute("UPDATE activities SET active = 0 WHERE id = ?", (activity_id,))
@@ -159,6 +197,11 @@ def deactivate_activity(activity_id):
 
 @app.patch("/activities/<int:activity_id>/activate")
 def activate_activity(activity_id):
+    limits = app.config["RATE_LIMITS"]["activity_status"]
+    limited = rate_limit("activities_activate", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
     conn = get_db_connection()
     try:
         cur = conn.execute("UPDATE activities SET active = 1 WHERE id = ?", (activity_id,))
@@ -197,6 +240,11 @@ def get_today():
 
 @app.delete("/activities/<int:activity_id>")
 def delete_activity(activity_id):
+    limits = app.config["RATE_LIMITS"]["delete_activity"]
+    limited = rate_limit("delete_activity", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
     conn = get_db_connection()
     try:
         row = conn.execute("SELECT active FROM activities WHERE id = ?", (activity_id,)).fetchone()
@@ -214,8 +262,18 @@ def delete_activity(activity_id):
 
 @app.post("/finalize_day")
 def finalize_day():
+    limits = app.config["RATE_LIMITS"]["finalize_day"]
+    limited = rate_limit("finalize_day", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
     data = request.get_json() or {}
     date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
+    # Validate date format if provided explicitly
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise ValidationError("Date must be in YYYY-MM-DD format")
 
     conn = get_db_connection()
     try:

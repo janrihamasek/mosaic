@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app import app
+from security import rate_limiter
 
 
 @pytest.fixture()
@@ -17,22 +18,15 @@ def client(tmp_path):
     conn.commit()
     conn.close()
 
+    rate_limiter._calls.clear()  # type: ignore[attr-defined]
+
     app.config.update(
         {
             "TESTING": True,
             "DB_PATH": str(db_path),
+            "API_KEY": None,
         }
     )
 
     with app.test_client() as client:
         yield client
-
-
-@pytest.fixture()
-def db_conn():
-    conn = sqlite3.connect(app.config["DB_PATH"])
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()

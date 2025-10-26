@@ -73,3 +73,48 @@ def test_today_and_finalize_day(client):
     response = client.get("/entries")
     entries = [e for e in response.get_json() if e["date"] == target_date]
     assert len(entries) == 2
+
+
+def test_add_entry_validation(client):
+    response = client.post("/add_entry", json={"activity": "", "date": "2024-15-01"})
+    assert response.status_code == 400
+    assert "error" in response.get_json()
+
+    long_note = "a" * 120
+    response = client.post(
+        "/add_entry",
+        json={"activity": "Run", "date": "2024-01-01", "value": "abc", "note": long_note},
+    )
+    assert response.status_code == 400
+
+
+def test_rate_limit_enforced(client):
+    from app import app
+
+    original = app.config["RATE_LIMITS"]["add_entry"]
+    app.config["RATE_LIMITS"]["add_entry"] = {"limit": 2, "window": 60}
+
+    try:
+        payload = {"date": "2024-01-01", "activity": "Test", "value": 1}
+        r1 = client.post("/add_entry", json=payload)
+        assert r1.status_code in (200, 201)
+        r2 = client.post("/add_entry", json=payload)
+        assert r2.status_code in (200, 201)
+        r3 = client.post("/add_entry", json=payload)
+        assert r3.status_code == 429
+    finally:
+        app.config["RATE_LIMITS"]["add_entry"] = original
+
+
+def test_api_key_enforced(client):
+    from app import app
+
+    app.config["API_KEY"] = "secret"
+    try:
+        resp = client.get("/entries")
+        assert resp.status_code == 401
+
+        resp = client.get("/entries", headers={"X-API-Key": "secret"})
+        assert resp.status_code == 200
+    finally:
+        app.config["API_KEY"] = None
