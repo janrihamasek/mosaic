@@ -9,6 +9,7 @@ import Today from './components/Today';
 import { fetchActivities, addActivity, deleteActivity, activateActivity, deactivateActivity } from './api';
 import { styles } from './styles/common';
 import Notification from './components/Notification';
+import CsvImportButton from './components/CsvImportButton';
 
 export default function App() {
   const [entries, setEntries] = useState([]);
@@ -114,6 +115,9 @@ export default function App() {
             activities={activeActivities}
             onNotify={showNotification}
           />
+          <div style={{ ...styles.flexRow, justifyContent: "flex-end", marginBottom: 12 }}>
+            <CsvImportButton onImported={refreshAll} onNotify={showNotification} />
+          </div>
           <EntryTable
             entries={entries}
             onDelete={deleteEntry}

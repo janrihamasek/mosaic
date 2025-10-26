@@ -4,9 +4,10 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
 
 ## Features
 - Activity catalogue with activation/deactivation and detail overview.
+- Activity categories for thematic grouping and richer analytics down the road.
 - Daily sheet (`Today` tab) for quick scoring of all active activities, including debounced auto-save.
 - Entry history with sorting, pagination, and inline delete.
-- CSV import helper for bootstrapping historical data.
+- CSV import helper (UI button + backend endpoint) for bootstrapping historical data.
 - Optional API key protection with basic rate limiting on mutating endpoints.
 
 ## Architecture
@@ -65,6 +66,7 @@ npm install
 npm start
 ```
 If no environment variable is set, the app falls back to `http://127.0.0.1:5000` (and the same for tests).
+Use the `Import CSV` button on the **Entries** tab to upload data through the `/import_csv` endpoint (expects headers `date,activity,value,note,description,category`).
 
 ## API Surface
 | Endpoint | Method | Purpose |
@@ -78,6 +80,7 @@ If no environment variable is set, the app falls back to `http://127.0.0.1:5000`
 | `/activities/<id>` | DELETE | Delete inactive activity |
 | `/today?date=YYYY-MM-DD` | GET | Daily sheet of active activities |
 | `/finalize_day` | POST | Ensure daily entries exist for active activities |
+| `/import_csv` | POST | Accept CSV upload and batch import/update entries |
 
 ## Recommended Next Steps
 1. Introduce error handling and loading states around network calls in the React components.

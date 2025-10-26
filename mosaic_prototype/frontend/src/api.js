@@ -97,3 +97,13 @@ export async function finalizeDay(dateStr) {
     body: JSON.stringify({ date: dateStr }),
   });
 }
+
+// --- IMPORT ---
+export async function importEntriesCsv(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request("/import_csv", {
+    method: "POST",
+    body: formData,
+  });
+}

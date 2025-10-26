@@ -1,10 +1,14 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import os
 import sqlite3
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
+
+from import_data import import_csv as run_import_csv
 from security import (
     ValidationError,
     rate_limit,
@@ -19,6 +23,7 @@ CORS(app)
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "../database/mosaic.db"
 DB_PATH = os.environ.get("MOSAIC_DB_PATH") or DEFAULT_DB_PATH
 app.config["DB_PATH"] = str(DB_PATH)
+app.config["_SCHEMA_READY"] = False
 app.config.setdefault(
     "RATE_LIMITS",
     {
@@ -28,16 +33,30 @@ app.config.setdefault(
         "delete_activity": {"limit": 30, "window": 60},
         "delete_entry": {"limit": 90, "window": 60},
         "finalize_day": {"limit": 10, "window": 60},
+        "import_csv": {"limit": 5, "window": 300},
     },
 )
 app.config["API_KEY"] = os.environ.get("MOSAIC_API_KEY")
 app.config.setdefault("PUBLIC_ENDPOINTS", {"home"})
+
+def ensure_schema(conn):
+    if app.config.get("_SCHEMA_READY"):
+        return
+
+    cursor = conn.execute("PRAGMA table_info(activities)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "category" not in columns:
+        conn.execute("ALTER TABLE activities ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+    app.config["_SCHEMA_READY"] = True
 
 
 def get_db_connection():
     db_path = app.config.get("DB_PATH", str(DB_PATH))
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    ensure_schema(conn)
     return conn
 
 
@@ -62,7 +81,14 @@ def handle_validation(error: ValidationError):
 def get_entries():
     conn = get_db_connection()
     try:
-        entries = conn.execute("SELECT * FROM entries ORDER BY date DESC").fetchall()
+        entries = conn.execute(
+            """
+            SELECT e.*, IFNULL(a.category, '') AS category, IFNULL(a.description, '') AS activity_description
+            FROM entries e
+            LEFT JOIN activities a ON a.name = e.activity
+            ORDER BY e.date DESC, a.category ASC, e.activity ASC
+            """
+        ).fetchall()
         return jsonify([dict(row) for row in entries])
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500
@@ -141,9 +167,13 @@ def get_activities():
     conn = get_db_connection()
     try:
         if show_all:
-            rows = conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM activities ORDER BY active DESC, category ASC, name ASC"
+            ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM activities WHERE active = 1 ORDER BY name ASC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM activities WHERE active = 1 ORDER BY active DESC, category ASC, name ASC"
+            ).fetchall()
         return jsonify([dict(r) for r in rows])
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500
@@ -161,13 +191,14 @@ def add_activity():
     data = request.get_json() or {}
     payload = validate_activity_payload(data)
     name = payload["name"]
+    category = payload["category"]
     description = payload["description"]
 
     conn = get_db_connection()
     try:
         conn.execute(
-            "INSERT INTO activities (name, description) VALUES (?, ?)",
-            (name, description)
+            "INSERT INTO activities (name, category, description) VALUES (?, ?, ?)",
+            (name, category, description)
         )
         conn.commit()
         return jsonify({"message": "Kategorie přidána"}), 201
@@ -222,6 +253,7 @@ def get_today():
             SELECT 
                 a.id AS activity_id,
                 a.name,
+                a.category,
                 a.description,
                 a.active,
                 e.id AS entry_id,
@@ -294,6 +326,39 @@ def finalize_day():
         return jsonify({"message": f"{created} missing entries added for {date}"}), 200
     finally:
         conn.close()
+
+
+@app.post("/import_csv")
+def import_csv_endpoint():
+    limits = app.config["RATE_LIMITS"]["import_csv"]
+    limited = rate_limit("import_csv", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    if "file" not in request.files:
+        return jsonify({"error": "Missing CSV file"}), 400
+
+    file = request.files["file"]
+    if not file or file.filename == "":
+        return jsonify({"error": "Missing CSV file"}), 400
+
+    filename = secure_filename(file.filename)
+    suffix = os.path.splitext(filename)[1] or ".csv"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+        summary = run_import_csv(tmp_path, app.config["DB_PATH"])
+    except Exception as exc:  # pragma: no cover - defensive
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        return jsonify({"error": f"Failed to import CSV: {exc}"}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    return jsonify({"message": "CSV import completed", "summary": summary}), 200
 
 
 

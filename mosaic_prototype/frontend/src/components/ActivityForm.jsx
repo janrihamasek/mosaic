@@ -3,20 +3,26 @@ import { styles } from '../styles/common';
 
 export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
   const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || !category.trim()) return;
     if (isSaving) return;
 
     setIsSaving(true);
     try {
-      await onSave({ name: name.trim(), description: description.trim() });
+      await onSave({
+        name: name.trim(),
+        category: category.trim(),
+        description: description.trim(),
+      });
       onNotify?.('Activity was created', 'success');
       await onDataChanged?.();
       setName('');
+      setCategory('');
       setDescription('');
     } catch (err) {
       onNotify?.(`Failed to create activity: ${err.message}`, 'error');
@@ -29,9 +35,17 @@ export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
     <form onSubmit={handleSubmit} style={styles.form}>
       <input
         type="text"
-        placeholder="Activity name"
+        placeholder="Activity"
         value={name}
         onChange={e => setName(e.target.value)}
+        required
+        style={styles.input}
+      />
+      <input
+        type="text"
+        placeholder="Category"
+        value={category}
+        onChange={e => setCategory(e.target.value)}
         required
         style={styles.input}
       />

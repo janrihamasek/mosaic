@@ -13,23 +13,42 @@ export default function Today({ onDataChanged, onNotify }) {
   const debounceRef = useRef(null);
   const SAVE_DEBOUNCE_MS = 600;
 
+  const sortRows = useCallback((list) => {
+    return [...list].sort((a, b) => {
+      const aDone = Number(a.value) > 0 ? 1 : 0;
+      const bDone = Number(b.value) > 0 ? 1 : 0;
+      if (aDone !== bDone) {
+        return aDone - bDone;
+      }
+      const catCompare = (a.category || "").localeCompare(b.category || "", undefined, {
+        sensitivity: "base",
+      });
+      if (catCompare !== 0) {
+        return catCompare;
+      }
+      return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
+    });
+  }, []);
+
   const load = useCallback(async (targetDate) => {
     const effectiveDate = targetDate ?? date;
     setLoading(true);
     try {
       const data = await fetchToday(effectiveDate);
-      setRows(
-        data
-          .map((r) => ({ ...r, value: r.value ?? 0, note: r.note ?? "" }))
-          .sort((a, b) => (a.value > 0 ? 1 : -1))
-      );
+      const formatted = data.map((r) => ({
+        ...r,
+        category: r.category ?? "",
+        value: r.value ?? 0,
+        note: r.note ?? "",
+      }));
+      setRows(sortRows(formatted));
     } catch (err) {
       onNotify?.(`Failed to load day overview: ${err.message}`, "error");
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [date, onNotify]);
+  }, [date, onNotify, sortRows]);
 
   useEffect(() => {
     load(date);
@@ -172,14 +191,14 @@ export default function Today({ onDataChanged, onNotify }) {
 
   const handleValueChange = (row, newValue) => {
     const updatedRow = { ...row, value: Number(newValue) || 0 };
-    setRows((prev) => prev.map((p) => (p.name === row.name ? updatedRow : p)));
+    setRows((prev) => sortRows(prev.map((p) => (p.name === row.name ? updatedRow : p))));
     markRowDirty(row.name, updatedRow);
   };
 
   const handleNoteChange = (row, newNote) => {
     const trimmed = newNote.slice(0, 100);
     const updatedRow = { ...row, note: trimmed };
-    setRows((prev) => prev.map((p) => (p.name === row.name ? updatedRow : p)));
+    setRows((prev) => sortRows(prev.map((p) => (p.name === row.name ? updatedRow : p))));
     markRowDirty(row.name, updatedRow);
   };
 
@@ -198,9 +217,9 @@ export default function Today({ onDataChanged, onNotify }) {
           style={styles.input}
         />
         <div style={styles.flexRow}>
-          {autoSaving && <div style={styles.loadingText}>💾 Auto-saving…</div>}
+          {autoSaving && <div style={styles.loadingText}>💾 Auto-saving...</div>}
           {!autoSaving && dirtyCount > 0 && (
-            <div style={styles.loadingText}>{dirtyCount} change(s) pending…</div>
+            <div style={styles.loadingText}>{dirtyCount} change(s) pending...</div>
           )}
           <button
             style={{ ...styles.button, opacity: saving ? 0.7 : 1 }}
@@ -212,7 +231,7 @@ export default function Today({ onDataChanged, onNotify }) {
         </div>
       </div>
 
-      {loading && <div style={styles.loadingText}>⏳ Loading today&apos;s activities…</div>}
+      {loading && <div style={styles.loadingText}>⏳ Loading today&apos;s activities...</div>}
 
       <table style={styles.table}>
         <thead>
@@ -231,7 +250,7 @@ export default function Today({ onDataChanged, onNotify }) {
                 ...(r.value > 0 ? styles.highlightRow : {}),
               }}
             >
-              <td>{r.name}</td>
+              <td title={r.category ? `Category: ${r.category}` : "Category: N/A"}>{r.name}</td>
               <td style={{ width: 120 }}>
                 <select
                   value={r.value}

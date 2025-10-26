@@ -28,17 +28,28 @@ export default function ActivityTable({
     }
   };
 
-  // aktivní nahoře
-  const sortedActivities = [...activities].sort((a, b) => b.active - a.active);
+  const sortedActivities = [...activities].sort((a, b) => {
+    if (a.active !== b.active) {
+      return a.active ? -1 : 1;
+    }
+    const catCompare = (a.category || "").localeCompare(b.category || "", undefined, {
+      sensitivity: "base",
+    });
+    if (catCompare !== 0) {
+      return catCompare;
+    }
+    return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
+  });
 
   return (
     <div>
-      {loading && <div style={styles.loadingText}>⏳ Loading activities…</div>}
+      {loading && <div style={styles.loadingText}>⏳ Loading activities...</div>}
 
       <table style={styles.table}>
         <thead>
           <tr style={styles.tableHeader}>
-            <th>Name</th>
+            <th>Activity</th>
+            <th>Category</th>
             <th>Description</th>
             <th>Status</th>
             <th></th>
@@ -49,11 +60,13 @@ export default function ActivityTable({
             <tr key={a.id} style={styles.tableRow}>
               <td
                 style={{ cursor: "pointer", textDecoration: "underline" }}
+                title={a.category ? `Category: ${a.category}` : "Category: N/A"}
                 onClick={() => onOpenDetail?.(a)}
               >
                 {a.name}
               </td>
-              <td>{a.description}</td>
+              <td>{a.category || "N/A"}</td>
+              <td>{a.description || "N/A"}</td>
               <td>{a.active ? "Active" : "Inactive"}</td>
               <td style={styles.tableCellActions}>
                 {a.active ? (
@@ -62,7 +75,7 @@ export default function ActivityTable({
                     style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
                     disabled={actionId === a.id}
                   >
-                    {actionId === a.id ? "Working…" : "Deactivate"}
+                    {actionId === a.id ? "Working..." : "Deactivate"}
                   </button>
                 ) : (
                   <>
@@ -71,14 +84,14 @@ export default function ActivityTable({
                       style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
                       disabled={actionId === a.id}
                     >
-                      {actionId === a.id ? "Working…" : "Activate"}
+                      {actionId === a.id ? "Working..." : "Activate"}
                     </button>
                     <button
                       onClick={() => handleAction(onDelete, a.id, "Activity was deleted", "delete activity")}
                       style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
                       disabled={actionId === a.id}
                     >
-                      {actionId === a.id ? "Working…" : "Delete"}
+                      {actionId === a.id ? "Working..." : "Delete"}
                     </button>
                   </>
                 )}
@@ -87,7 +100,7 @@ export default function ActivityTable({
           ))}
           {!loading && sortedActivities.length === 0 && (
             <tr>
-              <td colSpan={4} style={{ padding: "12px", color: "#888" }}>
+              <td colSpan={5} style={{ padding: "12px", color: "#888" }}>
                 No activities to display.
               </td>
             </tr>

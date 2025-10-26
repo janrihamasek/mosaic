@@ -13,7 +13,7 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(col);
-      setSortDir('asc');
+      setSortDir(col === 'date' ? 'desc' : 'asc');
     }
   };
 
@@ -31,15 +31,28 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
     }
   };
 
+  const stringCompare = (a = '', b = '') => a.localeCompare(b, undefined, { sensitivity: 'base' });
+  const numberCompare = (a = 0, b = 0) => Number(a) - Number(b);
+  const comparators = {
+    date: (a, b) => stringCompare(a.date ?? '', b.date ?? ''),
+    activity: (a, b) => stringCompare(a.activity ?? '', b.activity ?? ''),
+    category: (a, b) => stringCompare(a.category ?? '', b.category ?? ''),
+    value: (a, b) => numberCompare(a.value ?? 0, b.value ?? 0),
+    note: (a, b) => stringCompare(a.note ?? '', b.note ?? ''),
+  };
+
   const sortedEntries = [...entries].sort((a, b) => {
-    let valA = a[sortColumn];
-    let valB = b[sortColumn];
-    if (sortColumn === 'value') {
-      valA = Number(valA);
-      valB = Number(valB);
+    const primaryComparator = comparators[sortColumn] || (() => 0);
+    let result = primaryComparator(a, b);
+    if (sortDir === 'desc') result *= -1;
+    if (result !== 0) return result;
+
+    const tieBreakers = [comparators.category, comparators.activity, comparators.date];
+    for (const cmp of tieBreakers) {
+      if (!cmp) continue;
+      const tie = cmp(a, b);
+      if (tie !== 0) return tie;
     }
-    if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-    if (valA > valB) return sortDir === 'asc' ? 1 : -1;
     return 0;
   });
 
@@ -47,13 +60,14 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
 
   return (
     <div>
-      {loading && <div style={styles.loadingText}>⏳ Loading entries…</div>}
+      {loading && <div style={styles.loadingText}>⏳ Loading entries...</div>}
 
       <table style={styles.table}>
         <thead>
           <tr style={styles.tableHeader}>
             <th onClick={() => handleSort('date')} style={{ cursor: "pointer" }}>Date</th>
             <th onClick={() => handleSort('activity')} style={{ cursor: "pointer" }}>Activity</th>
+            <th onClick={() => handleSort('category')} style={{ cursor: "pointer" }}>Category</th>
             <th onClick={() => handleSort('value')} style={{ cursor: "pointer" }}>Value</th>
             <th>Note</th>
             <th></th>
@@ -63,8 +77,9 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
           {paginatedEntries.map((e, idx) => (
             <tr key={e.id ?? idx} style={styles.tableRow}>
               <td>{e.date}</td>
-              <td>{e.activity}</td>
-              <td>{e.value}</td>
+              <td title={e.category ? `Category: ${e.category}` : "Category: N/A"}>{e.activity}</td>
+              <td>{e.category || 'N/A'}</td>
+              <td>{Number(e.value ?? 0)}</td>
               <td>{e.note}</td>
               <td style={{ width: "10%", textAlign: "right" }}>
                 <button
@@ -72,14 +87,14 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
                   style={{ ...styles.button, opacity: deletingId === (e.id ?? idx) ? 0.6 : 1 }}
                   disabled={deletingId === (e.id ?? idx)}
                 >
-                  {deletingId === (e.id ?? idx) ? 'Deleting…' : 'Delete'}
+                  {deletingId === (e.id ?? idx) ? 'Deleting...' : 'Delete'}
                 </button>
               </td>
             </tr>
           ))}
           {!loading && paginatedEntries.length === 0 && (
             <tr>
-              <td colSpan={5} style={{ padding: "12px", color: "#888" }}>
+              <td colSpan={6} style={{ padding: "12px", color: "#888" }}>
                 No entries to display.
               </td>
             </tr>
@@ -94,7 +109,7 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
             onClick={() => setPage(page + 1)}
             disabled={loading}
           >
-            {loading ? 'Loading…' : 'Load more'}
+            {loading ? 'Loading...' : 'Load more'}
           </button>
         </div>
       )}

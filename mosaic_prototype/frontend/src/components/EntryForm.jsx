@@ -8,6 +8,11 @@ export default function EntryForm({ onSave, onDataChanged, activities = [], onNo
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const selectedActivity = activities.find(a => a.name === activity);
+  const activityTitle = selectedActivity?.category
+    ? `Category: ${selectedActivity.category}`
+    : "Category: N/A";
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isSaving) return;
@@ -40,12 +45,16 @@ export default function EntryForm({ onSave, onDataChanged, activities = [], onNo
       <select
         value={activity}
         onChange={e => setActivity(e.target.value)}
-        style={{ ...styles.input, width: "15%" }}
+        style={{ ...styles.input, width: "20%" }}
         required
+        aria-label="Activity"
+        title={activityTitle}
       >
         <option value="">Select activity...</option>
         {activities.map(a => (
-          <option key={a.id} value={a.name}>{a.name}</option>
+          <option key={a.id} value={a.name}>
+            {a.category ? `${a.category} - ${a.name}` : a.name}
+          </option>
         ))}
       </select>
       <select
@@ -61,7 +70,7 @@ export default function EntryForm({ onSave, onDataChanged, activities = [], onNo
         placeholder="Note (max 100 chars)"
         value={note}
         onChange={e => setNote(e.target.value.slice(0, 100))}
-        style={{ ...styles.input, width: "40%" }}
+        style={{ ...styles.input, width: "35%" }}
       />
       <button
         type="submit"

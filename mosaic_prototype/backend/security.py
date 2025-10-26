@@ -120,16 +120,22 @@ def validate_activity_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValidationError("Invalid JSON payload")
 
-    require_fields(payload, ("name",))
+    require_fields(payload, ("name", "category"))
     name = payload["name"].strip()
     if not name:
         raise ValidationError("Activity name must not be empty")
     ensure_length(name, "name", 80)
+
+    category = payload["category"].strip()
+    if not category:
+        raise ValidationError("Category must not be empty")
+    ensure_length(category, "category", 80)
 
     description = (payload.get("description") or "").strip()
     ensure_length(description, "description", 180)
 
     return {
         "name": name,
+        "category": category,
         "description": description,
     }

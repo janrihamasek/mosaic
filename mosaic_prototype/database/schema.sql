@@ -10,6 +10,7 @@ CREATE TABLE entries (
 CREATE TABLE IF NOT EXISTS activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL DEFAULT '',
     description TEXT,
     active INTEGER NOT NULL DEFAULT 1
 );

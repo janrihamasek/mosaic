@@ -32,15 +32,16 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
   return (
     <div style={styles.card}>
       <div style={styles.rowBetween}>
-        <h3 style={{ margin: 0 }}>{activity.name} — overview</h3>
+        <h3 style={{ margin: 0 }}>{activity.name} - overview</h3>
         <button style={styles.button} onClick={onClose}>Close</button>
       </div>
-      <p style={{ marginTop: 8 }}>{activity.description}</p>
-      {loading && <div style={styles.loadingText}>⏳ Loading activity history…</div>}
+      <p style={{ marginTop: 8 }}><b>Category:</b> {activity.category || 'N/A'}</p>
+      <p style={{ marginTop: 8 }}>{activity.description || 'N/A'}</p>
+      {loading && <div style={styles.loadingText}>⏳ Loading activity history...</div>}
       <ul style={{ marginTop: 8 }}>
         <li><b>Total entries:</b> {stats.count}</li>
         <li><b>Average value:</b> {stats.avg.toFixed(2)}</li>
-        <li><b>Last entry:</b> {stats.last ? `${stats.last.date} (value ${stats.last.value})` : '—'}</li>
+        <li><b>Last entry:</b> {stats.last ? `${stats.last.date} (value ${stats.last.value})` : 'N/A'}</li>
       </ul>
     </div>
   );
