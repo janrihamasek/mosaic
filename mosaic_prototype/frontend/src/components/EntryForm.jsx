@@ -40,7 +40,7 @@ export default function EntryForm({ onSave, onDataChanged, activities = [], onNo
       <select
         value={activity}
         onChange={e => setActivity(e.target.value)}
-        style={{ ...styles.input, width: "20%" }}
+        style={{ ...styles.input, width: "15%" }}
         required
       >
         <option value="">Select activity...</option>
@@ -61,11 +61,11 @@ export default function EntryForm({ onSave, onDataChanged, activities = [], onNo
         placeholder="Note (max 100 chars)"
         value={note}
         onChange={e => setNote(e.target.value.slice(0, 100))}
-        style={{ ...styles.input, width: "35%" }}
+        style={{ ...styles.input, width: "40%" }}
       />
       <button
         type="submit"
-        style={{ ...styles.button, marginLeft: "25px", opacity: isSaving ? 0.7 : 1 }}
+        style={{ ...styles.button, opacity: isSaving ? 0.7 : 1 }}
         disabled={isSaving}
       >
         {isSaving ? 'Saving...' : 'Enter'}

@@ -1,17 +1,21 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 app = Flask(__name__)
 CORS(app)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "../database/mosaic.db")
+DEFAULT_DB_PATH = Path(__file__).resolve().parent / "../database/mosaic.db"
+DB_PATH = os.environ.get("MOSAIC_DB_PATH") or DEFAULT_DB_PATH
+app.config["DB_PATH"] = str(DB_PATH)
 
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    db_path = app.config.get("DB_PATH", str(DB_PATH))
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -4,7 +4,7 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
 
 ## Features
 - Activity catalogue with activation/deactivation and detail overview.
-- Daily sheet (`Today` tab) for quick scoring of all active activities.
+- Daily sheet (`Today` tab) for quick scoring of all active activities, including debounced auto-save.
 - Entry history with sorting, pagination, and inline delete.
 - CSV import helper for bootstrapping historical data.
 
@@ -35,10 +35,20 @@ python3 import_data.py  # reads data_for_mosaic - january.csv
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install Flask flask-cors
+pip install -r requirements.txt
 python app.py
 ```
 By default the API listens on `http://127.0.0.1:5000`.
+Set `MOSAIC_DB_PATH` to point the Flask app at a different SQLite file (useful for tests/CI).
+
+To run the backend test suite:
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pytest
+```
 
 ### 3. Run the frontend
 Configure the API origin via environment variable (Create React App reads `REACT_APP_*` at build time):
