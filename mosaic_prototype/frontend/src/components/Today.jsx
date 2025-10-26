@@ -1,20 +1,34 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { fetchToday, addEntry, finalizeDay } from "../api";
 import { styles } from "../styles/common";
 
-export default function Today({ onDataChanged }) {
+export default function Today({ onDataChanged, onNotify }) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rows, setRows] = useState([]);
-  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const load = async (d = date) => {
-    const data = await fetchToday(d);
-    setRows(
-      data
-        .map(r => ({ ...r, value: r.value ?? 0, note: r.note ?? "" }))
-        .sort((a, b) => (a.value > 0 ? 1 : -1))
-    );
-  };
+  const load = useCallback(async (targetDate) => {
+    const effectiveDate = targetDate ?? date;
+    setLoading(true);
+    try {
+      const data = await fetchToday(effectiveDate);
+      setRows(
+        data
+          .map((r) => ({ ...r, value: r.value ?? 0, note: r.note ?? "" }))
+          .sort((a, b) => (a.value > 0 ? 1 : -1))
+      );
+    } catch (err) {
+      onNotify?.(`Failed to load day overview: ${err.message}`, "error");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [date, onNotify]);
+
+  useEffect(() => {
+    load(date);
+  }, [date, load]);
 
   useEffect(() => {
     const checkFinalize = async () => {
@@ -22,30 +36,37 @@ export default function Today({ onDataChanged }) {
       const midnight = new Date();
       midnight.setHours(0, 0, 0, 0);
       if (now.getTime() - midnight.getTime() < 60 * 1000) {
-        await finalizeDay(date);
+        try {
+          await finalizeDay(date);
+        } catch (err) {
+          onNotify?.(`Failed to finalize day: ${err.message}`, "error");
+        }
       }
     };
     const interval = setInterval(checkFinalize, 60 * 1000);
     return () => clearInterval(interval);
-  }, [date]);
-
-  useEffect(() => {
-    load();
-  }, []);
+  }, [date, onNotify]);
 
   const handleSaveAll = async () => {
-    for (const row of rows) {
-      await addEntry({
-        date,
-        activity: row.name,
-        value: Number(row.value) || 0,
-        note: row.note || ""
-      });
+    if (saving) return;
+    setSaving(true);
+    try {
+      for (const row of rows) {
+        await addEntry({
+          date,
+          activity: row.name,
+          value: Number(row.value) || 0,
+          note: row.note || "",
+        });
+      }
+      onNotify?.("Changes saved", "success");
+      await onDataChanged?.();
+      await load(date);
+    } catch (err) {
+      onNotify?.(`Failed to save changes: ${err.message}`, "error");
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
-    await onDataChanged?.();
-    setTimeout(() => setSaved(false), 3000);
-    await load();
   };
 
   return (
@@ -54,14 +75,24 @@ export default function Today({ onDataChanged }) {
         <input
           type="date"
           value={date}
-          onChange={e => { setDate(e.target.value); load(e.target.value); }}
+          onChange={(e) => {
+            const newDate = e.target.value;
+            setDate(newDate);
+          }}
           style={styles.input}
         />
         <div style={styles.flexRow}>
-          {saved && <div style={styles.successMessage}>✅ Changes saved</div>}
-          <button style={styles.button} onClick={handleSaveAll}>Save all changes</button>
+          <button
+            style={{ ...styles.button, opacity: saving ? 0.7 : 1 }}
+            onClick={handleSaveAll}
+            disabled={saving || rows.length === 0}
+          >
+            {saving ? "Saving..." : "Save all changes"}
+          </button>
         </div>
       </div>
+
+      {loading && <div style={styles.loadingText}>⏳ Loading today&apos;s activities…</div>}
 
       <table style={styles.table}>
         <thead>
@@ -86,11 +117,16 @@ export default function Today({ onDataChanged }) {
                   value={r.value}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setRows(prev => prev.map(p => p.name === r.name ? { ...p, value: v } : p));
+                    setRows((prev) =>
+                      prev.map((p) => (p.name === r.name ? { ...p, value: v } : p))
+                    );
                   }}
                   style={{ ...styles.input, width: "100%" }}
+                  disabled={saving}
                 >
-                  {[0,1,2,3,4,5].map(v => <option key={v}>{v}</option>)}
+                  {[0, 1, 2, 3, 4, 5].map((v) => (
+                    <option key={v}>{v}</option>
+                  ))}
                 </select>
               </td>
               <td>
@@ -98,14 +134,24 @@ export default function Today({ onDataChanged }) {
                   value={r.note}
                   onChange={(e) => {
                     const v = e.target.value.slice(0, 100);
-                    setRows(prev => prev.map(p => p.name === r.name ? { ...p, note: v } : p));
+                    setRows((prev) =>
+                      prev.map((p) => (p.name === r.name ? { ...p, note: v } : p))
+                    );
                   }}
                   style={{ ...styles.input, width: "100%" }}
                   placeholder="Note (max 100 chars)"
+                  disabled={saving}
                 />
               </td>
             </tr>
           ))}
+          {!loading && rows.length === 0 && (
+            <tr>
+              <td colSpan={3} style={{ padding: "12px", color: "#888" }}>
+                No activities for the selected day.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

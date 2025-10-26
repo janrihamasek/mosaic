@@ -8,16 +8,24 @@ export default function ActivityTable({
   onDelete,
   onOpenDetail,
   onDataChanged,
+  onNotify,
+  loading = false,
 }) {
-  const [message, setMessage] = useState("");
+  const [actionId, setActionId] = useState(null);
 
   // jednotné volání akcí + notifikace
-  const handleAction = async (actionFn, id, msg) => {
+  const handleAction = async (actionFn, id, successMessage, errorVerb) => {
     if (!actionFn) return;
-    await actionFn(id);
-    setMessage(msg);
-    setTimeout(() => setMessage(""), 3000);
-    await onDataChanged?.();
+    setActionId(id);
+    try {
+      await actionFn(id);
+      onNotify?.(successMessage, 'success');
+      await onDataChanged?.();
+    } catch (err) {
+      onNotify?.(`Failed to ${errorVerb}: ${err.message}`, 'error');
+    } finally {
+      setActionId(null);
+    }
   };
 
   // aktivní nahoře
@@ -25,7 +33,7 @@ export default function ActivityTable({
 
   return (
     <div>
-      {message && <div style={styles.successMessage}>✅ {message}</div>}
+      {loading && <div style={styles.loadingText}>⏳ Loading activities…</div>}
 
       <table style={styles.table}>
         <thead>
@@ -50,30 +58,40 @@ export default function ActivityTable({
               <td style={styles.tableCellActions}>
                 {a.active ? (
                   <button
-                    onClick={() => handleAction(onDeactivate, a.id, "Deactivated")}
-                    style={styles.button}
+                    onClick={() => handleAction(onDeactivate, a.id, "Activity deactivated", "deactivate activity")}
+                    style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
+                    disabled={actionId === a.id}
                   >
-                    Deactivate
+                    {actionId === a.id ? "Working…" : "Deactivate"}
                   </button>
                 ) : (
                   <>
                     <button
-                      onClick={() => handleAction(onActivate, a.id, "Activated")}
-                      style={styles.button}
+                      onClick={() => handleAction(onActivate, a.id, "Activity activated", "activate activity")}
+                      style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
+                      disabled={actionId === a.id}
                     >
-                      Activate
+                      {actionId === a.id ? "Working…" : "Activate"}
                     </button>
                     <button
-                      onClick={() => handleAction(onDelete, a.id, "Activity was deleted")}
-                      style={styles.button}
+                      onClick={() => handleAction(onDelete, a.id, "Activity was deleted", "delete activity")}
+                      style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
+                      disabled={actionId === a.id}
                     >
-                      Delete
+                      {actionId === a.id ? "Working…" : "Delete"}
                     </button>
                   </>
                 )}
               </td>
             </tr>
           ))}
+          {!loading && sortedActivities.length === 0 && (
+            <tr>
+              <td colSpan={4} style={{ padding: "12px", color: "#888" }}>
+                No activities to display.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

@@ -2,15 +2,23 @@ import React, { useEffect, useMemo, useState } from "react";
 import { fetchEntries } from "../api";
 import { styles } from "../styles/common";
 
-export default function ActivityDetail({ activity, onClose }) {
+export default function ActivityDetail({ activity, onClose, onNotify }) {
   const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const data = await fetchEntries();
-      setEntries(data.filter(e => e.activity === activity.name));
+      setLoading(true);
+      try {
+        const data = await fetchEntries();
+        setEntries(data.filter(e => e.activity === activity.name));
+      } catch (err) {
+        onNotify?.(`Failed to load activity detail: ${err.message}`, 'error');
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [activity]);
+  }, [activity, onNotify]);
 
   const stats = useMemo(() => {
     if (!entries.length) return { count: 0, avg: 0, last: null };
@@ -28,6 +36,7 @@ export default function ActivityDetail({ activity, onClose }) {
         <button style={styles.button} onClick={onClose}>Close</button>
       </div>
       <p style={{ marginTop: 8 }}>{activity.description}</p>
+      {loading && <div style={styles.loadingText}>⏳ Loading activity history…</div>}
       <ul style={{ marginTop: 8 }}>
         <li><b>Total entries:</b> {stats.count}</li>
         <li><b>Average value:</b> {stats.avg.toFixed(2)}</li>

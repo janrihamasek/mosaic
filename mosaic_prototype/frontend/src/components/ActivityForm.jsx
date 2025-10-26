@@ -1,25 +1,32 @@
 import React, { useState } from 'react';
 import { styles } from '../styles/common';
 
-export default function ActivityForm({ onSave, onDataChanged }) {
+export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
-    await onSave({ name: name.trim(), description: description.trim() });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-    await onDataChanged?.();
-    setName('');
-    setDescription('');
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onSave({ name: name.trim(), description: description.trim() });
+      onNotify?.('Activity was created', 'success');
+      await onDataChanged?.();
+      setName('');
+      setDescription('');
+    } catch (err) {
+      onNotify?.(`Failed to create activity: ${err.message}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} style={styles.form}>
-      {saved && <div style={styles.successMessage}>✅ Activity was created</div>}
       <input
         type="text"
         placeholder="Activity name"
@@ -35,8 +42,12 @@ export default function ActivityForm({ onSave, onDataChanged }) {
         onChange={e => setDescription(e.target.value)}
         style={styles.input}
       />
-      <button type="submit" style={styles.button}>
-        Enter
+      <button
+        type="submit"
+        style={{ ...styles.button, opacity: isSaving ? 0.7 : 1 }}
+        disabled={isSaving}
+      >
+        {isSaving ? 'Saving...' : 'Enter'}
       </button>
     </form>
   );

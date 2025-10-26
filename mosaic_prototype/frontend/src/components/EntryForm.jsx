@@ -1,28 +1,35 @@
 import React, { useState } from 'react';
 import { styles } from '../styles/common';
 
-export default function EntryForm({ onSave, onDataChanged, activities = [] }) {
+export default function EntryForm({ onSave, onDataChanged, activities = [], onNotify }) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [activity, setActivity] = useState('');
   const [value, setValue] = useState(0);
   const [note, setNote] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await onSave({ date, activity, value: parseFloat(value) || 0, note: note.trim() });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-    await onDataChanged?.();
-    setDate(new Date().toISOString().slice(0, 10));
-    setActivity('');
-    setValue(0);
-    setNote('');
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onSave({ date, activity, value: parseFloat(value) || 0, note: note.trim() });
+      onNotify?.('Entry was saved', 'success');
+      await onDataChanged?.();
+      setDate(new Date().toISOString().slice(0, 10));
+      setActivity('');
+      setValue(0);
+      setNote('');
+    } catch (err) {
+      onNotify?.(`Failed to save entry: ${err.message}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} style={styles.form}>
-      {saved && <div style={styles.successMessage}>✅ Entry was saved</div>}
       <input
         type="date"
         value={date}
@@ -56,8 +63,12 @@ export default function EntryForm({ onSave, onDataChanged, activities = [] }) {
         onChange={e => setNote(e.target.value.slice(0, 100))}
         style={{ ...styles.input, width: "35%" }}
       />
-      <button type="submit" style={{ ...styles.button, marginLeft: "25px" }}>
-        Enter
+      <button
+        type="submit"
+        style={{ ...styles.button, marginLeft: "25px", opacity: isSaving ? 0.7 : 1 }}
+        disabled={isSaving}
+      >
+        {isSaving ? 'Saving...' : 'Enter'}
       </button>
     </form>
   );

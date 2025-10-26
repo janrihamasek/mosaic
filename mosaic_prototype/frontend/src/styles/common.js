@@ -95,7 +95,7 @@ export const styles = {
     fontWeight: "bold",
     color: "#fff",
   },
-    cardContainer: {
+  cardContainer: {
     border: "1px solid #444",
     borderRadius: "8px",
     padding: "16px",
@@ -103,5 +103,32 @@ export const styles = {
     color: "#ddd",
     marginBottom: "20px",
     boxShadow: "0 0 10px rgba(224, 199, 199, 0.3)",
+  },
+  toastContainer: {
+    position: "fixed",
+    top: "20px",
+    right: "20px",
+    zIndex: 1000,
+  },
+  toast: {
+    minWidth: "240px",
+    padding: "10px 14px",
+    borderRadius: "6px",
+    backgroundColor: "#2a2b2f",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+  },
+  toastSuccess: {
+    color: "#7cd992",
+  },
+  toastError: {
+    color: "#f28b82",
+  },
+  toastInfo: {
+    color: "#8ab4f8",
+  },
+  loadingText: {
+    color: "#9ba3af",
+    fontStyle: "italic",
+    marginTop: "10px",
   },
 };

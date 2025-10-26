@@ -1,71 +1,99 @@
-const BASE_URL = "http://127.0.0.1:5000";
+const DEFAULT_BASE_URL = "http://127.0.0.1:5000";
+const TEST_BASE_URL = "http://127.0.0.1:5000";
+
+const getBaseUrl = () => {
+  const envUrl = process.env.REACT_APP_API_BASE_URL;
+  if (envUrl && envUrl.trim().length > 0) {
+    return envUrl.trim().replace(/\/+$/, "");
+  }
+  if (process.env.NODE_ENV === "test") {
+    return TEST_BASE_URL;
+  }
+  return DEFAULT_BASE_URL;
+};
+
+const BASE_URL = getBaseUrl();
+
+async function request(path, options) {
+  const res = await fetch(`${BASE_URL}${path}`, options);
+  const contentType = res.headers?.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+  let payload = null;
+
+  if (isJson) {
+    try {
+      payload = await res.json();
+    } catch (err) {
+      payload = null;
+    }
+  } else {
+    payload = await res.text();
+  }
+
+  if (!res.ok) {
+    const message =
+      (payload && typeof payload === "object" && payload.error) ||
+      (typeof payload === "string" && payload.trim().length > 0 ? payload : null) ||
+      res.statusText ||
+      "Request failed";
+    throw new Error(message);
+  }
+
+  return payload;
+}
 
 // --- ENTRIES ---
 export async function fetchEntries() {
-  const res = await fetch(`${BASE_URL}/entries`);
-  return res.json();
+  return request("/entries");
 }
 
 export async function addEntry(entry) {
-  const res = await fetch(`${BASE_URL}/add_entry`, {
+  return request("/add_entry", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(entry),
   });
-  return res.json();
 }
 
 export async function deleteEntry(id) {
-  const res = await fetch(`${BASE_URL}/entries/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`Failed to delete entry ${id}`);
-  return res.json?.() ?? null;
+  return request(`/entries/${id}`, { method: "DELETE" });
 }
 
 // --- ACTIVITIES ---
 export async function fetchActivities({ all = false } = {}) {
-  const res = await fetch(`${BASE_URL}/activities${all ? "?all=true" : ""}`);
-  return res.json();
+  return request(`/activities${all ? "?all=true" : ""}`);
 }
 
 export async function addActivity(activity) {
-  const res = await fetch(`${BASE_URL}/add_activity`, {
+  return request("/add_activity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(activity),
   });
-  return res.json();
 }
 
 export async function deactivateActivity(id) {
-  const res = await fetch(`${BASE_URL}/activities/${id}/deactivate`, { method: "PATCH" });
-  if (!res.ok) throw new Error(`Failed to deactivate activity ${id}`);
-  return res.json();
+  return request(`/activities/${id}/deactivate`, { method: "PATCH" });
 }
 
 export async function activateActivity(id) {
-  const res = await fetch(`${BASE_URL}/activities/${id}/activate`, { method: "PATCH" });
-  if (!res.ok) throw new Error(`Failed to activate activity ${id}`);
-  return res.json();
+  return request(`/activities/${id}/activate`, { method: "PATCH" });
 }
 
 export async function deleteActivity(id) {
-  const res = await fetch(`${BASE_URL}/activities/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`Failed to delete activity ${id}`);
-  return res.json?.() ?? null;
+  return request(`/activities/${id}`, { method: "DELETE" });
 }
 
 // --- TODAY ---
 export async function fetchToday(dateStr) {
   const qs = dateStr ? `?date=${encodeURIComponent(dateStr)}` : "";
-  const res = await fetch(`${BASE_URL}/today${qs}`);
-  return res.json();
+  return request(`/today${qs}`);
 }
 
 export async function finalizeDay(dateStr) {
-  const res = await fetch(`${BASE_URL}/finalize_day`, {
+  return request("/finalize_day", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ date: dateStr }),
   });
-  return res.json();
 }

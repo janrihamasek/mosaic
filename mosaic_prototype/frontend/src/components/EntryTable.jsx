@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { styles } from '../styles/common';
 
-export default function EntryTable({ entries, onDelete, onDataChanged }) {
+export default function EntryTable({ entries, onDelete, onDataChanged, loading = false, onNotify }) {
   const [sortColumn, setSortColumn] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
-  const [deleted, setDeleted] = useState(false);
   const [page, setPage] = useState(1);
+  const [deletingId, setDeletingId] = useState(null);
   const pageSize = 20;
 
   const handleSort = (col) => {
@@ -18,10 +18,17 @@ export default function EntryTable({ entries, onDelete, onDataChanged }) {
   };
 
   const handleDelete = async (id) => {
-    await onDelete?.(id);
-    setDeleted(true);
-    setTimeout(() => setDeleted(false), 3000);
-    await onDataChanged?.();
+    if (deletingId !== null) return;
+    setDeletingId(id);
+    try {
+      await onDelete?.(id);
+      onNotify?.('Entry was deleted', 'success');
+      await onDataChanged?.();
+    } catch (err) {
+      onNotify?.(`Failed to delete entry: ${err.message}`, 'error');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const sortedEntries = [...entries].sort((a, b) => {
@@ -40,7 +47,7 @@ export default function EntryTable({ entries, onDelete, onDataChanged }) {
 
   return (
     <div>
-      {deleted && <div style={styles.successMessage}>✅ Entry was deleted</div>}
+      {loading && <div style={styles.loadingText}>⏳ Loading entries…</div>}
 
       <table style={styles.table}>
         <thead>
@@ -60,19 +67,34 @@ export default function EntryTable({ entries, onDelete, onDataChanged }) {
               <td>{e.value}</td>
               <td>{e.note}</td>
               <td style={{ width: "10%", textAlign: "right" }}>
-                <button onClick={() => handleDelete(e.id ?? idx)} style={styles.button}>
-                  Delete
+                <button
+                  onClick={() => handleDelete(e.id ?? idx)}
+                  style={{ ...styles.button, opacity: deletingId === (e.id ?? idx) ? 0.6 : 1 }}
+                  disabled={deletingId === (e.id ?? idx)}
+                >
+                  {deletingId === (e.id ?? idx) ? 'Deleting…' : 'Delete'}
                 </button>
               </td>
             </tr>
           ))}
+          {!loading && paginatedEntries.length === 0 && (
+            <tr>
+              <td colSpan={5} style={{ padding: "12px", color: "#888" }}>
+                No entries to display.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
 
       {entries.length > paginatedEntries.length && (
         <div style={{ textAlign: "center", marginTop: 10 }}>
-          <button style={styles.button} onClick={() => setPage(page + 1)}>
-            Load more
+          <button
+            style={{ ...styles.button, opacity: loading ? 0.7 : 1 }}
+            onClick={() => setPage(page + 1)}
+            disabled={loading}
+          >
+            {loading ? 'Loading…' : 'Load more'}
           </button>
         </div>
       )}
