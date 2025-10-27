@@ -1,4 +1,5 @@
 import io
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -29,6 +30,7 @@ def test_add_activity_and_toggle(client):
     assert data[0]["goal"] == pytest.approx((2 * 5) / 7)
     assert data[0]["frequency_per_day"] == 2
     assert data[0]["frequency_per_week"] == 5
+    assert data[0]["deactivated_at"] is None
 
     response = client.patch(f"/activities/{activity_id}/deactivate")
     assert response.status_code == 200
@@ -40,6 +42,7 @@ def test_add_activity_and_toggle(client):
     data = response.get_json()
     assert len(data) == 1
     assert data[0]["active"] == 0
+    assert data[0]["deactivated_at"] == datetime.now().strftime("%Y-%m-%d")
 
 
 def test_add_activity_requires_category(client):
@@ -233,3 +236,33 @@ def test_update_activity_propagates(client):
     entries = client.get("/entries").get_json()
     meditation_entry = next(e for e in entries if e["activity"] == "Meditation")
     assert meditation_entry["activity_description"] == "Updated desc"
+
+
+def test_today_respects_deactivation_date(client):
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Journal",
+            "category": "Reflection",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "Daily journaling",
+        },
+    )
+    activity = client.get("/activities").get_json()[0]
+    activity_id = activity["id"]
+
+    today = datetime.now()
+    today_str = today.strftime("%Y-%m-%d")
+    yesterday_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    resp = client.get(f"/today?date={yesterday_str}")
+    assert any(row["name"] == "Journal" for row in resp.get_json())
+
+    client.patch(f"/activities/{activity_id}/deactivate")
+
+    resp = client.get(f"/today?date={yesterday_str}")
+    assert any(row["name"] == "Journal" for row in resp.get_json())
+
+    resp = client.get(f"/today?date={today_str}")
+    assert all(row["name"] != "Journal" for row in resp.get_json())

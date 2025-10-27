@@ -60,6 +60,7 @@ def ensure_schema(conn):
         active_select = "IFNULL(active, 1)" if "active" in column_names else "1"
         freq_day_select = "frequency_per_day" if has_freq_day else "1"
         freq_week_select = "frequency_per_week" if has_freq_week else "1"
+        deactivated_select = "deactivated_at" if "deactivated_at" in column_names else "NULL"
         conn.executescript(
             f"""
             ALTER TABLE activities RENAME TO activities_old;
@@ -71,9 +72,10 @@ def ensure_schema(conn):
                 description TEXT,
                 active INTEGER NOT NULL DEFAULT 1,
                 frequency_per_day INTEGER NOT NULL DEFAULT 1,
-                frequency_per_week INTEGER NOT NULL DEFAULT 1
+                frequency_per_week INTEGER NOT NULL DEFAULT 1,
+                deactivated_at TEXT
             );
-            INSERT INTO activities (id, name, category, goal, description, active, frequency_per_day, frequency_per_week)
+            INSERT INTO activities (id, name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at)
             SELECT id,
                    name,
                    {category_select},
@@ -81,7 +83,8 @@ def ensure_schema(conn):
                    {description_select},
                    {active_select},
                    {freq_day_select},
-                   {freq_week_select}
+                   {freq_week_select},
+                   {deactivated_select}
             FROM activities_old;
             DROP TABLE activities_old;
             """
@@ -103,6 +106,9 @@ def ensure_schema(conn):
         conn.commit()
     if "frequency_per_week" not in column_names:
         conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_week INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+    if "deactivated_at" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN deactivated_at TEXT")
         conn.commit()
 
     app.config["_SCHEMA_READY"] = True
@@ -257,8 +263,8 @@ def add_activity():
     try:
         conn.execute(
             """
-            INSERT INTO activities (name, category, goal, description, frequency_per_day, frequency_per_week)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO activities (name, category, goal, description, frequency_per_day, frequency_per_week, deactivated_at)
+            VALUES (?, ?, ?, ?, ?, ?, NULL)
             """,
             (name, category, goal, description, frequency_per_day, frequency_per_week)
         )
@@ -318,10 +324,14 @@ def deactivate_activity(activity_id):
     limited = rate_limit("activities_deactivate", limits["limit"], limits["window"])
     if limited:
         return limited
+    deactivation_date = datetime.now().strftime("%Y-%m-%d")
 
     conn = get_db_connection()
     try:
-        cur = conn.execute("UPDATE activities SET active = 0 WHERE id = ?", (activity_id,))
+        cur = conn.execute(
+            "UPDATE activities SET active = 0, deactivated_at = ? WHERE id = ?",
+            (deactivation_date, activity_id),
+        )
         conn.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Aktivita nenalezena"}), 404
@@ -339,7 +349,7 @@ def activate_activity(activity_id):
 
     conn = get_db_connection()
     try:
-        cur = conn.execute("UPDATE activities SET active = 1 WHERE id = ?", (activity_id,))
+        cur = conn.execute("UPDATE activities SET active = 1, deactivated_at = NULL WHERE id = ?", (activity_id,))
         conn.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Aktivita nenalezena"}), 404
@@ -360,6 +370,7 @@ def get_today():
                 a.category,
                 a.description,
                 a.active,
+                a.deactivated_at,
                 e.id AS entry_id,
                 e.value,
                 e.note
@@ -367,8 +378,9 @@ def get_today():
             LEFT JOIN entries e
               ON e.activity = a.name AND e.date = ?
             WHERE a.active = 1
+               OR (a.deactivated_at IS NOT NULL AND ? < a.deactivated_at)
             ORDER BY a.name ASC
-        """, (date,)).fetchall()
+        """, (date, date)).fetchall()
         return jsonify([dict(r) for r in rows])
     finally:
         conn.close()
@@ -414,7 +426,15 @@ def finalize_day():
     conn = get_db_connection()
     try:
         # získej všechny aktivní aktivity
-        active_activities = conn.execute("SELECT name, description FROM activities WHERE active = 1").fetchall()
+        active_activities = conn.execute(
+            """
+            SELECT name, description
+            FROM activities
+            WHERE active = 1
+               OR (deactivated_at IS NOT NULL AND ? < deactivated_at)
+            """,
+            (date,),
+        ).fetchall()
         existing = conn.execute("SELECT activity FROM entries WHERE date = ?", (date,)).fetchall()
         existing_names = {e["activity"] for e in existing}
 

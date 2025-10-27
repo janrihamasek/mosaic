@@ -24,6 +24,7 @@ def ensure_schema(conn):
         active_select = "IFNULL(active, 1)" if "active" in column_names else "1"
         freq_day_select = "frequency_per_day" if has_freq_day else "1"
         freq_week_select = "frequency_per_week" if has_freq_week else "1"
+        deactivated_select = "deactivated_at" if "deactivated_at" in column_names else "NULL"
         conn.executescript(
             f"""
             ALTER TABLE activities RENAME TO activities_old;
@@ -35,9 +36,10 @@ def ensure_schema(conn):
                 description TEXT,
                 active INTEGER NOT NULL DEFAULT 1,
                 frequency_per_day INTEGER NOT NULL DEFAULT 1,
-                frequency_per_week INTEGER NOT NULL DEFAULT 1
+                frequency_per_week INTEGER NOT NULL DEFAULT 1,
+                deactivated_at TEXT
             );
-            INSERT INTO activities (id, name, category, goal, description, active, frequency_per_day, frequency_per_week)
+            INSERT INTO activities (id, name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at)
             SELECT id,
                    name,
                    {category_select},
@@ -45,7 +47,8 @@ def ensure_schema(conn):
                    {description_select},
                    {active_select},
                    {freq_day_select},
-                   {freq_week_select}
+                   {freq_week_select},
+                   {deactivated_select}
             FROM activities_old;
             DROP TABLE activities_old;
             """
@@ -67,6 +70,9 @@ def ensure_schema(conn):
     if "frequency_per_week" not in column_names:
         conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_week INTEGER NOT NULL DEFAULT 1")
         conn.commit()
+    if "deactivated_at" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN deactivated_at TEXT")
+        conn.commit()
 
 
 def get_db_connection(db_path: Optional[str] = None):
@@ -80,7 +86,7 @@ def get_db_connection(db_path: Optional[str] = None):
 def ensure_activity_exists(conn, activity_name, category="", description="", goal=0.0,
                            frequency_per_day=1, frequency_per_week=1):
     cur = conn.execute(
-        "SELECT id, category, description, goal, frequency_per_day, frequency_per_week FROM activities WHERE name = ?",
+        "SELECT id, category, description, goal, frequency_per_day, frequency_per_week, deactivated_at FROM activities WHERE name = ?",
         (activity_name,),
     )
     row = cur.fetchone()
@@ -111,8 +117,8 @@ def ensure_activity_exists(conn, activity_name, category="", description="", goa
 
     conn.execute(
         """
-        INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week)
-        VALUES (?, ?, ?, ?, 1, ?, ?)
+        INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at)
+        VALUES (?, ?, ?, ?, 1, ?, ?, NULL)
         """,
         (activity_name, category, goal, description, frequency_per_day, frequency_per_week),
     )

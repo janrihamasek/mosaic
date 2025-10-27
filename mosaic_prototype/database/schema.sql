@@ -15,5 +15,6 @@ CREATE TABLE IF NOT EXISTS activities (
     description TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     frequency_per_day INTEGER NOT NULL DEFAULT 1,
-    frequency_per_week INTEGER NOT NULL DEFAULT 1
+    frequency_per_week INTEGER NOT NULL DEFAULT 1,
+    deactivated_at TEXT
 );
