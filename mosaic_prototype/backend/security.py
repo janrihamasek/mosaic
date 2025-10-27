@@ -126,11 +126,18 @@ def validate_entry_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def validate_activity_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def ensure_int_in_range(value: Any, field: str, min_value: int, max_value: int) -> int:
+    number = ensure_int(value, field, min_value)
+    if number > max_value:
+        raise ValidationError(f"{field} must be at most {max_value}")
+    return number
+
+
+def validate_activity_create_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValidationError("Invalid JSON payload")
 
-    require_fields(payload, ("name", "category", "goal"))
+    require_fields(payload, ("name", "category", "frequency_per_day", "frequency_per_week"))
     name = payload["name"].strip()
     if not name:
         raise ValidationError("Activity name must not be empty")
@@ -141,14 +148,65 @@ def validate_activity_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValidationError("Category must not be empty")
     ensure_length(category, "category", 80)
 
-    goal = ensure_int(payload.get("goal"), "goal", min_value=0)
+    frequency_per_day = ensure_int_in_range(payload.get("frequency_per_day"), "frequency_per_day", 1, 3)
+    frequency_per_week = ensure_int_in_range(payload.get("frequency_per_week"), "frequency_per_week", 1, 7)
 
     description = (payload.get("description") or "").strip()
     ensure_length(description, "description", 180)
 
+    avg_goal = (frequency_per_day * frequency_per_week) / 7
+
     return {
         "name": name,
         "category": category,
-        "goal": goal,
+        "goal": avg_goal,
+        "frequency_per_day": frequency_per_day,
+        "frequency_per_week": frequency_per_week,
         "description": description,
     }
+
+
+def validate_activity_update_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValidationError("Invalid JSON payload")
+
+    allowed_fields = {"category", "goal", "description", "frequency_per_day", "frequency_per_week"}
+    provided = {k for k in payload.keys() if payload.get(k) is not None}
+    if not provided.intersection(allowed_fields):
+        raise ValidationError("No updatable fields provided")
+
+    result: Dict[str, Any] = {}
+
+    if "category" in payload:
+        category = (payload.get("category") or "").strip()
+        if not category:
+            raise ValidationError("Category must not be empty")
+        ensure_length(category, "category", 80)
+        result["category"] = category
+
+    per_day = per_week = None
+    if "frequency_per_day" in payload:
+        per_day = ensure_int_in_range(payload.get("frequency_per_day"), "frequency_per_day", 1, 3)
+        result["frequency_per_day"] = per_day
+    if "frequency_per_week" in payload:
+        per_week = ensure_int_in_range(payload.get("frequency_per_week"), "frequency_per_week", 1, 7)
+        result["frequency_per_week"] = per_week
+
+    # allow goal to be explicitly provided (e.g. backward compatibility)
+    if "goal" in payload and payload.get("goal") is not None:
+        goal_value = ensure_number(payload.get("goal"), "goal")
+        if goal_value < 0:
+            raise ValidationError("goal must be non-negative")
+        result["goal"] = goal_value
+
+    if per_day is not None and per_week is not None:
+        result["goal"] = (per_day * per_week) / 7
+    elif ("frequency_per_day" in result) ^ ("frequency_per_week" in result):
+        raise ValidationError("Both frequency_per_day and frequency_per_week must be provided together")
+
+    if "description" in payload:
+        description = (payload.get("description") or "").strip()
+        ensure_length(description, "description", 180)
+        result["description"] = description
+
+    return result

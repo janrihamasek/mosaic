@@ -10,9 +10,62 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "../database/mosaic.db")
 
 def ensure_schema(conn):
     cursor = conn.execute("PRAGMA table_info(activities)")
-    columns = {row[1] for row in cursor.fetchall()}
-    if "category" not in columns:
+    columns_info = cursor.fetchall()
+    column_names = {row[1] for row in columns_info}
+    goal_info = next((row for row in columns_info if row[1] == "goal"), None)
+    goal_type = goal_info[2].upper() if goal_info and goal_info[2] else None
+
+    has_freq_day = "frequency_per_day" in column_names
+    has_freq_week = "frequency_per_week" in column_names
+
+    if goal_type and goal_type != "REAL":
+        category_select = "IFNULL(category, '')" if "category" in column_names else "''"
+        description_select = "description" if "description" in column_names else "NULL"
+        active_select = "IFNULL(active, 1)" if "active" in column_names else "1"
+        freq_day_select = "frequency_per_day" if has_freq_day else "1"
+        freq_week_select = "frequency_per_week" if has_freq_week else "1"
+        conn.executescript(
+            f"""
+            ALTER TABLE activities RENAME TO activities_old;
+            CREATE TABLE activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL DEFAULT '',
+                goal REAL NOT NULL DEFAULT 0,
+                description TEXT,
+                active INTEGER NOT NULL DEFAULT 1,
+                frequency_per_day INTEGER NOT NULL DEFAULT 1,
+                frequency_per_week INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO activities (id, name, category, goal, description, active, frequency_per_day, frequency_per_week)
+            SELECT id,
+                   name,
+                   {category_select},
+                   CAST(goal AS REAL),
+                   {description_select},
+                   {active_select},
+                   {freq_day_select},
+                   {freq_week_select}
+            FROM activities_old;
+            DROP TABLE activities_old;
+            """
+        )
+        conn.commit()
+        cursor = conn.execute("PRAGMA table_info(activities)")
+        columns_info = cursor.fetchall()
+        column_names = {row[1] for row in columns_info}
+
+    if "category" not in column_names:
         conn.execute("ALTER TABLE activities ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    if "goal" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN goal REAL NOT NULL DEFAULT 0")
+        conn.commit()
+    if "frequency_per_day" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_day INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+    if "frequency_per_week" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_week INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
 
@@ -24,23 +77,32 @@ def get_db_connection(db_path: Optional[str] = None):
     return conn
 
 
-def ensure_activity_exists(conn, activity_name, category="", description="", goal=0):
+def ensure_activity_exists(conn, activity_name, category="", description="", goal=0.0,
+                           frequency_per_day=1, frequency_per_week=1):
     cur = conn.execute(
-        "SELECT id, category, description, goal FROM activities WHERE name = ?", (activity_name,)
+        "SELECT id, category, description, goal, frequency_per_day, frequency_per_week FROM activities WHERE name = ?",
+        (activity_name,),
     )
     row = cur.fetchone()
     if row:
+        row_dict = dict(row)
         updates = []
         params = []
-        if category and (row["category"] or "") != category:
+        if category and (row_dict.get("category") or "") != category:
             updates.append("category = ?")
             params.append(category)
-        if description and (row["description"] or "") != description:
+        if description and (row_dict.get("description") or "") != description:
             updates.append("description = ?")
             params.append(description)
-        if goal is not None and row["goal"] != goal:
+        if goal is not None and float(row_dict.get("goal", 0)) != float(goal):
             updates.append("goal = ?")
             params.append(goal)
+        if row_dict.get("frequency_per_day") != frequency_per_day:
+            updates.append("frequency_per_day = ?")
+            params.append(frequency_per_day)
+        if row_dict.get("frequency_per_week") != frequency_per_week:
+            updates.append("frequency_per_week = ?")
+            params.append(frequency_per_week)
         if updates:
             params.append(activity_name)
             conn.execute(f"UPDATE activities SET {', '.join(updates)} WHERE name = ?", params)
@@ -48,8 +110,11 @@ def ensure_activity_exists(conn, activity_name, category="", description="", goa
         return
 
     conn.execute(
-        "INSERT INTO activities (name, category, goal, description, active) VALUES (?, ?, ?, ?, 1)",
-        (activity_name, category, goal, description),
+        """
+        INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
+        """,
+        (activity_name, category, goal, description, frequency_per_day, frequency_per_week),
     )
     print(f"✅ Přidána nová aktivita: {activity_name}")
     conn.commit()
@@ -77,7 +142,7 @@ def import_csv(csv_path, db_path: Optional[str] = None):
             category = (row.get("category", "") or "").strip()
             goal_raw = (row.get("goal", "0") or "0").strip()
             try:
-                goal = int(goal_raw or "0")
+                goal = float(goal_raw or "0")
             except (TypeError, ValueError):
                 print(f"⚠️ Neplatná hodnota goal '{goal_raw}' – řádek přeskočen")
                 skipped += 1

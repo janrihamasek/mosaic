@@ -67,7 +67,7 @@ export default function ActivityTable({
                 {a.name}
               </td>
               <td>{a.category || "N/A"}</td>
-              <td>{a.goal ?? 0}</td>
+              <td>{typeof a.goal === "number" ? a.goal.toFixed(2) : Number(a.goal ?? 0).toFixed(2)}</td>
               <td>{a.description || "N/A"}</td>
               <td>{a.active ? "Active" : "Inactive"}</td>
               <td style={styles.tableCellActions}>

@@ -72,6 +72,14 @@ export async function addActivity(activity) {
   });
 }
 
+export async function updateActivity(id, payload) {
+  return request(`/activities/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deactivateActivity(id) {
   return request(`/activities/${id}/deactivate`, { method: "PATCH" });
 }

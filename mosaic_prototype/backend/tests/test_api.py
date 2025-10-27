@@ -1,5 +1,7 @@
 import io
 
+import pytest
+
 
 def test_get_entries_empty(client):
     response = client.get("/entries")
@@ -8,7 +10,13 @@ def test_get_entries_empty(client):
 
 
 def test_add_activity_and_toggle(client):
-    payload = {"name": "Reading", "category": "Leisure", "goal": 15, "description": "Read a book"}
+    payload = {
+        "name": "Reading",
+        "category": "Leisure",
+        "frequency_per_day": 2,
+        "frequency_per_week": 5,
+        "description": "Read a book",
+    }
     response = client.post("/add_activity", json=payload)
     assert response.status_code == 201
 
@@ -18,7 +26,9 @@ def test_add_activity_and_toggle(client):
     activity_id = data[0]["id"]
     assert data[0]["active"] == 1
     assert data[0]["category"] == "Leisure"
-    assert data[0]["goal"] == 15
+    assert data[0]["goal"] == pytest.approx((2 * 5) / 7)
+    assert data[0]["frequency_per_day"] == 2
+    assert data[0]["frequency_per_week"] == 5
 
     response = client.patch(f"/activities/{activity_id}/deactivate")
     assert response.status_code == 200
@@ -33,17 +43,30 @@ def test_add_activity_and_toggle(client):
 
 
 def test_add_activity_requires_category(client):
-    resp = client.post("/add_activity", json={"name": "Yoga", "goal": 10})
+    resp = client.post("/add_activity", json={"name": "Yoga", "frequency_per_day": 1, "frequency_per_week": 3})
     assert resp.status_code == 400
 
 
-def test_add_activity_requires_goal(client):
+def test_add_activity_requires_frequency(client):
     resp = client.post("/add_activity", json={"name": "Yoga", "category": "Health"})
+    assert resp.status_code == 400
+    resp = client.post("/add_activity", json={"name": "Yoga", "category": "Health", "frequency_per_day": 2})
+    assert resp.status_code == 400
+    resp = client.post("/add_activity", json={"name": "Yoga", "category": "Health", "frequency_per_week": 4})
     assert resp.status_code == 400
 
 
 def test_add_entry_upsert(client):
-    client.post("/add_activity", json={"name": "Exercise", "category": "Health", "goal": 20, "description": "Gym"})
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Exercise",
+            "category": "Health",
+            "frequency_per_day": 3,
+            "frequency_per_week": 7,
+            "description": "Gym",
+        },
+    )
     date_str = "2024-01-15"
 
     response = client.post(
@@ -67,8 +90,26 @@ def test_add_entry_upsert(client):
 
 
 def test_today_and_finalize_day(client):
-    client.post("/add_activity", json={"name": "Coding", "category": "Work", "goal": 30, "description": "Side project"})
-    client.post("/add_activity", json={"name": "Workout", "category": "Health", "goal": 40, "description": "Morning"})
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Coding",
+            "category": "Work",
+            "frequency_per_day": 1,
+            "frequency_per_week": 4,
+            "description": "Side project",
+        },
+    )
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Workout",
+            "category": "Health",
+            "frequency_per_day": 2,
+            "frequency_per_week": 6,
+            "description": "Morning",
+        },
+    )
 
     target_date = "2024-02-20"
     response = client.get(f"/today?date={target_date}")
@@ -153,4 +194,42 @@ def test_import_csv_endpoint(client):
     # CSV import should have created an activity with category
     activities = client.get("/activities").get_json()
     assert activities[0]["category"] == "Fitness"
-    assert activities[0]["goal"] == 12
+    assert activities[0]["goal"] == pytest.approx(12)
+
+
+def test_update_activity_propagates(client):
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Meditation",
+            "category": "Mind",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "Morning calm",
+        },
+    )
+    activity = client.get("/activities").get_json()[0]
+
+    client.post(
+        "/add_entry",
+        json={"date": "2024-04-01", "activity": "Meditation", "value": 1, "note": ""},
+    )
+
+    update_payload = {
+        "category": "Wellness",
+        "frequency_per_day": 2,
+        "frequency_per_week": 5,
+        "description": "Updated desc",
+    }
+    resp = client.put(f"/activities/{activity['id']}", json=update_payload)
+    assert resp.status_code == 200
+
+    updated_activity = client.get("/activities").get_json()[0]
+    assert updated_activity["category"] == "Wellness"
+    assert updated_activity["goal"] == pytest.approx((2 * 5) / 7)
+    assert updated_activity["frequency_per_day"] == 2
+    assert updated_activity["frequency_per_week"] == 5
+
+    entries = client.get("/entries").get_json()
+    meditation_entry = next(e for e in entries if e["activity"] == "Meditation")
+    assert meditation_entry["activity_description"] == "Updated desc"

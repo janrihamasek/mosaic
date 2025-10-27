@@ -13,7 +13,8 @@ from security import (
     ValidationError,
     rate_limit,
     require_api_key,
-    validate_activity_payload,
+    validate_activity_create_payload,
+    validate_activity_update_payload,
     validate_entry_payload,
 )
 
@@ -30,6 +31,7 @@ app.config.setdefault(
         "add_entry": {"limit": 60, "window": 60},
         "add_activity": {"limit": 30, "window": 60},
         "activity_status": {"limit": 60, "window": 60},
+        "update_activity": {"limit": 60, "window": 60},
         "delete_activity": {"limit": 30, "window": 60},
         "delete_entry": {"limit": 90, "window": 60},
         "finalize_day": {"limit": 10, "window": 60},
@@ -44,12 +46,63 @@ def ensure_schema(conn):
         return
 
     cursor = conn.execute("PRAGMA table_info(activities)")
-    columns = {row[1] for row in cursor.fetchall()}
-    if "category" not in columns:
+    columns_info = cursor.fetchall()
+    column_names = {row[1] for row in columns_info}
+    goal_info = next((row for row in columns_info if row[1] == "goal"), None)
+
+    goal_type = goal_info[2].upper() if goal_info and goal_info[2] else None
+    has_freq_day = "frequency_per_day" in column_names
+    has_freq_week = "frequency_per_week" in column_names
+
+    if goal_type and goal_type != "REAL":
+        category_select = "IFNULL(category, '')" if "category" in column_names else "''"
+        description_select = "description" if "description" in column_names else "NULL"
+        active_select = "IFNULL(active, 1)" if "active" in column_names else "1"
+        freq_day_select = "frequency_per_day" if has_freq_day else "1"
+        freq_week_select = "frequency_per_week" if has_freq_week else "1"
+        conn.executescript(
+            f"""
+            ALTER TABLE activities RENAME TO activities_old;
+            CREATE TABLE activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL DEFAULT '',
+                goal REAL NOT NULL DEFAULT 0,
+                description TEXT,
+                active INTEGER NOT NULL DEFAULT 1,
+                frequency_per_day INTEGER NOT NULL DEFAULT 1,
+                frequency_per_week INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO activities (id, name, category, goal, description, active, frequency_per_day, frequency_per_week)
+            SELECT id,
+                   name,
+                   {category_select},
+                   CAST(goal AS REAL),
+                   {description_select},
+                   {active_select},
+                   {freq_day_select},
+                   {freq_week_select}
+            FROM activities_old;
+            DROP TABLE activities_old;
+            """
+        )
+        conn.commit()
+        cursor = conn.execute("PRAGMA table_info(activities)")
+        columns_info = cursor.fetchall()
+        column_names = {row[1] for row in columns_info}
+
+    if "category" not in column_names:
         conn.execute("ALTER TABLE activities ADD COLUMN category TEXT NOT NULL DEFAULT ''")
         conn.commit()
-    if "goal" not in columns:
-        conn.execute("ALTER TABLE activities ADD COLUMN goal INTEGER NOT NULL DEFAULT 0")
+        column_names.add("category")
+    if "goal" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN goal REAL NOT NULL DEFAULT 0")
+        conn.commit()
+    if "frequency_per_day" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_day INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+    if "frequency_per_week" not in column_names:
+        conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_week INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
     app.config["_SCHEMA_READY"] = True
@@ -192,22 +245,69 @@ def add_activity():
         return limited
 
     data = request.get_json() or {}
-    payload = validate_activity_payload(data)
+    payload = validate_activity_create_payload(data)
     name = payload["name"]
     category = payload["category"]
     goal = payload["goal"]
     description = payload["description"]
+    frequency_per_day = payload["frequency_per_day"]
+    frequency_per_week = payload["frequency_per_week"]
 
     conn = get_db_connection()
     try:
         conn.execute(
-            "INSERT INTO activities (name, category, goal, description) VALUES (?, ?, ?, ?)",
-            (name, category, goal, description)
+            """
+            INSERT INTO activities (name, category, goal, description, frequency_per_day, frequency_per_week)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (name, category, goal, description, frequency_per_day, frequency_per_week)
         )
         conn.commit()
         return jsonify({"message": "Kategorie přidána"}), 201
     except sqlite3.IntegrityError:
         return jsonify({"error": "Kategorie s tímto názvem již existuje"}), 409
+    finally:
+        conn.close()
+
+
+@app.put("/activities/<int:activity_id>")
+def update_activity(activity_id):
+    limits = app.config["RATE_LIMITS"]["update_activity"]
+    limited = rate_limit("update_activity", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    data = request.get_json() or {}
+    payload = validate_activity_update_payload(data)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.execute("SELECT name FROM activities WHERE id = ?", (activity_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Aktivita nenalezena"}), 404
+
+        update_clauses = []
+        params = []
+        for key in ("category", "goal", "description", "frequency_per_day", "frequency_per_week"):
+            if key in payload:
+                update_clauses.append(f"{key} = ?")
+                params.append(payload[key])
+
+        if not update_clauses:
+            return jsonify({"message": "No changes detected"}), 200
+
+        params.append(activity_id)
+        conn.execute(f"UPDATE activities SET {', '.join(update_clauses)} WHERE id = ?", params)
+
+        if "description" in payload:
+            conn.execute(
+                "UPDATE entries SET description = ? WHERE activity = ?",
+                (payload["description"], row["name"]),
+            )
+
+        conn.commit()
+        return jsonify({"message": "Aktivita aktualizována"}), 200
     finally:
         conn.close()
 

@@ -136,6 +136,7 @@ export default function App() {
               activity={selectedActivity}
               onClose={() => setSelectedActivity(null)}
               onNotify={showNotification}
+              onDataChanged={refreshAll}
             />
           )}
           <ActivityTable
