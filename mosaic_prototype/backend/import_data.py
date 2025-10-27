@@ -178,13 +178,24 @@ def import_csv(csv_path, db_path: Optional[str] = None):
             ensure_activity_exists(conn, activity, category, desc, goal)
 
             cur = conn.execute(
-                "UPDATE entries SET value = ?, note = ?, description = ? WHERE date = ? AND activity = ?",
-                (value, note, desc, date, activity)
+                """
+                UPDATE entries
+                SET value = ?,
+                    note = ?,
+                    description = ?,
+                    activity_category = ?,
+                    activity_goal = ?
+                WHERE date = ? AND activity = ?
+                """,
+                (value, note, desc, category, goal, date, activity)
             )
             if cur.rowcount == 0:
                 conn.execute(
-                    "INSERT INTO entries (date, activity, description, value, note) VALUES (?, ?, ?, ?, ?)",
-                    (date, activity, desc, value, note)
+                    """
+                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (date, activity, desc, value, note, category, goal)
                 )
                 print(f"🆕 Nový záznam: {date} | {activity} | {value} | {note}")
                 created += 1

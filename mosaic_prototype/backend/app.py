@@ -25,6 +25,7 @@ DEFAULT_DB_PATH = Path(__file__).resolve().parent / "../database/mosaic.db"
 DB_PATH = os.environ.get("MOSAIC_DB_PATH") or DEFAULT_DB_PATH
 app.config["DB_PATH"] = str(DB_PATH)
 app.config["_SCHEMA_READY"] = False
+app.config.setdefault("_ENTRY_METADATA_READY", False)
 app.config.setdefault(
     "RATE_LIMITS",
     {
@@ -111,6 +112,45 @@ def ensure_schema(conn):
         conn.execute("ALTER TABLE activities ADD COLUMN deactivated_at TEXT")
         conn.commit()
 
+    cursor = conn.execute("PRAGMA table_info(entries)")
+    entry_columns_info = cursor.fetchall()
+    entry_columns = {row[1] for row in entry_columns_info}
+    if "activity_category" not in entry_columns:
+        conn.execute("ALTER TABLE entries ADD COLUMN activity_category TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    if "activity_goal" not in entry_columns:
+        conn.execute("ALTER TABLE entries ADD COLUMN activity_goal REAL NOT NULL DEFAULT 0")
+        conn.commit()
+
+    # backfill newly added entry metadata when possible
+    if not app.config.get("_ENTRY_METADATA_READY"):
+        conn.execute(
+            """
+            UPDATE entries
+            SET activity_category = (
+                SELECT category FROM activities WHERE activities.name = entries.activity
+            )
+            WHERE (activity_category IS NULL OR activity_category = '')
+              AND EXISTS (
+                  SELECT 1 FROM activities WHERE activities.name = entries.activity
+              )
+            """
+        )
+        conn.execute(
+            """
+            UPDATE entries
+            SET activity_goal = (
+                SELECT goal FROM activities WHERE activities.name = entries.activity
+            )
+            WHERE (activity_goal IS NULL OR activity_goal = 0)
+              AND EXISTS (
+                  SELECT 1 FROM activities WHERE activities.name = entries.activity
+              )
+            """
+        )
+        conn.commit()
+        app.config["_ENTRY_METADATA_READY"] = True
+
     app.config["_SCHEMA_READY"] = True
 
 
@@ -118,6 +158,7 @@ def get_db_connection():
     db_path = app.config.get("DB_PATH", str(DB_PATH))
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000")
     ensure_schema(conn)
     return conn
 
@@ -145,7 +186,10 @@ def get_entries():
     try:
         entries = conn.execute(
             """
-            SELECT e.*, IFNULL(a.category, '') AS category, IFNULL(a.goal, 0) AS goal, IFNULL(a.description, '') AS activity_description
+            SELECT e.*,
+                   COALESCE(a.category, e.activity_category, '') AS category,
+                   COALESCE(a.goal, e.activity_goal, 0) AS goal,
+                   COALESCE(a.description, e.description, '') AS activity_description
             FROM entries e
             LEFT JOIN activities a ON a.name = e.activity
             ORDER BY e.date DESC, a.category ASC, e.activity ASC
@@ -174,14 +218,35 @@ def add_entry():
 
     conn = get_db_connection()
     try:
-        cur = conn.execute("SELECT description FROM activities WHERE name = ?", (activity,))
-        desc = cur.fetchone()
-        description = desc["description"] if desc else ""
+        cur = conn.execute(
+            "SELECT category, goal, description FROM activities WHERE name = ?",
+            (activity,),
+        )
+        activity_row = cur.fetchone()
+        description = activity_row["description"] if activity_row else ""
+        activity_category = activity_row["category"] if activity_row else ""
+        activity_goal = activity_row["goal"] if activity_row else 0
+
+        existing_entry = conn.execute(
+            "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ?",
+            (date, activity),
+        ).fetchone()
+        if not activity_row and existing_entry:
+            activity_category = existing_entry["activity_category"] or activity_category
+            activity_goal = existing_entry["activity_goal"] if existing_entry["activity_goal"] is not None else activity_goal
 
         # 1. Attempt to UPDATE the existing entry (the "upsert" logic)
         cur = conn.execute(
-            "UPDATE entries SET value = ?, note = ?, description = ? WHERE date = ? AND activity = ?",
-            (float_value, note, description, date, activity),
+            """
+            UPDATE entries
+            SET value = ?,
+                note = ?,
+                description = ?,
+                activity_category = ?,
+                activity_goal = ?
+            WHERE date = ? AND activity = ?
+            """,
+            (float_value, note, description, activity_category, activity_goal, date, activity),
         )
         conn.commit()
 
@@ -191,8 +256,11 @@ def add_entry():
         else:
             # 2. If no entry was updated, INSERT a new entry
             conn.execute(
-                "INSERT INTO entries (date, activity, description, value, note) VALUES (?, ?, ?, ?, ?)",
-                (date, activity, description, float_value, note),
+                """
+                INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (date, activity, description, float_value, note, activity_category, activity_goal),
             )
             conn.commit()
             return jsonify({"message": "Záznam uložen"}), 201
@@ -306,10 +374,22 @@ def update_activity(activity_id):
         params.append(activity_id)
         conn.execute(f"UPDATE activities SET {', '.join(update_clauses)} WHERE id = ?", params)
 
+        entry_update_clauses = []
+        entry_params = []
         if "description" in payload:
+            entry_update_clauses.append("description = ?")
+            entry_params.append(payload["description"])
+        if "category" in payload:
+            entry_update_clauses.append("activity_category = ?")
+            entry_params.append(payload["category"])
+        if "goal" in payload:
+            entry_update_clauses.append("activity_goal = ?")
+            entry_params.append(payload["goal"])
+        if entry_update_clauses:
+            entry_params.append(row["name"])
             conn.execute(
-                "UPDATE entries SET description = ? WHERE activity = ?",
-                (payload["description"], row["name"]),
+                f"UPDATE entries SET {', '.join(entry_update_clauses)} WHERE activity = ?",
+                entry_params,
             )
 
         conn.commit()
@@ -428,7 +508,7 @@ def finalize_day():
         # získej všechny aktivní aktivity
         active_activities = conn.execute(
             """
-            SELECT name, description
+            SELECT name, description, category, goal
             FROM activities
             WHERE active = 1
                OR (deactivated_at IS NOT NULL AND ? < deactivated_at)
@@ -442,8 +522,11 @@ def finalize_day():
         for a in active_activities:
             if a["name"] not in existing_names:
                 conn.execute(
-                    "INSERT INTO entries (date, activity, description, value, note) VALUES (?, ?, ?, 0, '')",
-                    (date, a["name"], a["description"])
+                    """
+                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
+                    VALUES (?, ?, ?, 0, '', ?, ?)
+                    """,
+                    (date, a["name"], a["description"], a["category"], a["goal"])
                 )
                 created += 1
         conn.commit()

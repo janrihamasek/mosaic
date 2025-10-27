@@ -5,6 +5,8 @@ CREATE TABLE entries (
     description TEXT,
     value REAL,
     note TEXT,
+    activity_category TEXT NOT NULL DEFAULT '',
+    activity_goal REAL NOT NULL DEFAULT 0,
     UNIQUE(date, activity)
 );
 CREATE TABLE IF NOT EXISTS activities (

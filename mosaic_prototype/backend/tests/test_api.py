@@ -90,6 +90,7 @@ def test_add_entry_upsert(client):
     assert data[0]["note"] == "Updated"
     assert float(data[0]["value"]) == 4
     assert data[0]["category"] == "Health"
+    assert data[0]["goal"] == pytest.approx((3 * 7) / 7)
 
 
 def test_today_and_finalize_day(client):
@@ -266,3 +267,30 @@ def test_today_respects_deactivation_date(client):
 
     resp = client.get(f"/today?date={today_str}")
     assert all(row["name"] != "Journal" for row in resp.get_json())
+
+
+def test_entry_metadata_survives_activity_deletion(client):
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Swim",
+            "category": "Fitness",
+            "frequency_per_day": 2,
+            "frequency_per_week": 3,
+            "description": "Pool laps",
+        },
+    )
+    client.post(
+        "/add_entry",
+        json={"date": "2024-05-01", "activity": "Swim", "value": 1, "note": ""},
+    )
+    activity = client.get("/activities").get_json()[0]
+    client.patch(f"/activities/{activity['id']}/deactivate")
+    client.delete(f"/activities/{activity['id']}")
+
+    entries = client.get("/entries").get_json()
+    swim_entry = next(e for e in entries if e["activity"] == "Swim")
+    assert swim_entry["category"] == "Fitness"
+    assert swim_entry["activity_category"] == "Fitness"
+    assert swim_entry["goal"] == pytest.approx((2 * 3) / 7)
+    assert swim_entry["activity_goal"] == pytest.approx((2 * 3) / 7)
