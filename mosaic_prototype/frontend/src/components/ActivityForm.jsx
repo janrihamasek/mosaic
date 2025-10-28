@@ -74,6 +74,20 @@ export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
         required
         style={styles.input}
       />
+      <input
+        type="text"
+        placeholder="Description (optional)"
+        value={description}
+        onChange={e => setDescription(e.target.value)}
+        style={styles.input}
+      />
+      <button
+        type="submit"
+        style={{ ...styles.button, opacity: isSaving ? 0.7 : 1 }}
+        disabled={isSaving}
+      >
+        {isSaving ? 'Saving...' : 'Enter'}
+      </button>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
           <span>Per day</span>
@@ -104,20 +118,6 @@ export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
           <span>{avgGoalPerDay.toFixed(2)}</span>
         </div>
       </div>
-      <input
-        type="text"
-        placeholder="Description (optional)"
-        value={description}
-        onChange={e => setDescription(e.target.value)}
-        style={styles.input}
-      />
-      <button
-        type="submit"
-        style={{ ...styles.button, opacity: isSaving ? 0.7 : 1 }}
-        disabled={isSaving}
-      >
-        {isSaving ? 'Saving...' : 'Enter'}
-      </button>
     </form>
   );
 }

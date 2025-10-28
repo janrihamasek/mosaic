@@ -1,9 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchToday, addEntry, finalizeDay } from "../api";
 import { styles } from "../styles/common";
 
+const toLocalDateString = (dateObj) => {
+  const tzOffset = dateObj.getTimezoneOffset();
+  const adjusted = new Date(dateObj.getTime() - tzOffset * 60000);
+  return adjusted.toISOString().slice(0, 10);
+};
+
 export default function Today({ onDataChanged, onNotify }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => toLocalDateString(new Date()));
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -141,6 +147,8 @@ export default function Today({ onDataChanged, onNotify }) {
     [scheduleAutoSave]
   );
 
+  const todayString = useMemo(() => toLocalDateString(new Date()), []);
+
   const handleDateChange = useCallback(
     async (newDate) => {
       if (debounceRef.current) {
@@ -153,6 +161,22 @@ export default function Today({ onDataChanged, onNotify }) {
       setDate(newDate);
     },
     [flushDirtyRows]
+  );
+
+  const shiftDay = useCallback(
+    (offset) => {
+      const base = new Date(`${date}T00:00:00`);
+      if (Number.isNaN(base.getTime())) {
+        return;
+      }
+      base.setDate(base.getDate() + offset);
+      const next = toLocalDateString(base);
+      if (offset > 0 && next > todayString) {
+        return;
+      }
+      handleDateChange(next);
+    },
+    [date, handleDateChange, todayString]
   );
 
   const handleSaveAll = async () => {
@@ -207,15 +231,35 @@ export default function Today({ onDataChanged, onNotify }) {
   return (
     <div>
       <div style={styles.rowBetween}>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => {
-            const newDate = e.target.value;
-            handleDateChange(newDate);
-          }}
-          style={styles.input}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => shiftDay(-1)}
+            style={{ ...styles.button, padding: "6px 10px" }}
+            aria-label="Previous day"
+          >
+            ◀
+          </button>
+          <input
+            type="date"
+            value={date}
+            max={todayString}
+            onChange={(e) => {
+              const newDate = e.target.value;
+              handleDateChange(newDate);
+            }}
+            style={styles.input}
+          />
+          <button
+            type="button"
+            onClick={() => shiftDay(1)}
+            style={{ ...styles.button, padding: "6px 10px", opacity: date >= todayString ? 0.6 : 1 }}
+            disabled={date >= todayString}
+            aria-label="Next day"
+          >
+            ▶
+          </button>
+        </div>
         <div style={styles.flexRow}>
           {autoSaving && <div style={styles.loadingText}>💾 Auto-saving...</div>}
           {!autoSaving && dirtyCount > 0 && (
