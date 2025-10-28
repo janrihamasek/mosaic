@@ -451,9 +451,11 @@ def get_today():
                 a.description,
                 a.active,
                 a.deactivated_at,
+                a.goal,
                 e.id AS entry_id,
                 e.value,
-                e.note
+                e.note,
+                e.activity_goal
             FROM activities a
             LEFT JOIN entries e
               ON e.activity = a.name AND e.date = ?

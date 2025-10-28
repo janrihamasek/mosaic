@@ -119,6 +119,7 @@ def test_today_and_finalize_day(client):
     response = client.get(f"/today?date={target_date}")
     today_data = response.get_json()
     assert len(today_data) == 2
+    assert all("goal" in row for row in today_data)
     assert {row["category"] for row in today_data} == {"Work", "Health"}
 
     response = client.post("/finalize_day", json={"date": target_date})

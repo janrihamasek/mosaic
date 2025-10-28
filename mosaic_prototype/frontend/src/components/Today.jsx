@@ -41,12 +41,16 @@ export default function Today({ onDataChanged, onNotify }) {
     setLoading(true);
     try {
       const data = await fetchToday(effectiveDate);
-      const formatted = data.map((r) => ({
-        ...r,
-        category: r.category ?? "",
-        value: r.value ?? 0,
-        note: r.note ?? "",
-      }));
+      const formatted = data.map((r) => {
+        const goalValue = Number(r.goal ?? r.activity_goal ?? 0) || 0;
+        return {
+          ...r,
+          category: r.category ?? "",
+          value: r.value ?? 0,
+          note: r.note ?? "",
+          goal: goalValue,
+        };
+      });
       setRows(sortRows(formatted));
     } catch (err) {
       onNotify?.(`Failed to load day overview: ${err.message}`, "error");
@@ -227,6 +231,28 @@ export default function Today({ onDataChanged, onNotify }) {
   };
 
   const dirtyCount = Object.keys(dirtyRowsState).length;
+  const progressStats = useMemo(() => {
+    return rows.reduce(
+      (acc, row) => {
+        const value = Number(row.value) || 0;
+        const goal = Number(row.goal) || 0;
+        return {
+          totalValue: acc.totalValue + value,
+          totalGoal: acc.totalGoal + goal,
+        };
+      },
+      { totalValue: 0, totalGoal: 0 }
+    );
+  }, [rows]);
+  const rawPercent =
+    progressStats.totalGoal > 0 ? (progressStats.totalValue / progressStats.totalGoal) * 100 : 0;
+  const cappedPercent = progressStats.totalGoal > 0 ? Math.min(rawPercent, 100) : 0;
+  const percentLabel =
+    progressStats.totalGoal > 0 ? `${Math.round(rawPercent)}%` : "N/A";
+  const ratioLabel =
+    progressStats.totalGoal > 0
+      ? `${progressStats.totalValue.toFixed(1)} / ${progressStats.totalGoal.toFixed(1)}`
+      : "";
 
   return (
     <div>
@@ -259,6 +285,30 @@ export default function Today({ onDataChanged, onNotify }) {
           >
             ▶
           </button>
+        </div>
+        <div style={{ minWidth: 220, maxWidth: 320 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+            <span>Today progress</span>
+            <span>
+              {percentLabel}
+              {ratioLabel && <span style={{ marginLeft: 6, color: "#9ba3af" }}>({ratioLabel})</span>}
+            </span>
+          </div>
+          <div style={{ height: 8, backgroundColor: "#333", borderRadius: 4, overflow: "hidden" }}>
+            <div
+              style={{
+                width: `${cappedPercent}%`,
+                backgroundColor: "#3a7bd5",
+                height: "100%",
+                transition: "width 0.3s ease",
+              }}
+              aria-label="Today progress"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={progressStats.totalGoal > 0 ? progressStats.totalGoal : undefined}
+              aria-valuenow={progressStats.totalGoal > 0 ? progressStats.totalValue : undefined}
+            />
+          </div>
         </div>
         <div style={styles.flexRow}>
           {autoSaving && <div style={styles.loadingText}>💾 Auto-saving...</div>}
