@@ -91,6 +91,7 @@ def test_add_entry_upsert(client):
     assert float(data[0]["value"]) == 4
     assert data[0]["category"] == "Health"
     assert data[0]["goal"] == pytest.approx((3 * 7) / 7)
+    assert data[0]["goal"] == pytest.approx((3 * 7) / 7)
 
 
 def test_today_and_finalize_day(client):
@@ -295,6 +296,49 @@ def test_entry_metadata_survives_activity_deletion(client):
     assert swim_entry["activity_category"] == "Fitness"
     assert swim_entry["goal"] == pytest.approx((2 * 3) / 7)
     assert swim_entry["activity_goal"] == pytest.approx((2 * 3) / 7)
+
+
+def test_entries_filtering(client):
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Read",
+            "category": "Leisure",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "Reading time",
+        },
+    )
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Jog",
+            "category": "Health",
+            "frequency_per_day": 2,
+            "frequency_per_week": 5,
+            "description": "Jogging",
+        },
+    )
+
+    client.post("/add_entry", json={"date": "2024-03-01", "activity": "Read", "value": 1, "note": ""})
+    client.post("/add_entry", json={"date": "2024-03-05", "activity": "Read", "value": 1, "note": ""})
+    client.post("/add_entry", json={"date": "2024-03-03", "activity": "Jog", "value": 2, "note": ""})
+
+    resp = client.get("/entries?start_date=2024-03-02&end_date=2024-03-04")
+    assert resp.status_code == 200
+    filtered = resp.get_json()
+    assert len(filtered) == 1
+    assert filtered[0]["activity"] == "Jog"
+
+    resp = client.get("/entries?activity=Read")
+    assert resp.status_code == 200
+    only_read = resp.get_json()
+    assert {row["activity"] for row in only_read} == {"Read"}
+
+    resp = client.get("/entries?category=Health")
+    assert resp.status_code == 200
+    health_entries = resp.get_json()
+    assert all(row["category"] == "Health" for row in health_entries)
 
 
 def test_stats_progress_activity_and_category(client):

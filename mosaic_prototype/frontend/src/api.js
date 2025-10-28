@@ -43,8 +43,14 @@ async function request(path, options) {
 }
 
 // --- ENTRIES ---
-export async function fetchEntries() {
-  return request("/entries");
+export async function fetchEntries(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters?.startDate) params.set("start_date", filters.startDate);
+  if (filters?.endDate) params.set("end_date", filters.endDate);
+  if (filters?.activity && filters.activity !== "all") params.set("activity", filters.activity);
+  if (filters?.category && filters.category !== "all") params.set("category", filters.category);
+  const qs = params.toString();
+  return request(`/entries${qs ? `?${qs}` : ""}`);
 }
 
 export async function addEntry(entry) {

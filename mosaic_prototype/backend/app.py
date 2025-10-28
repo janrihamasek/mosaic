@@ -182,19 +182,62 @@ def handle_validation(error: ValidationError):
 
 @app.get("/entries")
 def get_entries():
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
+    activity_filter_raw = request.args.get("activity") or ""
+    category_filter_raw = request.args.get("category") or ""
+
+    try:
+        if start_date:
+            datetime.strptime(start_date, "%Y-%m-%d")
+        if end_date:
+            datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Invalid date filter"}), 400
+
+    def normalize_filter(value, all_markers):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if candidate.lower() in all_markers:
+            return None
+        return candidate
+
+    activity_filter = normalize_filter(activity_filter_raw, {"all", "all activities", "all_activities"})
+    category_filter = normalize_filter(category_filter_raw, {"all", "all categories", "all_categories"})
+
     conn = get_db_connection()
     try:
-        entries = conn.execute(
-            """
+        clauses = []
+        params = []
+        if start_date:
+            clauses.append("e.date >= ?")
+            params.append(start_date)
+        if end_date:
+            clauses.append("e.date <= ?")
+            params.append(end_date)
+        if activity_filter:
+            clauses.append("e.activity = ?")
+            params.append(activity_filter)
+        if category_filter:
+            clauses.append("COALESCE(a.category, e.activity_category, '') = ?")
+            params.append(category_filter)
+
+        where_sql = ""
+        if clauses:
+            where_sql = "WHERE " + " AND ".join(clauses)
+
+        query = f"""
             SELECT e.*,
                    COALESCE(a.category, e.activity_category, '') AS category,
                    COALESCE(a.goal, e.activity_goal, 0) AS goal,
                    COALESCE(a.description, e.description, '') AS activity_description
             FROM entries e
             LEFT JOIN activities a ON a.name = e.activity
-            ORDER BY e.date DESC, a.category ASC, e.activity ASC
-            """
-        ).fetchall()
+            {where_sql}
+            ORDER BY e.date DESC, e.activity ASC
+        """
+        entries = conn.execute(query, params).fetchall()
         return jsonify([dict(row) for row in entries])
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500

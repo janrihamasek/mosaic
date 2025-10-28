@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EntryTable from './components/EntryTable';
 import EntryForm from './components/EntryForm';
-import { fetchEntries, addEntry, deleteEntry } from './api';
+import { fetchEntries, deleteEntry } from './api';
 import ActivityForm from './components/ActivityForm';
 import ActivityTable from './components/ActivityTable';
 import ActivityDetail from './components/ActivityDetail';
@@ -10,10 +10,17 @@ import Stats from './components/Stats';
 import { fetchActivities, addActivity, deleteActivity, activateActivity, deactivateActivity } from './api';
 import { styles } from './styles/common';
 import Notification from './components/Notification';
-import CsvImportButton from './components/CsvImportButton';
+
+const DEFAULT_ENTRY_FILTERS = {
+  startDate: null,
+  endDate: null,
+  activity: "all",
+  category: "all",
+};
 
 export default function App() {
   const [entries, setEntries] = useState([]);
+  const [entriesFilters, setEntriesFilters] = useState(DEFAULT_ENTRY_FILTERS);
   const [activeTab, setActiveTab] = useState('Today');
   const [activeActivities, setActiveActivities] = useState([]);
   const [allActivities, setAllActivities] = useState([]);
@@ -42,18 +49,6 @@ export default function App() {
     };
   }, []);
 
-  const loadEntries = useCallback(async () => {
-    setEntriesLoading(true);
-    try {
-      const data = await fetchEntries();
-      setEntries(data);
-    } catch (err) {
-      showNotification(`Failed to load entries: ${err.message}`, 'error');
-    } finally {
-      setEntriesLoading(false);
-    }
-  }, [showNotification]);
-
   const loadActivities = useCallback(async () => {
     setActivitiesLoading(true);
     try {
@@ -70,19 +65,70 @@ export default function App() {
     }
   }, [showNotification]);
 
+  const fetchEntriesData = useCallback(
+    async (filters) => {
+      setEntriesLoading(true);
+      try {
+        const data = await fetchEntries(filters);
+        setEntries(data);
+      } catch (err) {
+        setEntries([]);
+        showNotification(`Failed to load entries: ${err.message}`, 'error');
+      } finally {
+        setEntriesLoading(false);
+      }
+    },
+    [showNotification]
+  );
+
+  const applyEntriesFilters = useCallback(
+    async (filters) => {
+      const normalized = {
+        startDate: filters?.startDate ?? null,
+        endDate: filters?.endDate ?? null,
+        activity: filters?.activity ?? 'all',
+        category: filters?.category ?? 'all',
+      };
+      setEntries([]);
+      setEntriesFilters(normalized);
+      await fetchEntriesData(normalized);
+    },
+    [fetchEntriesData]
+  );
+
+  const refreshEntries = useCallback(async () => {
+    await fetchEntriesData(entriesFilters);
+  }, [fetchEntriesData, entriesFilters]);
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadEntries(), loadActivities()]);
-  }, [loadEntries, loadActivities]);
+    await Promise.all([refreshEntries(), loadActivities()]);
+  }, [refreshEntries, loadActivities]);
 
   useEffect(() => {
-    loadEntries();
     loadActivities();
-  }, [loadEntries, loadActivities]);
+  }, [loadActivities]);
+
+  useEffect(() => {
+    applyEntriesFilters(DEFAULT_ENTRY_FILTERS);
+  }, [applyEntriesFilters]);
 
   const tabStyle = (tabName) =>
     activeTab === tabName
       ? { ...styles.tab, ...styles.tabActive }
       : styles.tab;
+
+  const categoryOptions = useMemo(() => {
+    const unique = new Set();
+    allActivities.forEach((activity) => {
+      const category = activity?.category?.trim();
+      if (category) unique.add(category);
+    });
+    entries.forEach((entry) => {
+      const category = entry?.category?.trim();
+      if (category) unique.add(category);
+    });
+    return Array.from(unique);
+  }, [allActivities, entries]);
 
   return (
     <div style={styles.container}>
@@ -142,18 +188,16 @@ export default function App() {
       {activeTab === 'Entries' && (
         <div style={styles.cardContainer}>
           <EntryForm
-            onSave={addEntry}
-            onDataChanged={refreshAll}
-            activities={activeActivities}
+            activities={allActivities}
+            categories={categoryOptions}
+            onApplyFilters={applyEntriesFilters}
             onNotify={showNotification}
+            onImported={refreshAll}
           />
-          <div style={{ ...styles.flexRow, justifyContent: "flex-end", marginBottom: 12 }}>
-            <CsvImportButton onImported={refreshAll} onNotify={showNotification} />
-          </div>
           <EntryTable
             entries={entries}
             onDelete={deleteEntry}
-            onDataChanged={refreshAll}
+            onDataChanged={refreshEntries}
             onNotify={showNotification}
             loading={entriesLoading}
           />
