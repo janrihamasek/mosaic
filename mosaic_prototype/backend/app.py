@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -434,6 +434,105 @@ def activate_activity(activity_id):
         if cur.rowcount == 0:
             return jsonify({"error": "Aktivita nenalezena"}), 404
         return jsonify({"message": "Aktivita aktivována"}), 200
+    finally:
+        conn.close()
+
+
+@app.get("/stats/progress")
+def get_progress_stats():
+    group_by = request.args.get("group", "activity").lower()
+    if group_by not in {"activity", "category"}:
+        return jsonify({"error": "Invalid group"}), 400
+
+    period_raw = request.args.get("period", "30")
+    try:
+        window = int(period_raw)
+    except ValueError:
+        return jsonify({"error": "Invalid period"}), 400
+    if window not in {30, 90}:
+        return jsonify({"error": "Unsupported period"}), 400
+
+    target_date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    try:
+        end_dt = datetime.strptime(target_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Invalid date"}), 400
+    start_dt = end_dt - timedelta(days=window - 1)
+    start_date = start_dt.strftime("%Y-%m-%d")
+    end_date = end_dt.strftime("%Y-%m-%d")
+
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                a.name,
+                a.category,
+                COALESCE(a.goal, 0) AS goal,
+                COALESCE(SUM(e.value), 0) AS total_value
+            FROM activities a
+            LEFT JOIN entries e
+              ON e.activity = a.name
+             AND e.date BETWEEN ? AND ?
+            WHERE a.active = 1
+               OR (a.deactivated_at IS NOT NULL AND a.deactivated_at >= ?)
+            GROUP BY a.id
+            ORDER BY a.name COLLATE NOCASE ASC
+            """,
+            (start_date, end_date, start_date),
+        ).fetchall()
+
+        if group_by == "activity":
+            data = []
+            for row in rows:
+                goal_per_day = float(row["goal"] or 0)
+                total_goal = goal_per_day * window
+                total_value = float(row["total_value"] or 0)
+                progress = total_goal > 0 and total_value / total_goal or 0.0
+                data.append(
+                    {
+                        "name": row["name"],
+                        "category": row["category"],
+                        "goal_per_day": goal_per_day,
+                        "total_value": total_value,
+                        "total_goal": total_goal,
+                        "progress": progress,
+                    }
+                )
+        else:
+            aggregates = {}
+            for row in rows:
+                key = row["category"] or "Uncategorized"
+                entry = aggregates.setdefault(
+                    key,
+                    {"name": key, "total_goal_per_day": 0.0, "total_value": 0.0},
+                )
+                entry["total_goal_per_day"] += float(row["goal"] or 0)
+                entry["total_value"] += float(row["total_value"] or 0)
+
+            data = []
+            for agg in aggregates.values():
+                total_goal = agg["total_goal_per_day"] * window
+                progress = total_goal > 0 and agg["total_value"] / total_goal or 0.0
+                data.append(
+                    {
+                        "name": agg["name"],
+                        "total_value": agg["total_value"],
+                        "total_goal": total_goal,
+                        "progress": progress,
+                    }
+                )
+            data.sort(key=lambda item: item["name"].lower())
+
+        return jsonify(
+            {
+                "group": group_by,
+                "window": window,
+                "start_date": start_date,
+                "end_date": end_date,
+                "data": data,
+            }
+        )
     finally:
         conn.close()
 

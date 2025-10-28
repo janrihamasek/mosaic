@@ -6,6 +6,7 @@ import ActivityForm from './components/ActivityForm';
 import ActivityTable from './components/ActivityTable';
 import ActivityDetail from './components/ActivityDetail';
 import Today from './components/Today';
+import Stats from './components/Stats';
 import { fetchActivities, addActivity, deleteActivity, activateActivity, deactivateActivity } from './api';
 import { styles } from './styles/common';
 import Notification from './components/Notification';
@@ -97,34 +98,14 @@ export default function App() {
 
       <div style={styles.tabBar}>
         <div style={tabStyle('Today')} onClick={() => setActiveTab('Today')}>Today</div>
-        <div style={tabStyle('Entries')} onClick={() => setActiveTab('Entries')}>Entries</div>
         <div style={tabStyle('Activities')} onClick={() => setActiveTab('Activities')}>Activities</div>
+        <div style={tabStyle('Stats')} onClick={() => setActiveTab('Stats')}>Stats</div>
+        <div style={tabStyle('Entries')} onClick={() => setActiveTab('Entries')}>Entries</div>
       </div>
 
       {activeTab === 'Today' && (
         <div style={styles.cardContainer}>
           <Today onDataChanged={refreshAll} onNotify={showNotification} />
-        </div>
-      )}
-
-      {activeTab === 'Entries' && (
-        <div style={styles.cardContainer}>
-          <EntryForm
-            onSave={addEntry}
-            onDataChanged={refreshAll}
-            activities={activeActivities}
-            onNotify={showNotification}
-          />
-          <div style={{ ...styles.flexRow, justifyContent: "flex-end", marginBottom: 12 }}>
-            <CsvImportButton onImported={refreshAll} onNotify={showNotification} />
-          </div>
-          <EntryTable
-            entries={entries}
-            onDelete={deleteEntry}
-            onDataChanged={refreshAll}
-            onNotify={showNotification}
-            loading={entriesLoading}
-          />
         </div>
       )}
 
@@ -151,6 +132,34 @@ export default function App() {
           />
         </div>
       )}
+
+      {activeTab === 'Stats' && (
+        <div style={styles.cardContainer}>
+          <Stats onNotify={showNotification} />
+        </div>
+      )}
+
+      {activeTab === 'Entries' && (
+        <div style={styles.cardContainer}>
+          <EntryForm
+            onSave={addEntry}
+            onDataChanged={refreshAll}
+            activities={activeActivities}
+            onNotify={showNotification}
+          />
+          <div style={{ ...styles.flexRow, justifyContent: "flex-end", marginBottom: 12 }}>
+            <CsvImportButton onImported={refreshAll} onNotify={showNotification} />
+          </div>
+          <EntryTable
+            entries={entries}
+            onDelete={deleteEntry}
+            onDataChanged={refreshAll}
+            onNotify={showNotification}
+            loading={entriesLoading}
+          />
+        </div>
+      )}
+
     </div>
   );
 }

@@ -295,3 +295,68 @@ def test_entry_metadata_survives_activity_deletion(client):
     assert swim_entry["activity_category"] == "Fitness"
     assert swim_entry["goal"] == pytest.approx((2 * 3) / 7)
     assert swim_entry["activity_goal"] == pytest.approx((2 * 3) / 7)
+
+
+def test_stats_progress_activity_and_category(client):
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Coding",
+            "category": "Work",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "",
+        },
+    )
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Run",
+            "category": "Health",
+            "frequency_per_day": 2,
+            "frequency_per_week": 7,
+            "description": "",
+        },
+    )
+
+    entries = [
+        ("2024-02-01", "Coding", 10),
+        ("2024-02-10", "Coding", 10),
+        ("2024-02-05", "Run", 15),
+        ("2024-02-12", "Run", 25),
+    ]
+    for date, activity, value in entries:
+        client.post(
+            "/add_entry",
+            json={"date": date, "activity": activity, "value": value, "note": ""},
+        )
+
+    activity_resp = client.get("/stats/progress?group=activity&period=30&date=2024-02-20")
+    assert activity_resp.status_code == 200
+    payload = activity_resp.get_json()
+    assert payload["window"] == 30
+    activity_stats = {row["name"]: row for row in payload["data"]}
+    assert "Coding" in activity_stats and "Run" in activity_stats
+
+    coding = activity_stats["Coding"]
+    assert coding["total_value"] == pytest.approx(20.0)
+    assert coding["total_goal"] == pytest.approx(30.0)
+    assert coding["progress"] == pytest.approx(20.0 / 30.0)
+
+    run_stats = activity_stats["Run"]
+    assert run_stats["total_value"] == pytest.approx(40.0)
+    assert run_stats["total_goal"] == pytest.approx(60.0)
+    assert run_stats["progress"] == pytest.approx(40.0 / 60.0)
+
+    category_resp = client.get(
+        "/stats/progress?group=category&period=30&date=2024-02-20"
+    )
+    assert category_resp.status_code == 200
+    category_payload = category_resp.get_json()
+    categories = {row["name"]: row for row in category_payload["data"]}
+    assert categories["Work"]["total_value"] == pytest.approx(20.0)
+    assert categories["Work"]["total_goal"] == pytest.approx(30.0)
+    assert categories["Work"]["progress"] == pytest.approx(20.0 / 30.0)
+    assert categories["Health"]["total_value"] == pytest.approx(40.0)
+    assert categories["Health"]["total_goal"] == pytest.approx(60.0)
+    assert categories["Health"]["progress"] == pytest.approx(40.0 / 60.0)

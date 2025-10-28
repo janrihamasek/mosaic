@@ -92,6 +92,16 @@ export async function deleteActivity(id) {
   return request(`/activities/${id}`, { method: "DELETE" });
 }
 
+// --- STATS ---
+export async function fetchProgressStats({ group = "activity", period = 30, date } = {}) {
+  const params = new URLSearchParams();
+  if (group) params.set("group", group);
+  if (period) params.set("period", String(period));
+  if (date) params.set("date", date);
+  const qs = params.toString();
+  return request(`/stats/progress${qs ? `?${qs}` : ""}`);
+}
+
 // --- TODAY ---
 export async function fetchToday(dateStr) {
   const qs = dateStr ? `?date=${encodeURIComponent(dateStr)}` : "";
