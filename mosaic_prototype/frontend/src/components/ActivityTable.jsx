@@ -51,7 +51,6 @@ export default function ActivityTable({
             <th>Activity</th>
             <th>Category</th>
             <th>Goal</th>
-            <th>Description</th>
             <th>Status</th>
             <th></th>
           </tr>
@@ -60,21 +59,20 @@ export default function ActivityTable({
           {sortedActivities.map((a) => (
             <tr key={a.id} style={styles.tableRow}>
               <td
-                style={{ cursor: "pointer", textDecoration: "underline" }}
+                style={{ cursor: "pointer", textDecoration: "underline", width: "20%" }}
                 title={a.category ? `Category: ${a.category}` : "Category: N/A"}
                 onClick={() => onOpenDetail?.(a)}
               >
                 {a.name}
               </td>
-              <td>{a.category || "N/A"}</td>
-              <td>{typeof a.goal === "number" ? a.goal.toFixed(2) : Number(a.goal ?? 0).toFixed(2)}</td>
-              <td>{a.description || "N/A"}</td>
-              <td>{a.active ? "Active" : "Inactive"}</td>
-              <td style={styles.tableCellActions}>
+              <td style={{ width: "20%" }}>{a.category || "N/A"}</td>
+              <td style={{ width: "10%" }}>{typeof a.goal === "number" ? a.goal.toFixed(2) : Number(a.goal ?? 0).toFixed(2)}</td>
+              <td style={{ width: "10%" }}>{a.active ? "Active" : "Inactive"}</td>
+              <td style={{ ...styles.tableCellActions}}>
                 {a.active ? (
                   <button
                     onClick={() => handleAction(onDeactivate, a.id, "Activity deactivated", "deactivate activity")}
-                    style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
+                    style={{ ...styles.button, width: "100%", backgroundColor : "#8b1e3f", opacity: actionId === a.id ? 0.6 : 1 }}
                     disabled={actionId === a.id}
                   >
                     {actionId === a.id ? "Working..." : "Deactivate"}
@@ -83,14 +81,14 @@ export default function ActivityTable({
                   <>
                     <button
                       onClick={() => handleAction(onActivate, a.id, "Activity activated", "activate activity")}
-                      style={{ ...styles.button, width: "50%", opacity: actionId === a.id ? 0.6 : 1 }}
+                      style={{ ...styles.button, backgroundColor: "#29442f", width: "50%", opacity: actionId === a.id ? 0.6 : 1 }}
                       disabled={actionId === a.id}
                     >
                       {actionId === a.id ? "Working..." : "Activate"}
                     </button>
                     <button
                       onClick={() => handleAction(onDelete, a.id, "Activity was deleted", "delete activity")}
-                      style={{ ...styles.button, width: "50%", opacity: actionId === a.id ? 0.6 : 1 }}
+                      style={{ ...styles.button, backgroundColor : "#8b1e3f", width: "50%", opacity: actionId === a.id ? 0.6 : 1 }}
                       disabled={actionId === a.id}
                     >
                       {actionId === a.id ? "Working..." : "Delete"}

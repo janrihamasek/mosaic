@@ -12,7 +12,6 @@ export default function Today({ onDataChanged, onNotify }) {
   const [date, setDate] = useState(() => toLocalDateString(new Date()));
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [autoSaving, setAutoSaving] = useState(false);
   const [dirtyRowsState, setDirtyRowsState] = useState({});
   const dirtyRef = useRef({});
@@ -82,7 +81,7 @@ export default function Today({ onDataChanged, onNotify }) {
   }, [date, onNotify]);
 
   const flushDirtyRows = useCallback(async () => {
-    if (saving) return;
+    if (autoSaving) return;
     const entries = Object.values(dirtyRef.current);
     if (!entries.length) return;
 
@@ -119,17 +118,17 @@ export default function Today({ onDataChanged, onNotify }) {
     } finally {
       setAutoSaving(false);
     }
-  }, [date, onDataChanged, onNotify, saving]);
+  }, [date, onDataChanged, onNotify, autoSaving]);
 
   const scheduleAutoSave = useCallback(() => {
-    if (saving) return;
+    if (autoSaving) return;
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
     debounceRef.current = setTimeout(() => {
       flushDirtyRows();
     }, SAVE_DEBOUNCE_MS);
-  }, [flushDirtyRows, saving]);
+  }, [flushDirtyRows, autoSaving]);
 
   useEffect(() => {
     return () => {
@@ -183,40 +182,6 @@ export default function Today({ onDataChanged, onNotify }) {
     [date, handleDateChange, todayString]
   );
 
-  const handleSaveAll = async () => {
-    if (saving) return;
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    const pendingDirty = dirtyRef.current;
-    dirtyRef.current = {};
-    setDirtyRowsState({});
-
-    setSaving(true);
-    try {
-      await Promise.all(
-        rows.map((row) =>
-          addEntry({
-            date,
-            activity: row.name,
-            value: Number(row.value) || 0,
-            note: row.note || "",
-          })
-        )
-      );
-      onNotify?.("Changes saved", "success");
-      await onDataChanged?.();
-      await load(date);
-    } catch (err) {
-      onNotify?.(`Failed to save changes: ${err.message}`, "error");
-      dirtyRef.current = pendingDirty;
-      setDirtyRowsState(pendingDirty);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleValueChange = (row, newValue) => {
     const updatedRow = { ...row, value: Number(newValue) || 0 };
     setRows((prev) => sortRows(prev.map((p) => (p.name === row.name ? updatedRow : p))));
@@ -253,6 +218,7 @@ export default function Today({ onDataChanged, onNotify }) {
     progressStats.totalGoal > 0
       ? `${progressStats.totalValue.toFixed(1)} / ${progressStats.totalGoal.toFixed(1)}`
       : "";
+  const progressColor = rawPercent >= 50 ? styles.highlightRow.backgroundColor : "#8b1e3f";
 
   return (
     <div>
@@ -298,7 +264,7 @@ export default function Today({ onDataChanged, onNotify }) {
             <div
               style={{
                 width: `${cappedPercent}%`,
-                backgroundColor: "#3a7bd5",
+                backgroundColor: progressColor,
                 height: "100%",
                 transition: "width 0.3s ease",
               }}
@@ -315,13 +281,6 @@ export default function Today({ onDataChanged, onNotify }) {
           {!autoSaving && dirtyCount > 0 && (
             <div style={styles.loadingText}>{dirtyCount} change(s) pending...</div>
           )}
-          <button
-            style={{ ...styles.button, opacity: saving ? 0.7 : 1 }}
-            onClick={handleSaveAll}
-            disabled={saving || rows.length === 0}
-          >
-            {saving ? "Saving..." : "Save all changes"}
-          </button>
         </div>
       </div>
 
@@ -352,7 +311,7 @@ export default function Today({ onDataChanged, onNotify }) {
                     handleValueChange(r, e.target.value);
                   }}
                   style={{ ...styles.input, width: "100%" }}
-                  disabled={saving}
+                  disabled={autoSaving}
                 >
                   {[0, 1, 2, 3, 4, 5].map((v) => (
                     <option key={v} value={v}>
@@ -369,7 +328,7 @@ export default function Today({ onDataChanged, onNotify }) {
                   }}
                   style={{ ...styles.input, width: "90%" }}
                   placeholder="Note (max 100 chars)"
-                  disabled={saving}
+                  disabled={autoSaving}
                 />
               </td>
             </tr>

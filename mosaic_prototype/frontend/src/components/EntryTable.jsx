@@ -45,7 +45,7 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
                 <td style={{ width: "12%", textAlign: "right" }}>
                   <button
                     onClick={() => handleDelete(id)}
-                    style={{ ...styles.button, opacity: deletingId === id ? 0.6 : 1 }}
+                    style={{ ...styles.button, backgroundColor : "#8b1e3f", opacity: deletingId === id ? 0.6 : 1 }}
                     disabled={deletingId === id}
                   >
                     {deletingId === id ? "Deleting..." : "Delete"}
