@@ -192,7 +192,7 @@ export default function EntryForm({
         Enter
       </button>
 
-      <CsvImportButton onImported={onImported} onNotify={onNotify} />
+      <CsvImportButton onImported={onImported} onNotify={onNotify} variant="import" />
     </form>
   );
 }

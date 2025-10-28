@@ -70,7 +70,7 @@ export default function Stats({ onNotify }) {
         ratio,
         percent: totalGoal > 0 ? Math.min(ratio * 100, 100) : 0,
       };
-    });
+    }).sort((a, b) => b.ratio - a.ratio);
   }, [data]);
 
   const renderRow = (item) => {
@@ -97,7 +97,11 @@ export default function Stats({ onNotify }) {
         </div>
         <div style={progressBarStyle.container}>
           <div
-            style={{ ...progressBarStyle.fill, width: `${item.percent}%` }}
+            style={{
+              ...progressBarStyle.fill,
+              width: `${item.percent}%`,
+              backgroundColor: item.ratio >= 0.5 ? styles.highlightRow.backgroundColor : '#8b1e3f',
+            }}
             role="progressbar"
             aria-label={`Progress for ${item.name}`}
             aria-valuemin={0}

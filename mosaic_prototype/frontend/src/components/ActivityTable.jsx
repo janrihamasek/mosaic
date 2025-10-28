@@ -83,14 +83,14 @@ export default function ActivityTable({
                   <>
                     <button
                       onClick={() => handleAction(onActivate, a.id, "Activity activated", "activate activity")}
-                      style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
+                      style={{ ...styles.button, width: "50%", opacity: actionId === a.id ? 0.6 : 1 }}
                       disabled={actionId === a.id}
                     >
                       {actionId === a.id ? "Working..." : "Activate"}
                     </button>
                     <button
                       onClick={() => handleAction(onDelete, a.id, "Activity was deleted", "delete activity")}
-                      style={{ ...styles.button, opacity: actionId === a.id ? 0.6 : 1 }}
+                      style={{ ...styles.button, width: "50%", opacity: actionId === a.id ? 0.6 : 1 }}
                       disabled={actionId === a.id}
                     >
                       {actionId === a.id ? "Working..." : "Delete"}

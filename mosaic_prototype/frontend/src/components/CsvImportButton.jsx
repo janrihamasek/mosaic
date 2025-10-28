@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react";
 import { importEntriesCsv } from "../api";
 import { styles } from "../styles/common";
 
-export default function CsvImportButton({ onImported, onNotify }) {
+export default function CsvImportButton({ onImported, onNotify, variant = "default" }) {
   const inputRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
@@ -48,7 +48,12 @@ export default function CsvImportButton({ onImported, onNotify }) {
       <button
         type="button"
         onClick={handleClick}
-        style={{ ...styles.button, opacity: loading ? 0.7 : 1 }}
+        style={{
+          ...styles.button,
+          opacity: loading ? 0.7 : 1,
+          backgroundColor: variant === "import" ? "#29442f" : styles.button.backgroundColor,
+          borderColor: variant === "import" ? "#29442f" : styles.button.backgroundColor,
+        }}
         disabled={loading}
       >
         {loading ? "Importing..." : "Import CSV"}

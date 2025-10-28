@@ -21,7 +21,7 @@ const DEFAULT_ENTRY_FILTERS = {
 export default function App() {
   const [entries, setEntries] = useState([]);
   const [entriesFilters, setEntriesFilters] = useState(DEFAULT_ENTRY_FILTERS);
-  const [activeTab, setActiveTab] = useState('Today');
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('mosaic_active_tab') || 'Today');
   const [activeActivities, setActiveActivities] = useState([]);
   const [allActivities, setAllActivities] = useState([]);
   const [selectedActivity, setSelectedActivity] = useState(null);
@@ -112,6 +112,10 @@ export default function App() {
     applyEntriesFilters(DEFAULT_ENTRY_FILTERS);
   }, [applyEntriesFilters]);
 
+  useEffect(() => {
+    localStorage.setItem('mosaic_active_tab', activeTab);
+  }, [activeTab]);
+
   const tabStyle = (tabName) =>
     activeTab === tabName
       ? { ...styles.tab, ...styles.tabActive }
@@ -140,7 +144,10 @@ export default function App() {
         />
       </div>
 
-      <h1>🧩 Mosaic</h1>
+      <h1 style={{ cursor: 'pointer' }} onClick={() => setActiveTab('Today')} role="button" tabIndex={0}
+         onKeyPress={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('Today'); }}>
+        🧩 Mosaic
+      </h1>
 
       <div style={styles.tabBar}>
         <div style={tabStyle('Today')} onClick={() => setActiveTab('Today')}>Today</div>
