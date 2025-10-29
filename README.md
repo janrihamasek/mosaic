@@ -87,11 +87,5 @@ Use the `Import CSV` button on the **Entries** tab to upload data through the `/
 | `/finalize_day` | POST | Ensure daily entries exist for active activities |
 | `/import_csv` | POST | Accept CSV upload and batch import/update entries |
 
-## Recommended Next Steps
-1. Introduce error handling and loading states around network calls in the React components.
-2. Cover the Flask API with unit tests (e.g., pytest + Flask test client) and add backend dependency tracking (`requirements.txt`).
-3. Consider authentication/authorization if the app moves beyond personal use.
-4. Prepare production-ready build/deployment docs (Dockerfile or hosting instructions).
-
 ## License
 TBD – choose and document an open-source or proprietary license before publishing.
