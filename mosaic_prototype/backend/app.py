@@ -5,7 +5,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, Optional, cast
+from typing import Dict, Iterator, Optional, cast
 
 import jwt
 from flask import Flask, jsonify, request, g
@@ -118,6 +118,27 @@ def _is_public_endpoint(endpoint: Optional[str]) -> bool:
         return True
     public = app.config.get("PUBLIC_ENDPOINTS", set())
     return endpoint in public
+
+
+def parse_pagination(default_limit: int = 100, max_limit: int = 500) -> Dict[str, int]:
+    try:
+        limit_raw = request.args.get("limit", default_limit)
+        limit = int(limit_raw)
+        if limit <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValidationError("limit must be a positive integer", code="invalid_query")
+
+    try:
+        offset_raw = request.args.get("offset", 0)
+        offset = int(offset_raw)
+        if offset < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValidationError("offset must be a non-negative integer", code="invalid_query")
+
+    limit = min(limit, max_limit)
+    return {"limit": limit, "offset": offset}
 
 
 def configure_database_path(path: str):
@@ -252,6 +273,11 @@ def ensure_schema(conn):
         )
         conn.commit()
         app.config["_ENTRY_METADATA_READY"] = True
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity ON entries(activity)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity_category ON entries(activity_category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_category ON activities(category)")
 
     app.config["_SCHEMA_READY"] = True
 
@@ -444,7 +470,7 @@ def get_entries():
     conn = get_db_connection()
     try:
         clauses = []
-        params = []
+        params: list = []
         if start_date:
             clauses.append("e.date >= ?")
             params.append(start_date)
@@ -472,6 +498,9 @@ def get_entries():
             {where_sql}
             ORDER BY e.date DESC, e.activity ASC
         """
+        pagination = parse_pagination()
+        query += " LIMIT ? OFFSET ?"
+        params.extend([pagination["limit"], pagination["offset"]])
         entries = conn.execute(query, params).fetchall()
         return jsonify([dict(row) for row in entries])
     except sqlite3.OperationalError as e:
@@ -565,13 +594,17 @@ def get_activities():
     show_all = request.args.get("all", "false").lower() in ("1", "true", "yes")
     conn = get_db_connection()
     try:
+        pagination = parse_pagination()
+        params = [pagination["limit"], pagination["offset"]]
         if show_all:
             rows = conn.execute(
-                "SELECT * FROM activities ORDER BY active DESC, category ASC, name ASC"
+                "SELECT * FROM activities ORDER BY active DESC, category ASC, name ASC LIMIT ? OFFSET ?",
+                params,
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM activities WHERE active = 1 ORDER BY active DESC, category ASC, name ASC"
+                "SELECT * FROM activities WHERE active = 1 ORDER BY active DESC, category ASC, name ASC LIMIT ? OFFSET ?",
+                params,
             ).fetchall()
         return jsonify([dict(r) for r in rows])
     except sqlite3.OperationalError as e:
@@ -714,11 +747,12 @@ def get_progress_stats():
     start_dt = end_dt - timedelta(days=window - 1)
     start_date = start_dt.strftime("%Y-%m-%d")
     end_date = end_dt.strftime("%Y-%m-%d")
+    pagination = parse_pagination()
 
     conn = get_db_connection()
     try:
-        rows = conn.execute(
-            """
+        stats_params = [start_date, end_date, start_date]
+        stats_query = """
             SELECT
                 a.name,
                 a.category,
@@ -732,9 +766,11 @@ def get_progress_stats():
                OR (a.deactivated_at IS NOT NULL AND a.deactivated_at >= ?)
             GROUP BY a.id
             ORDER BY a.name COLLATE NOCASE ASC
-            """,
-            (start_date, end_date, start_date),
-        ).fetchall()
+        """
+        if group_by == "activity":
+            stats_query += " LIMIT ? OFFSET ?"
+            stats_params.extend([pagination["limit"], pagination["offset"]])
+        rows = conn.execute(stats_query, stats_params).fetchall()
 
         if group_by == "activity":
             data = []
@@ -777,6 +813,9 @@ def get_progress_stats():
                     }
                 )
             data.sort(key=lambda item: item["name"].lower())
+            offset = pagination["offset"]
+            limit = pagination["limit"]
+            data = data[offset: offset + limit]
 
         return jsonify(
             {
@@ -794,6 +833,7 @@ def get_progress_stats():
 @app.get("/today")
 def get_today():
     date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    pagination = parse_pagination(default_limit=200)
     conn = get_db_connection()
     try:
         rows = conn.execute("""
@@ -815,7 +855,9 @@ def get_today():
             WHERE a.active = 1
                OR (a.deactivated_at IS NOT NULL AND ? < a.deactivated_at)
             ORDER BY a.name ASC
-        """, (date, date)).fetchall()
+            LIMIT ? OFFSET ?
+        """, (date, date, pagination["limit"], pagination["offset"]))
+        rows = rows.fetchall()
         return jsonify([dict(r) for r in rows])
     finally:
         conn.close()

@@ -89,6 +89,11 @@ def ensure_schema(conn):
         )
         conn.commit()
 
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity ON entries(activity)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity_category ON entries(activity_category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_category ON activities(category)")
+
 
 def get_db_connection(db_path: Optional[str] = None):
     path = db_path or DB_PATH

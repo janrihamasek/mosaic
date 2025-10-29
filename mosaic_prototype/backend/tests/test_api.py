@@ -543,3 +543,108 @@ def test_stats_progress_activity_and_category(client, auth_headers):
     assert categories["Health"]["total_value"] == pytest.approx(40.0)
     assert categories["Health"]["total_goal"] == pytest.approx(60.0)
     assert categories["Health"]["progress"] == pytest.approx(40.0 / 60.0)
+
+
+def test_entries_pagination(client, auth_headers):
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Task",
+            "category": "Testing",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "",
+        },
+        headers=auth_headers,
+    )
+    for day in range(1, 5):
+        client.post(
+            "/add_entry",
+            json={
+                "date": f"2024-03-0{day}",
+                "activity": "Task",
+                "value": day,
+                "note": str(day),
+            },
+            headers=auth_headers,
+        )
+
+    first_page = client.get("/entries?limit=2", headers=auth_headers)
+    assert first_page.status_code == 200
+    assert len(first_page.get_json()) == 2
+
+    second_page = client.get("/entries?limit=2&offset=2", headers=auth_headers)
+    assert second_page.status_code == 200
+    assert len(second_page.get_json()) == 2
+
+
+def test_activities_pagination(client, auth_headers):
+    for idx in range(5):
+        client.post(
+            "/add_activity",
+            json={
+                "name": f"Act {idx}",
+                "category": "Cat",
+                "frequency_per_day": 1,
+                "frequency_per_week": 7,
+                "description": "",
+            },
+            headers=auth_headers,
+        )
+
+    resp = client.get("/activities?limit=3", headers=auth_headers)
+    assert resp.status_code == 200
+    assert len(resp.get_json()) == 3
+
+    resp_all = client.get("/activities?all=true&limit=2&offset=3", headers=auth_headers)
+    assert resp_all.status_code == 200
+    assert len(resp_all.get_json()) == 2
+
+
+def test_stats_pagination(client, auth_headers):
+    for name in ("Alpha", "Beta", "Gamma"):
+        client.post(
+            "/add_activity",
+            json={
+                "name": name,
+                "category": name,
+                "frequency_per_day": 1,
+                "frequency_per_week": 7,
+                "description": "",
+            },
+            headers=auth_headers,
+        )
+
+    response = client.get("/stats/progress?group=activity&limit=2", headers=auth_headers)
+    assert response.status_code == 200
+    assert len(response.get_json()["data"]) == 2
+
+    response_category = client.get("/stats/progress?group=category&limit=1", headers=auth_headers)
+    assert response_category.status_code == 200
+    assert len(response_category.get_json()["data"]) == 1
+
+
+def test_today_pagination(client, auth_headers):
+    for idx in range(5):
+        client.post(
+            "/add_activity",
+            json={
+                "name": f"Todo {idx}",
+                "category": "Daily",
+                "frequency_per_day": 1,
+                "frequency_per_week": 7,
+                "description": "",
+            },
+            headers=auth_headers,
+        )
+
+    resp = client.get("/today?limit=3", headers=auth_headers)
+    assert resp.status_code == 200
+    assert len(resp.get_json()) == 3
+
+
+def test_invalid_pagination_returns_error(client, auth_headers):
+    resp = client.get("/activities?limit=abc", headers=auth_headers)
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["error"]["code"] == "invalid_query"

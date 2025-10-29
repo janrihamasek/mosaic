@@ -101,6 +101,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   - `activity` (optional, string): Filter by activity name.
   - `category` (optional, string): Filter by category name.
     - For `activity` and `category`, the special values `all`, `all activities`, or `all categories` (case‑insensitive) include everything.
+  - `limit` (optional, int): Number of rows to return (default 100, max 500).
+  - `offset` (optional, int): Number of rows to skip before returning results.
 - **Response**:
   ```json
   [
@@ -152,6 +154,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 - **Description**: Retrieve a list of activities. Use `?all=true` to include inactive activities.
 - **Query Parameters**:
   - `all` (optional, boolean): Include inactive activities if `true`.
+  - `limit` (optional, int): Maximum number of records (default 100, max 500).
+  - `offset` (optional, int): Number of records to skip.
 - **Response**:
   ```json
   [
@@ -237,6 +241,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 - **Description**: Retrieve all active activities for a specific date (defaults to today).
 - **Query Parameters**:
   - `date` (optional, string): Date in `YYYY-MM-DD` format.
+  - `limit` (optional, int): Number of activities to return (default 200, max 500).
+  - `offset` (optional, int): Number of activities to skip before returning results.
 - **Response**:
   ```json
   [
@@ -288,6 +294,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   - `group` (optional, string): Group by `activity` or `category` (default: `activity`).
   - `period` (optional, int): Number of days (30 or 90, default: 30).
   - `date` (optional, string): End date in `YYYY-MM-DD` format (defaults to today).
+  - `limit` (optional, int): Limit the number of result rows (default 100, max 500).
+  - `offset` (optional, int): Skip the given number of rows before returning results.
 - **Response**:
   ```json
   {
@@ -364,5 +372,14 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 - **429 Too Many Requests** (`code: too_many_requests`): Rate limit exceeded.
 - **500 Internal Server Error** (`code: internal_error`): Server error.
 - **Token expiry**: When the JWT expires the API responds with `401`/`token_expired`.
+
+---
+
+## Database Indexes
+- `idx_entries_date`: created on `entries(date)` because `/entries` and `/stats/progress` frequently filter by date ranges.
+- `idx_entries_activity`: supports lookups by activity in `/entries`, `/today`, and `/stats/progress` (activity grouping).
+- `idx_entries_activity_category`: speeds category filters in `/entries` and downstream analytics.
+- `idx_activities_category`: optimises category-based ordering and filtering in `/activities` and `/stats/progress`.
+- All indexes were validated with `EXPLAIN QUERY PLAN` to ensure the SQLite planner uses them for the slowest queries.
 
 ---

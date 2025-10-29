@@ -27,3 +27,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+CREATE INDEX IF NOT EXISTS idx_entries_activity ON entries(activity);
+CREATE INDEX IF NOT EXISTS idx_entries_activity_category ON entries(activity_category);
+CREATE INDEX IF NOT EXISTS idx_activities_category ON activities(category);
