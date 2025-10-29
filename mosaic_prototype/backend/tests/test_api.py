@@ -648,3 +648,65 @@ def test_invalid_pagination_returns_error(client, auth_headers):
     assert resp.status_code == 400
     body = resp.get_json()
     assert body["error"]["code"] == "invalid_query"
+
+
+def test_today_cache_invalidation(client, auth_headers):
+    initial = client.get("/today", headers=auth_headers)
+    assert initial.status_code == 200
+    base_count = len(initial.get_json())
+
+    client.post(
+        "/add_activity",
+        json={
+            "name": "Cached Activity",
+            "category": "Cache",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "",
+        },
+        headers=auth_headers,
+    )
+
+    refreshed = client.get("/today", headers=auth_headers)
+    assert refreshed.status_code == 200
+    assert len(refreshed.get_json()) == base_count + 1
+
+
+def test_stats_cache_invalidation(client, auth_headers):
+    client.post(
+        "/add_activity",
+        json={
+            "name": "CacheStat",
+            "category": "Cache",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "",
+        },
+        headers=auth_headers,
+    )
+
+    baseline = client.get(
+        "/stats/progress?group=activity&date=2024-04-30",
+        headers=auth_headers,
+    )
+    assert baseline.status_code == 200
+    payload = baseline.get_json()
+    cache_entry = next((row for row in payload["data"] if row["name"] == "CacheStat"), None)
+    assert cache_entry is not None
+    assert cache_entry["total_value"] == pytest.approx(0.0)
+
+    client.post(
+        "/add_entry",
+        json={"date": "2024-04-01", "activity": "CacheStat", "value": 5, "note": ""},
+        headers=auth_headers,
+    )
+
+    updated = client.get(
+        "/stats/progress?group=activity&date=2024-04-30",
+        headers=auth_headers,
+    )
+    assert updated.status_code == 200
+    updated_payload = updated.get_json()
+    updated_entry = next((row for row in updated_payload["data"] if row["name"] == "CacheStat"), None)
+    assert updated_entry is not None
+    assert updated_entry["total_value"] == pytest.approx(5.0)

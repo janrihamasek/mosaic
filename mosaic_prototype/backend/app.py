@@ -1,3 +1,4 @@
+import copy
 import os
 import secrets
 import sqlite3
@@ -5,7 +6,8 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterator, Optional, cast
+from time import time
+from typing import Dict, Iterator, Optional, Tuple, cast
 
 import jwt
 from flask import Flask, jsonify, request, g
@@ -14,6 +16,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
+from threading import Lock
 
 from import_data import import_csv as run_import_csv
 from models import Activity, Entry  # noqa: F401 - ensure models registered
@@ -82,6 +85,43 @@ ERROR_CODE_BY_STATUS = {
 }
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+_cache_storage: Dict[str, Tuple[float, object]] = {}
+_cache_lock = Lock()
+TODAY_CACHE_TTL = 60
+STATS_CACHE_TTL = 300
+
+
+def _cache_build_key(prefix: str, key_parts: Tuple) -> str:
+    return prefix + "::" + "::".join(str(part) for part in key_parts)
+
+
+def cache_get(prefix: str, key_parts: Tuple) -> Optional[object]:
+    key = _cache_build_key(prefix, key_parts)
+    now = time()
+    with _cache_lock:
+        entry = _cache_storage.get(key)
+        if not entry:
+            return None
+        expires_at, value = entry
+        if expires_at <= now:
+            del _cache_storage[key]
+            return None
+        return copy.deepcopy(value)
+
+
+def cache_set(prefix: str, key_parts: Tuple, value: object, ttl: int) -> None:
+    key = _cache_build_key(prefix, key_parts)
+    with _cache_lock:
+        _cache_storage[key] = (time() + ttl, copy.deepcopy(value))
+
+
+def invalidate_cache(prefix: str) -> None:
+    key_prefix = prefix + "::"
+    with _cache_lock:
+        for key in list(_cache_storage.keys()):
+            if key.startswith(key_prefix):
+                del _cache_storage[key]
 
 
 def _create_access_token(user_id: int, username: str) -> tuple[str, str]:
@@ -569,6 +609,8 @@ def add_entry():
     except sqlite3.OperationalError as e:
         return error_response("database_error", str(e), 500)
     else:
+        invalidate_cache("today")
+        invalidate_cache("stats")
         return response
 
 
@@ -584,6 +626,8 @@ def delete_entry(entry_id):
             cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         if cur.rowcount == 0:
             return error_response("not_found", "Záznam nenalezen", 404)
+        invalidate_cache("today")
+        invalidate_cache("stats")
         return jsonify({"message": "Záznam smazán"}), 200
     except sqlite3.OperationalError as e:
         return error_response("database_error", str(e), 500)
@@ -638,6 +682,8 @@ def add_activity():
                 """,
                 (name, category, goal, description, frequency_per_day, frequency_per_week)
             )
+        invalidate_cache("today")
+        invalidate_cache("stats")
         return jsonify({"message": "Kategorie přidána"}), 201
     except sqlite3.IntegrityError:
         return error_response("conflict", "Kategorie s tímto názvem již existuje", 409)
@@ -690,6 +736,8 @@ def update_activity(activity_id):
                 entry_params,
             )
 
+    invalidate_cache("today")
+    invalidate_cache("stats")
     return jsonify({"message": "Aktivita aktualizována"}), 200
 
 
@@ -708,6 +756,8 @@ def deactivate_activity(activity_id):
         )
         if cur.rowcount == 0:
             return error_response("not_found", "Aktivita nenalezena", 404)
+    invalidate_cache("today")
+    invalidate_cache("stats")
     return jsonify({"message": "Aktivita deaktivována"}), 200
 
 
@@ -722,6 +772,8 @@ def activate_activity(activity_id):
         cur = conn.execute("UPDATE activities SET active = 1, deactivated_at = NULL WHERE id = ?", (activity_id,))
         if cur.rowcount == 0:
             return error_response("not_found", "Aktivita nenalezena", 404)
+    invalidate_cache("today")
+    invalidate_cache("stats")
     return jsonify({"message": "Aktivita aktivována"}), 200
 
 
@@ -748,6 +800,17 @@ def get_progress_stats():
     start_date = start_dt.strftime("%Y-%m-%d")
     end_date = end_dt.strftime("%Y-%m-%d")
     pagination = parse_pagination()
+    cache_key_parts = (
+        group_by,
+        window,
+        start_date,
+        end_date,
+        pagination["limit"],
+        pagination["offset"],
+    )
+    cached_stats = cache_get("stats", cache_key_parts)
+    if cached_stats is not None:
+        return jsonify(cached_stats)
 
     conn = get_db_connection()
     try:
@@ -817,15 +880,15 @@ def get_progress_stats():
             limit = pagination["limit"]
             data = data[offset: offset + limit]
 
-        return jsonify(
-            {
-                "group": group_by,
-                "window": window,
-                "start_date": start_date,
-                "end_date": end_date,
-                "data": data,
-            }
-        )
+        payload = {
+            "group": group_by,
+            "window": window,
+            "start_date": start_date,
+            "end_date": end_date,
+            "data": data,
+        }
+        cache_set("stats", cache_key_parts, payload, STATS_CACHE_TTL)
+        return jsonify(payload)
     finally:
         conn.close()
 
@@ -834,6 +897,10 @@ def get_progress_stats():
 def get_today():
     date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
     pagination = parse_pagination(default_limit=200)
+    cache_key_parts = (date, pagination["limit"], pagination["offset"])
+    cached = cache_get("today", cache_key_parts)
+    if cached is not None:
+        return jsonify(cached)
     conn = get_db_connection()
     try:
         rows = conn.execute("""
@@ -858,9 +925,11 @@ def get_today():
             LIMIT ? OFFSET ?
         """, (date, date, pagination["limit"], pagination["offset"]))
         rows = rows.fetchall()
-        return jsonify([dict(r) for r in rows])
+        data = [dict(r) for r in rows]
     finally:
         conn.close()
+    cache_set("today", cache_key_parts, data, TODAY_CACHE_TTL)
+    return jsonify(data)
 
 
 @app.delete("/activities/<int:activity_id>")
@@ -878,7 +947,9 @@ def delete_activity(activity_id):
             return error_response("invalid_state", "Aktivitu nelze smazat, nejprve ji deaktivujte", 400)
 
         conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
-        return jsonify({"message": "Aktivita smazána"}), 200
+    invalidate_cache("today")
+    invalidate_cache("stats")
+    return jsonify({"message": "Aktivita smazána"}), 200
 
 
 @app.post("/finalize_day")
@@ -916,6 +987,8 @@ def finalize_day():
                     (date, a["name"], a["description"], a["category"], a["goal"])
                 )
                 created += 1
+    invalidate_cache("today")
+    invalidate_cache("stats")
     return jsonify({"message": f"{created} missing entries added for {date}"}), 200
 
 
@@ -943,6 +1016,8 @@ def import_csv_endpoint():
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
+    invalidate_cache("today")
+    invalidate_cache("stats")
     return jsonify({"message": "CSV import completed", "summary": summary}), 200
 
 

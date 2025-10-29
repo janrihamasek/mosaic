@@ -9,6 +9,7 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
 - Entry history with sorting, pagination, and inline delete.
 - CSV import helper (UI button + backend endpoint) for bootstrapping historical data.
 - Optional API key protection with basic rate limiting on mutating endpoints.
+- Response caching for frequently accessed reads (`/today`, `/stats/progress`) with short time-to-live to reduce database load.
 
 ### Activity Scoring
 - Every activity captures a monthly goal (desired number of points/occurrences) and belongs to a broader category for trend analysis.

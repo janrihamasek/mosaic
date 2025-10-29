@@ -264,6 +264,7 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 - **Notes**:
   - If `date` is omitted, the endpoint uses today’s date.
   - Activities deactivated after the selected date are still included.
+  - The response is cached for roughly one minute to improve responsiveness; writes automatically invalidate the cache.
 
 ---
 
@@ -318,6 +319,7 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 - **Notes**:
   - The `data` array is sorted by `progress` in descending order.
   - `progress` is expressed as a float in the range 0–1. Multiply by 100 for a percentage.
+  - Results are cached for about five minutes and invalidated whenever relevant entries or activities change.
 
 ---
 
