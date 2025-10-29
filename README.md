@@ -80,6 +80,8 @@ pip install -r requirements.txt
 pytest
 ```
 
+CI/CD: On every push or pull request the GitHub Actions workflow (`.github/workflows/tests.yml`) installs dependencies and runs the backend pytest suite plus a frontend build to catch regressions early.
+
 ### 3. Run the frontend
 Configure the API origin via environment variable (Create React App reads `REACT_APP_*` at build time):
 ```bash
