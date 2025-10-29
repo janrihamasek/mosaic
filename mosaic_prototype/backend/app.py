@@ -17,7 +17,9 @@ from security import (
     require_api_key,
     validate_activity_create_payload,
     validate_activity_update_payload,
+    validate_csv_import_payload,
     validate_entry_payload,
+    validate_finalize_day_payload,
 )
 
 app = Flask(__name__)
@@ -641,13 +643,8 @@ def finalize_day():
     if limited:
         return limited
 
-    data = request.get_json() or {}
-    date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
-    # Validate date format if provided explicitly
-    try:
-        datetime.strptime(date, "%Y-%m-%d")
-    except ValueError:
-        raise ValidationError("Date must be in YYYY-MM-DD format")
+    payload = validate_finalize_day_payload(request.get_json() or {})
+    date = payload["date"]
 
     conn = get_db_connection()
     try:
@@ -688,14 +685,7 @@ def import_csv_endpoint():
     if limited:
         return limited
 
-    if "file" not in request.files:
-        return jsonify({"error": "Missing CSV file"}), 400
-
-    uploaded = request.files.get("file")
-    if not uploaded or not getattr(uploaded, "filename", None):
-        return jsonify({"error": "Missing CSV file"}), 400
-
-    file = cast(FileStorage, uploaded)
+    file = cast(FileStorage, validate_csv_import_payload(request.files))
     filename = secure_filename(file.filename)
     suffix = os.path.splitext(filename)[1] or ".csv"
     tmp_path = None

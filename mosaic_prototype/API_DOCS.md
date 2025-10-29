@@ -283,8 +283,27 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   }
   ```
 - **Notes**:
-  - The CSV must contain headers compatible with the import utility (`date,activity,value,note,description,category,goal`).
-  - The derived goal per day is recalculated for each imported activity in the same way as for the REST endpoints.
+- The CSV must contain headers compatible with the import utility (`date,activity,value,note,description,category,goal`).
+- The derived goal per day is recalculated for each imported activity in the same way as for the REST endpoints.
+
+---
+
+## Input Validation
+- All payloads are validated with **Pydantic 2** models defined in `backend/schemas.py`. Pydantic was chosen because it offers declarative schemas, high-performance parsing, and clean integration with type hints already used in the project.
+- Every endpoint with a JSON or file payload delegates to the helpers in `backend/security.py`, which wrap the Pydantic models and convert validation issues into the standard error response: `{"error": "message"}` with HTTP 400.
+- Existing schemas:
+  | Endpoint / Use case | Helper | Schema |
+  |---------------------|--------|--------|
+  | `POST /add_entry` | `validate_entry_payload` | `EntryPayload` |
+  | `POST /add_activity` | `validate_activity_create_payload` | `ActivityCreatePayload` |
+  | `PUT /activities/<id>` | `validate_activity_update_payload` | `ActivityUpdatePayload` |
+  | `POST /finalize_day` | `validate_finalize_day_payload` | `FinalizeDayPayload` |
+  | `POST /import_csv` | `validate_csv_import_payload` | `CSVImportPayload` |
+- Adding a new payload:
+  1. Define a Pydantic model in `backend/schemas.py` with explicit field types, defaults, and `field_validator`/`model_validator` hooks for custom business rules.
+  2. Expose a thin wrapper in `backend/security.py` that calls `.model_validate()` and raises `ValidationError` with the schema’s message.
+  3. Use that wrapper inside the Flask endpoint. The shared error handler will take care of returning the JSON error response.
+- Validation errors always contain actionable, single-sentence messages so they can be shown directly in the UI or CLI clients.
 
 ---
 

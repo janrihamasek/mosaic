@@ -1,9 +1,18 @@
 from collections import defaultdict, deque
 from datetime import datetime, UTC
 from threading import Lock
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from flask import current_app, jsonify, request
+from pydantic import ValidationError as PydanticValidationError
+
+from schemas import (
+    ActivityCreatePayload,
+    ActivityUpdatePayload,
+    CSVImportPayload,
+    EntryPayload,
+    FinalizeDayPayload,
+)
 
 
 class SimpleRateLimiter:
@@ -66,147 +75,79 @@ class ValidationError(Exception):
         self.message = message
 
 
-def require_fields(payload: Dict[str, Any], fields: Tuple[str, ...]):
-    missing = [f for f in fields if payload.get(f) is None]
-    if missing:
-        raise ValidationError(f"Missing required field(s): {', '.join(missing)}")
-
-
-def ensure_date(value: str) -> str:
-    try:
-        datetime.strptime(value, "%Y-%m-%d")
-    except (ValueError, TypeError):
-        raise ValidationError("Date must be in YYYY-MM-DD format")
-    return value
-
-
-def ensure_number(value: Any, field: str) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        raise ValidationError(f"{field} must be a number")
-
-
-def ensure_int(value: Any, field: str, min_value: int = 0) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        raise ValidationError(f"{field} must be an integer")
-    if number < min_value:
-        raise ValidationError(f"{field} must be at least {min_value}")
-    return number
-
-
-def ensure_length(value: str, field: str, max_len: int):
-    if value is None:
-        return
-    if len(value) > max_len:
-        raise ValidationError(f"{field} must be at most {max_len} characters")
+def _first_error_message(exc: PydanticValidationError) -> str:
+    errors = exc.errors()
+    missing_fields = [
+        ".".join(str(part) for part in err.get("loc", []) if part != "__root__")
+        for err in errors
+        if err.get("type") == "missing"
+    ]
+    if missing_fields:
+        return f"Missing required field(s): {', '.join(missing_fields)}"
+    if errors:
+        message = errors[0].get("msg")
+        if message:
+            return message
+    return str(exc)
 
 
 def validate_entry_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValidationError("Invalid JSON payload")
 
-    require_fields(payload, ("date", "activity"))
-    date = ensure_date(payload["date"])
-    activity = payload["activity"].strip()
-    if not activity:
-        raise ValidationError("Activity must not be empty")
+    try:
+        data = EntryPayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValidationError(_first_error_message(exc))
 
-    value = ensure_number(payload.get("value", 0), "value")
-    note = (payload.get("note") or "").strip()
-    ensure_length(note, "note", 100)
-
-    return {
-        "date": date,
-        "activity": activity,
-        "value": value,
-        "note": note,
-    }
-
-
-def ensure_int_in_range(value: Any, field: str, min_value: int, max_value: int) -> int:
-    number = ensure_int(value, field, min_value)
-    if number > max_value:
-        raise ValidationError(f"{field} must be at most {max_value}")
-    return number
+    return data.model_dump()
 
 
 def validate_activity_create_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValidationError("Invalid JSON payload")
 
-    require_fields(payload, ("name", "category", "frequency_per_day", "frequency_per_week"))
-    name = payload["name"].strip()
-    if not name:
-        raise ValidationError("Activity name must not be empty")
-    ensure_length(name, "name", 80)
+    try:
+        data = ActivityCreatePayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValidationError(_first_error_message(exc))
 
-    category = payload["category"].strip()
-    if not category:
-        raise ValidationError("Category must not be empty")
-    ensure_length(category, "category", 80)
-
-    frequency_per_day = ensure_int_in_range(payload.get("frequency_per_day"), "frequency_per_day", 1, 3)
-    frequency_per_week = ensure_int_in_range(payload.get("frequency_per_week"), "frequency_per_week", 1, 7)
-
-    description = (payload.get("description") or "").strip()
-    ensure_length(description, "description", 180)
-
-    avg_goal = (frequency_per_day * frequency_per_week) / 7
-
-    return {
-        "name": name,
-        "category": category,
-        "goal": avg_goal,
-        "frequency_per_day": frequency_per_day,
-        "frequency_per_week": frequency_per_week,
-        "description": description,
-    }
+    result = data.model_dump()
+    result["goal"] = data.computed_goal
+    return result
 
 
 def validate_activity_update_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValidationError("Invalid JSON payload")
 
-    allowed_fields = {"category", "goal", "description", "frequency_per_day", "frequency_per_week"}
-    provided = {k for k in payload.keys() if payload.get(k) is not None}
-    if not provided.intersection(allowed_fields):
-        raise ValidationError("No updatable fields provided")
+    try:
+        data = ActivityUpdatePayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValidationError(_first_error_message(exc))
 
-    result: Dict[str, Any] = {}
+    return data.to_update_dict()
 
-    if "category" in payload:
-        category = (payload.get("category") or "").strip()
-        if not category:
-            raise ValidationError("Category must not be empty")
-        ensure_length(category, "category", 80)
-        result["category"] = category
 
-    per_day = per_week = None
-    if "frequency_per_day" in payload:
-        per_day = ensure_int_in_range(payload.get("frequency_per_day"), "frequency_per_day", 1, 3)
-        result["frequency_per_day"] = per_day
-    if "frequency_per_week" in payload:
-        per_week = ensure_int_in_range(payload.get("frequency_per_week"), "frequency_per_week", 1, 7)
-        result["frequency_per_week"] = per_week
+def validate_csv_import_payload(files) -> Any:
+    file_obj = None
+    if hasattr(files, "get"):
+        file_obj = files.get("file")
+    try:
+        data = CSVImportPayload.model_validate({"file": file_obj})
+    except PydanticValidationError as exc:
+        raise ValidationError(_first_error_message(exc))
+    return data.file
 
-    # allow goal to be explicitly provided (e.g. backward compatibility)
-    if "goal" in payload and payload.get("goal") is not None:
-        goal_value = ensure_number(payload.get("goal"), "goal")
-        if goal_value < 0:
-            raise ValidationError("goal must be non-negative")
-        result["goal"] = goal_value
 
-    if per_day is not None and per_week is not None:
-        result["goal"] = (per_day * per_week) / 7
-    elif ("frequency_per_day" in result) ^ ("frequency_per_week" in result):
-        raise ValidationError("Both frequency_per_day and frequency_per_week must be provided together")
+def validate_finalize_day_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValidationError("Invalid JSON payload")
 
-    if "description" in payload:
-        description = (payload.get("description") or "").strip()
-        ensure_length(description, "description", 180)
-        result["description"] = description
+    try:
+        data = FinalizeDayPayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValidationError(_first_error_message(exc))
 
-    return result
+    date_value = data.date or datetime.now().strftime("%Y-%m-%d")
+    return {"date": date_value}
