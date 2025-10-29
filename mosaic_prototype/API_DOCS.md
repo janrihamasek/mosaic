@@ -1,10 +1,3 @@
-Here is the generated `API_DOCS.md` for your **Mosaic** project, based on the current backend code:
-
----
-
-
-
-```markdown
 # Mosaic API Documentation
 
 This document describes the REST API endpoints for the **Mosaic** project, a full-stack application for tracking daily activities and their qualitative scores.
@@ -283,12 +276,3 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 - **500 Internal Server Error**: Server error.
 
 ---
-```
-
----
-### Next Steps
-- **Save this as `API_DOCS.md`** in your project root.
-- **Keep it updated** as you add/change endpoints.
-- **Consider integrating Flasgger** for interactive Swagger UI documentation.
-
-Would you like me to help you set up Flasgger or refine any part of the documentation? 😊
