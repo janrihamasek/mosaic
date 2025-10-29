@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from flask import current_app, jsonify, request
 from pydantic import ValidationError as PydanticValidationError
+from werkzeug.datastructures import FileStorage
 
 from schemas import (
     ActivityCreatePayload,
@@ -85,7 +86,15 @@ def _first_error_message(exc: PydanticValidationError) -> str:
     if missing_fields:
         return f"Missing required field(s): {', '.join(missing_fields)}"
     if errors:
-        message = errors[0].get("msg")
+        message = errors[0].get("msg") or ""
+        if message.startswith("Value error, "):
+            message = message.split(", ", 1)[1]
+        if (
+            message.startswith("Input should be")
+            and errors[0].get("type") == "is_instance_of"
+            and tuple(errors[0].get("loc") or ()) == ("file",)
+        ):
+            return "Missing CSV file"
         if message:
             return message
     return str(exc)
@@ -133,6 +142,8 @@ def validate_csv_import_payload(files) -> Any:
     file_obj = None
     if hasattr(files, "get"):
         file_obj = files.get("file")
+    if not isinstance(file_obj, FileStorage) or not getattr(file_obj, "filename", None):
+        raise ValidationError("Missing CSV file")
     try:
         data = CSVImportPayload.model_validate({"file": file_obj})
     except PydanticValidationError as exc:
