@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { styles } from '../styles/common';
+import { formatError } from '../utils/errors';
 
 export default function ActivityTable({
   activities,
@@ -22,7 +23,7 @@ export default function ActivityTable({
       onNotify?.(successMessage, 'success');
       await onDataChanged?.();
     } catch (err) {
-      onNotify?.(`Failed to ${errorVerb}: ${err.message}`, 'error');
+      onNotify?.(`Failed to ${errorVerb}: ${formatError(err)}`, 'error');
     } finally {
       setActionId(null);
     }

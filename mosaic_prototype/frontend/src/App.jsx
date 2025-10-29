@@ -1,24 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import EntryTable from './components/EntryTable';
 import EntryForm from './components/EntryForm';
-import { fetchEntries, deleteEntry } from './api';
 import ActivityForm from './components/ActivityForm';
 import ActivityTable from './components/ActivityTable';
 import ActivityDetail from './components/ActivityDetail';
 import Today from './components/Today';
 import Stats from './components/Stats';
-import { fetchActivities, addActivity, deleteActivity, activateActivity, deactivateActivity } from './api';
-import { styles } from './styles/common';
 import Notification from './components/Notification';
+import LoginForm from './components/LoginForm';
+import RegisterForm from './components/RegisterForm';
+import LogoutButton from './components/LogoutButton';
+import {
+  fetchEntries,
+  deleteEntry,
+  fetchActivities,
+  addActivity,
+  deleteActivity,
+  activateActivity,
+  deactivateActivity,
+} from './api';
+import { styles } from './styles/common';
+import { useAuth } from './context/AuthContext';
+import { formatError } from './utils/errors';
 
 const DEFAULT_ENTRY_FILTERS = {
   startDate: null,
   endDate: null,
-  activity: "all",
-  category: "all",
+  activity: 'all',
+  category: 'all',
 };
 
-export default function App() {
+function Dashboard() {
   const [entries, setEntries] = useState([]);
   const [entriesFilters, setEntriesFilters] = useState(DEFAULT_ENTRY_FILTERS);
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('mosaic_active_tab') || 'Today');
@@ -37,16 +50,14 @@ export default function App() {
     }
     setNotification({ message, type, visible: true });
     notificationTimerRef.current = setTimeout(() => {
-      setNotification(prev => ({ ...prev, visible: false }));
+      setNotification((prev) => ({ ...prev, visible: false }));
     }, 4000);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (notificationTimerRef.current) {
-        clearTimeout(notificationTimerRef.current);
-      }
-    };
+  useEffect(() => () => {
+    if (notificationTimerRef.current) {
+      clearTimeout(notificationTimerRef.current);
+    }
   }, []);
 
   const loadActivities = useCallback(async () => {
@@ -59,42 +70,36 @@ export default function App() {
       setActiveActivities(onlyActive);
       setAllActivities(all);
     } catch (err) {
-      showNotification(`Failed to load activities: ${err.message}`, 'error');
+      showNotification(`Nepodařilo se načíst aktivity: ${formatError(err)}`, 'error');
     } finally {
       setActivitiesLoading(false);
     }
   }, [showNotification]);
 
-  const fetchEntriesData = useCallback(
-    async (filters) => {
-      setEntriesLoading(true);
-      try {
-        const data = await fetchEntries(filters);
-        setEntries(data);
-      } catch (err) {
-        setEntries([]);
-        showNotification(`Failed to load entries: ${err.message}`, 'error');
-      } finally {
-        setEntriesLoading(false);
-      }
-    },
-    [showNotification]
-  );
-
-  const applyEntriesFilters = useCallback(
-    async (filters) => {
-      const normalized = {
-        startDate: filters?.startDate ?? null,
-        endDate: filters?.endDate ?? null,
-        activity: filters?.activity ?? 'all',
-        category: filters?.category ?? 'all',
-      };
+  const fetchEntriesData = useCallback(async (filters) => {
+    setEntriesLoading(true);
+    try {
+      const data = await fetchEntries(filters);
+      setEntries(data);
+    } catch (err) {
       setEntries([]);
-      setEntriesFilters(normalized);
-      await fetchEntriesData(normalized);
-    },
-    [fetchEntriesData]
-  );
+      showNotification(`Nepodařilo se načíst záznamy: ${formatError(err)}`, 'error');
+    } finally {
+      setEntriesLoading(false);
+    }
+  }, [showNotification]);
+
+  const applyEntriesFilters = useCallback(async (filters) => {
+    const normalized = {
+      startDate: filters?.startDate ?? null,
+      endDate: filters?.endDate ?? null,
+      activity: filters?.activity ?? 'all',
+      category: filters?.category ?? 'all',
+    };
+    setEntries([]);
+    setEntriesFilters(normalized);
+    await fetchEntriesData(normalized);
+  }, [fetchEntriesData]);
 
   const refreshEntries = useCallback(async () => {
     await fetchEntriesData(entriesFilters);
@@ -116,10 +121,11 @@ export default function App() {
     localStorage.setItem('mosaic_active_tab', activeTab);
   }, [activeTab]);
 
-  const tabStyle = (tabName) =>
+  const tabStyle = useCallback((tabName) => (
     activeTab === tabName
       ? { ...styles.tab, ...styles.tabActive }
-      : styles.tab;
+      : styles.tab
+  ), [activeTab]);
 
   const categoryOptions = useMemo(() => {
     const unique = new Set();
@@ -144,10 +150,18 @@ export default function App() {
         />
       </div>
 
-      <h1 style={{ cursor: 'pointer' }} onClick={() => setActiveTab('Today')} role="button" tabIndex={0}
-         onKeyPress={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('Today'); }}>
-        🧩 Mosaic
-      </h1>
+      <div style={{ ...styles.rowBetween, marginBottom: 24 }}>
+        <h1
+          style={{ cursor: 'pointer' }}
+          onClick={() => setActiveTab('Today')}
+          role="button"
+          tabIndex={0}
+          onKeyPress={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('Today'); }}
+        >
+          🧩 Mosaic
+        </h1>
+        <LogoutButton />
+      </div>
 
       <div style={styles.tabBar}>
         <div style={tabStyle('Today')} onClick={() => setActiveTab('Today')}>Today</div>
@@ -200,17 +214,54 @@ export default function App() {
             onApplyFilters={applyEntriesFilters}
             onNotify={showNotification}
             onImported={refreshAll}
+            filters={entriesFilters}
           />
-          <EntryTable
-            entries={entries}
-            onDelete={deleteEntry}
-            onDataChanged={refreshEntries}
-            onNotify={showNotification}
-            loading={entriesLoading}
-          />
+          {entriesLoading ? (
+            <div style={styles.loadingText}>Načítám záznamy…</div>
+          ) : (
+            <EntryTable
+              entries={entries}
+              onDelete={deleteEntry}
+              onDataChanged={refreshEntries}
+              onNotify={showNotification}
+              loading={entriesLoading}
+            />
+          )}
         </div>
       )}
-
     </div>
+  );
+}
+
+function PrivateRoute({ children }) {
+  const { isAuthenticated } = useAuth();
+  const location = useLocation();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  return children;
+}
+
+export default function App() {
+  const { isAuthenticated } = useAuth();
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <LoginForm />}
+      />
+      <Route
+        path="/register"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterForm />}
+      />
+      <Route
+        path="/*"
+        element={
+          <PrivateRoute>
+            <Dashboard />
+          </PrivateRoute>
+        }
+      />
+    </Routes>
   );
 }

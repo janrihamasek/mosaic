@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { styles } from '../styles/common';
+import { formatError } from '../utils/errors';
 
 export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
   const [name, setName] = useState('');
@@ -50,7 +51,7 @@ export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
       await onDataChanged?.();
       resetForm();
     } catch (err) {
-      onNotify?.(`Failed to create activity: ${err.message}`, 'error');
+      onNotify?.(`Failed to create activity: ${formatError(err)}`, 'error');
     } finally {
       setIsSaving(false);
     }

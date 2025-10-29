@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { styles } from "../styles/common";
+import { formatError } from "../utils/errors";
 
 export default function EntryTable({ entries, onDelete, onDataChanged, loading = false, onNotify }) {
   const [deletingId, setDeletingId] = useState(null);
@@ -12,7 +13,7 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
       onNotify?.("Entry was deleted", "success");
       await onDataChanged?.();
     } catch (err) {
-      onNotify?.(`Failed to delete entry: ${err.message}`, "error");
+      onNotify?.(`Failed to delete entry: ${formatError(err)}`, "error");
     } finally {
       setDeletingId(null);
     }

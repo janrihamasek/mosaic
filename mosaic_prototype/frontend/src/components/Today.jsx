@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchToday, addEntry, finalizeDay } from "../api";
 import { styles } from "../styles/common";
+import { formatError } from "../utils/errors";
 
 const toLocalDateString = (dateObj) => {
   const tzOffset = dateObj.getTimezoneOffset();
@@ -52,7 +53,7 @@ export default function Today({ onDataChanged, onNotify }) {
       });
       setRows(sortRows(formatted));
     } catch (err) {
-      onNotify?.(`Failed to load day overview: ${err.message}`, "error");
+      onNotify?.(`Failed to load day overview: ${formatError(err)}`, "error");
       setRows([]);
     } finally {
       setLoading(false);
@@ -72,7 +73,7 @@ export default function Today({ onDataChanged, onNotify }) {
         try {
           await finalizeDay(date);
         } catch (err) {
-          onNotify?.(`Failed to finalize day: ${err.message}`, "error");
+          onNotify?.(`Failed to finalize day: ${formatError(err)}`, "error");
         }
       }
     };
@@ -108,7 +109,7 @@ export default function Today({ onDataChanged, onNotify }) {
       onNotify?.("Changes auto-saved", "info");
       await onDataChanged?.();
     } catch (err) {
-      onNotify?.(`Auto-save failed: ${err.message}`, "error");
+      onNotify?.(`Auto-save failed: ${formatError(err)}`, "error");
       const restored = entries.reduce((acc, row) => {
         acc[row.name] = row;
         return acc;

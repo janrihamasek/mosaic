@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { updateActivity } from "../api";
 import { styles } from "../styles/common";
+import { formatError } from "../utils/errors";
 
 export default function ActivityDetail({ activity, onClose, onNotify, onDataChanged }) {
   const [category, setCategory] = useState(activity.category || "");
@@ -65,7 +66,7 @@ export default function ActivityDetail({ activity, onClose, onNotify, onDataChan
       await onDataChanged?.();
       onClose();
     } catch (err) {
-      onNotify?.(`Failed to update activity: ${err.message}`, "error");
+      onNotify?.(`Failed to update activity: ${formatError(err)}`, "error");
     } finally {
       setIsSaving(false);
     }

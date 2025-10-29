@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { importEntriesCsv } from "../api";
 import { styles } from "../styles/common";
+import { formatError } from "../utils/errors";
 
 export default function CsvImportButton({ onImported, onNotify, variant = "default" }) {
   const inputRef = useRef(null);
@@ -27,7 +28,7 @@ export default function CsvImportButton({ onImported, onNotify, variant = "defau
       );
       await onImported?.();
     } catch (err) {
-      onNotify?.(`CSV import failed: ${err.message}`, "error");
+      onNotify?.(`CSV import failed: ${formatError(err)}`, "error");
     } finally {
       setLoading(false);
       if (inputRef.current) {

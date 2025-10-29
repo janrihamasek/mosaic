@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { fetchProgressStats } from "../api";
 import { styles } from "../styles/common";
+import { formatError } from "../utils/errors";
 
 const metricOptions = [{ value: "progress", label: "Progress" }];
 const groupOptions = [
@@ -43,7 +44,7 @@ export default function Stats({ onNotify }) {
       } catch (err) {
         if (isMounted) {
           setData([]);
-          onNotify?.(`Failed to load stats: ${err.message}`, "error");
+          onNotify?.(`Failed to load stats: ${formatError(err)}`, "error");
         }
       } finally {
         if (isMounted) {
