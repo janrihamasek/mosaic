@@ -54,6 +54,7 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   - `end_date` (optional, string): End date in `YYYY-MM-DD` format.
   - `activity` (optional, string): Filter by activity name.
   - `category` (optional, string): Filter by category name.
+    - For `activity` and `category`, the special values `all`, `all activities`, or `all categories` (case‑insensitive) include everything.
 - **Response**:
   ```json
   [
@@ -69,6 +70,9 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
     }
   ]
   ```
+- **Notes**:
+  - Results are ordered by `date` descending and then by `activity` name.
+  - Fields `category` and `goal` are populated even if the originating activity has been deleted, thanks to the denormalised data stored in the `entries` table.
 
 #### **Add/Update Entry**
 - **Endpoint**: `POST /add_entry`
@@ -127,12 +131,14 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   {
     "name": "Reading",
     "category": "Learning",
-    "goal": 30,
     "description": "Read a book for 30 minutes.",
     "frequency_per_day": 1,
     "frequency_per_week": 7
   }
   ```
+- **Notes**:
+  - The backend computes the average goal per day as `(frequency_per_day * frequency_per_week) / 7` and stores that value in the `goal` column.
+  - If a client already calculates that value, it may send it as `goal`; otherwise the backend will derive it.
 - **Response**:
   - `201 Created`: Activity added.
   - `409 Conflict`: Activity with this name already exists.
@@ -150,6 +156,9 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
     "frequency_per_week": 7
   }
   ```
+- **Notes**:
+  - If you change `frequency_per_day`, you must also supply `frequency_per_week` (and vice versa) so the backend can recalculate the derived goal.
+  - When the activity is updated, all historic entries for the same activity receive the new category, goal, and description values.
 - **Response**:
   - `200 OK`: Activity updated.
   - `404 Not Found`: Activity not found.
@@ -200,6 +209,9 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
     }
   ]
   ```
+- **Notes**:
+  - If `date` is omitted, the endpoint uses today’s date.
+  - Activities deactivated after the selected date are still included.
 
 ---
 
@@ -212,6 +224,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
     "date": "2025-10-29"
   }
   ```
+- **Notes**:
+  - Omitting the `date` field finalizes the current day (in the server’s timezone).
 - **Response**:
   ```json
   {
@@ -247,6 +261,9 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
     ]
   }
   ```
+- **Notes**:
+  - The `data` array is sorted by `progress` in descending order.
+  - `progress` is expressed as a float in the range 0–1. Multiply by 100 for a percentage.
 
 ---
 
@@ -259,12 +276,15 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   {
     "message": "CSV import completed",
     "summary": {
-      "added": 5,
+      "created": 5,
       "updated": 2,
       "skipped": 0
     }
   }
   ```
+- **Notes**:
+  - The CSV must contain headers compatible with the import utility (`date,activity,value,note,description,category,goal`).
+  - The derived goal per day is recalculated for each imported activity in the same way as for the REST endpoints.
 
 ---
 

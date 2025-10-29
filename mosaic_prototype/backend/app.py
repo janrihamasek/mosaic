@@ -3,9 +3,11 @@ import sqlite3
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from import_data import import_csv as run_import_csv
@@ -689,10 +691,11 @@ def import_csv_endpoint():
     if "file" not in request.files:
         return jsonify({"error": "Missing CSV file"}), 400
 
-    file = request.files["file"]
-    if not file or file.filename == "":
+    uploaded = request.files.get("file")
+    if not uploaded or not getattr(uploaded, "filename", None):
         return jsonify({"error": "Missing CSV file"}), 400
 
+    file = cast(FileStorage, uploaded)
     filename = secure_filename(file.filename)
     suffix = os.path.splitext(filename)[1] or ".csv"
     tmp_path = None
