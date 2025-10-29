@@ -1,8 +1,9 @@
 import csv
 import os
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Optional
+from typing import Iterator, Optional
 
 # Cesta k databázi (shodná s app.py)
 DB_PATH = os.path.join(os.path.dirname(__file__), "../database/mosaic.db")
@@ -83,6 +84,21 @@ def get_db_connection(db_path: Optional[str] = None):
     return conn
 
 
+@contextmanager
+def db_transaction(db_path: Optional[str] = None) -> Iterator[sqlite3.Connection]:
+    conn = get_db_connection(db_path)
+    try:
+        conn.execute("BEGIN")
+        yield conn
+    except Exception:
+        conn.rollback()
+        raise
+    else:
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def ensure_activity_exists(conn, activity_name, category="", description="", goal=0.0,
                            frequency_per_day=1, frequency_per_week=1):
     cur = conn.execute(
@@ -112,7 +128,6 @@ def ensure_activity_exists(conn, activity_name, category="", description="", goa
         if updates:
             params.append(activity_name)
             conn.execute(f"UPDATE activities SET {', '.join(updates)} WHERE name = ?", params)
-            conn.commit()
         return
 
     conn.execute(
@@ -123,87 +138,80 @@ def ensure_activity_exists(conn, activity_name, category="", description="", goa
         (activity_name, category, goal, description, frequency_per_day, frequency_per_week),
     )
     print(f"✅ Přidána nová aktivita: {activity_name}")
-    conn.commit()
 
 
 def import_csv(csv_path, db_path: Optional[str] = None):
-    conn = get_db_connection(db_path)
     created = 0
     updated = 0
     skipped = 0
-    with open(csv_path, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            raw_date = row.get("date")
-            activity = row.get("activity")
-            value_raw = row.get("value", 0)
-            try:
-                value = float(value_raw)
-            except (TypeError, ValueError):
-                print(f"⚠️ Neplatná hodnota value '{value_raw}' – řádek přeskočen")
-                skipped += 1
-                continue
-            note = (row.get("note", "") or "").strip()
-            desc = (row.get("description", "") or "").strip()
-            category = (row.get("category", "") or "").strip()
-            goal_raw = (row.get("goal", "0") or "0").strip()
-            try:
-                goal = float(goal_raw or "0")
-            except (TypeError, ValueError):
-                print(f"⚠️ Neplatná hodnota goal '{goal_raw}' – řádek přeskočen")
-                skipped += 1
-                continue
-            activity = (activity or "").strip()
+    with db_transaction(db_path) as conn:
+        with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                raw_date = row.get("date")
+                activity = row.get("activity")
+                value_raw = row.get("value", 0)
+                try:
+                    value = float(value_raw)
+                except (TypeError, ValueError):
+                    print(f"⚠️ Neplatná hodnota value '{value_raw}' – řádek přeskočen")
+                    skipped += 1
+                    continue
+                note = (row.get("note", "") or "").strip()
+                desc = (row.get("description", "") or "").strip()
+                category = (row.get("category", "") or "").strip()
+                goal_raw = (row.get("goal", "0") or "0").strip()
+                try:
+                    goal = float(goal_raw or "0")
+                except (TypeError, ValueError):
+                    print(f"⚠️ Neplatná hodnota goal '{goal_raw}' – řádek přeskočen")
+                    skipped += 1
+                    continue
+                activity = (activity or "").strip()
 
-            if not raw_date or not activity:
-                print(f"⚠️ Přeskočeno – chybí date nebo activity: {row}")
-                skipped += 1
-                continue
+                if not raw_date or not activity:
+                    print(f"⚠️ Přeskočeno – chybí date nebo activity: {row}")
+                    skipped += 1
+                    continue
 
-            # --- převod datumu na jednotný formát YYYY-MM-DD ---
-            date = raw_date.strip()
-            try:
-                # pokud je ve formátu DD/MM/YYYY → převést
-                if "/" in date:
-                    date = datetime.strptime(date, "%d/%m/%Y").strftime("%Y-%m-%d")
-                else:
-                    # pokus o validaci formátu YYYY-MM-DD
-                    datetime.strptime(date, "%Y-%m-%d")
-            except ValueError:
-                print(f"⚠️ Neplatné datum: {raw_date}")
-                skipped += 1
-                continue
-            # ----------------------------------------------------
+                date = raw_date.strip()
+                try:
+                    if "/" in date:
+                        date = datetime.strptime(date, "%d/%m/%Y").strftime("%Y-%m-%d")
+                    else:
+                        datetime.strptime(date, "%Y-%m-%d")
+                except ValueError:
+                    print(f"⚠️ Neplatné datum: {raw_date}")
+                    skipped += 1
+                    continue
 
-            ensure_activity_exists(conn, activity, category, desc, goal)
+                ensure_activity_exists(conn, activity, category, desc, goal)
 
-            cur = conn.execute(
-                """
-                UPDATE entries
-                SET value = ?,
-                    note = ?,
-                    description = ?,
-                    activity_category = ?,
-                    activity_goal = ?
-                WHERE date = ? AND activity = ?
-                """,
-                (value, note, desc, category, goal, date, activity)
-            )
-            if cur.rowcount == 0:
-                conn.execute(
+                cur = conn.execute(
                     """
-                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    UPDATE entries
+                    SET value = ?,
+                        note = ?,
+                        description = ?,
+                        activity_category = ?,
+                        activity_goal = ?
+                    WHERE date = ? AND activity = ?
                     """,
-                    (date, activity, desc, value, note, category, goal)
+                    (value, note, desc, category, goal, date, activity)
                 )
-                print(f"🆕 Nový záznam: {date} | {activity} | {value} | {note}")
-                created += 1
-            else:
-                print(f"🔄 Aktualizováno: {date} | {activity}")
-                updated += 1
-        conn.commit()
-    conn.close()
+                if cur.rowcount == 0:
+                    conn.execute(
+                        """
+                        INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (date, activity, desc, value, note, category, goal)
+                    )
+                    print(f"🆕 Nový záznam: {date} | {activity} | {value} | {note}")
+                    created += 1
+                else:
+                    print(f"🔄 Aktualizováno: {date} | {activity}")
+                    updated += 1
     summary = {"created": created, "updated": updated, "skipped": skipped}
     print(f"🎯 Import dokončen. Vytvořeno: {created}, aktualizováno: {updated}, přeskočeno: {skipped}")
     return summary

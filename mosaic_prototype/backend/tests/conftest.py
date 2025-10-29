@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app import app
+from app import app, configure_database_path
 from security import rate_limiter
 
 
@@ -28,6 +28,7 @@ def client(tmp_path):
             "_SCHEMA_READY": False,
         }
     )
+    configure_database_path(str(db_path))
 
     with app.test_client() as client:
         yield client

@@ -1,9 +1,10 @@
 import os
 import sqlite3
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Iterator, cast
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -11,6 +12,7 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from import_data import import_csv as run_import_csv
+from models import Activity, Entry  # noqa: F401 - ensure models registered
 from security import (
     ValidationError,
     rate_limit,
@@ -21,6 +23,7 @@ from security import (
     validate_entry_payload,
     validate_finalize_day_payload,
 )
+from extensions import db, migrate
 
 app = Flask(__name__)
 CORS(app)
@@ -28,6 +31,8 @@ CORS(app)
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "../database/mosaic.db"
 DB_PATH = os.environ.get("MOSAIC_DB_PATH") or DEFAULT_DB_PATH
 app.config["DB_PATH"] = str(DB_PATH)
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{Path(app.config['DB_PATH']).resolve()}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["_SCHEMA_READY"] = False
 app.config.setdefault("_ENTRY_METADATA_READY", False)
 app.config.setdefault(
@@ -45,6 +50,20 @@ app.config.setdefault(
 )
 app.config["API_KEY"] = os.environ.get("MOSAIC_API_KEY")
 app.config.setdefault("PUBLIC_ENDPOINTS", {"home"})
+
+db.init_app(app)
+migrate.init_app(app, db)
+
+
+def configure_database_path(path: str):
+    absolute = Path(path).resolve()
+    app.config["DB_PATH"] = str(absolute)
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{absolute}"
+    app.config["_SCHEMA_READY"] = False
+
+
+configure_database_path(app.config["DB_PATH"])
+
 
 def ensure_schema(conn):
     if app.config.get("_SCHEMA_READY"):
@@ -167,6 +186,21 @@ def get_db_connection():
     return conn
 
 
+@contextmanager
+def db_transaction() -> Iterator[sqlite3.Connection]:
+    conn = get_db_connection()
+    try:
+        conn.execute("BEGIN")
+        yield conn
+    except Exception:
+        conn.rollback()
+        raise
+    else:
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @app.get("/")
 def home():
     return jsonify({"message": "Backend běží!", "database": DB_PATH})
@@ -263,59 +297,53 @@ def add_entry():
     note = payload["note"]
     float_value = payload["value"]
 
-    conn = get_db_connection()
     try:
-        cur = conn.execute(
-            "SELECT category, goal, description FROM activities WHERE name = ?",
-            (activity,),
-        )
-        activity_row = cur.fetchone()
-        description = activity_row["description"] if activity_row else ""
-        activity_category = activity_row["category"] if activity_row else ""
-        activity_goal = activity_row["goal"] if activity_row else 0
-
-        existing_entry = conn.execute(
-            "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ?",
-            (date, activity),
-        ).fetchone()
-        if not activity_row and existing_entry:
-            activity_category = existing_entry["activity_category"] or activity_category
-            activity_goal = existing_entry["activity_goal"] if existing_entry["activity_goal"] is not None else activity_goal
-
-        # 1. Attempt to UPDATE the existing entry (the "upsert" logic)
-        cur = conn.execute(
-            """
-            UPDATE entries
-            SET value = ?,
-                note = ?,
-                description = ?,
-                activity_category = ?,
-                activity_goal = ?
-            WHERE date = ? AND activity = ?
-            """,
-            (float_value, note, description, activity_category, activity_goal, date, activity),
-        )
-        conn.commit()
-
-        if cur.rowcount > 0:
-            # An entry was updated
-            return jsonify({"message": "Záznam aktualizován"}), 200
-        else:
-            # 2. If no entry was updated, INSERT a new entry
-            conn.execute(
-                """
-                INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (date, activity, description, float_value, note, activity_category, activity_goal),
+        with db_transaction() as conn:
+            cur = conn.execute(
+                "SELECT category, goal, description FROM activities WHERE name = ?",
+                (activity,),
             )
-            conn.commit()
-            return jsonify({"message": "Záznam uložen"}), 201
-            
+            activity_row = cur.fetchone()
+            description = activity_row["description"] if activity_row else ""
+            activity_category = activity_row["category"] if activity_row else ""
+            activity_goal = activity_row["goal"] if activity_row else 0
+
+            existing_entry = conn.execute(
+                "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ?",
+                (date, activity),
+            ).fetchone()
+            if not activity_row and existing_entry:
+                activity_category = existing_entry["activity_category"] or activity_category
+                activity_goal = existing_entry["activity_goal"] if existing_entry["activity_goal"] is not None else activity_goal
+
+            update_cur = conn.execute(
+                """
+                UPDATE entries
+                SET value = ?,
+                    note = ?,
+                    description = ?,
+                    activity_category = ?,
+                    activity_goal = ?
+                WHERE date = ? AND activity = ?
+                """,
+                (float_value, note, description, activity_category, activity_goal, date, activity),
+            )
+
+            if update_cur.rowcount > 0:
+                response = jsonify({"message": "Záznam aktualizován"}), 200
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (date, activity, description, float_value, note, activity_category, activity_goal),
+                )
+                response = jsonify({"message": "Záznam uložen"}), 201
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
+    else:
+        return response
 
 
 @app.delete("/entries/<int:entry_id>")
@@ -325,17 +353,14 @@ def delete_entry(entry_id):
     if limited:
         return limited
 
-    conn = get_db_connection()
     try:
-        cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-        conn.commit()
+        with db_transaction() as conn:
+            cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         if cur.rowcount == 0:
             return jsonify({"error": "Záznam nenalezen"}), 404
         return jsonify({"message": "Záznam smazán"}), 200
     except sqlite3.OperationalError as e:
         return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
 
 
 @app.get("/activities")
@@ -374,21 +399,18 @@ def add_activity():
     frequency_per_day = payload["frequency_per_day"]
     frequency_per_week = payload["frequency_per_week"]
 
-    conn = get_db_connection()
     try:
-        conn.execute(
-            """
-            INSERT INTO activities (name, category, goal, description, frequency_per_day, frequency_per_week, deactivated_at)
-            VALUES (?, ?, ?, ?, ?, ?, NULL)
-            """,
-            (name, category, goal, description, frequency_per_day, frequency_per_week)
-        )
-        conn.commit()
+        with db_transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO activities (name, category, goal, description, frequency_per_day, frequency_per_week, deactivated_at)
+                VALUES (?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (name, category, goal, description, frequency_per_day, frequency_per_week)
+            )
         return jsonify({"message": "Kategorie přidána"}), 201
     except sqlite3.IntegrityError:
         return jsonify({"error": "Kategorie s tímto názvem již existuje"}), 409
-    finally:
-        conn.close()
 
 
 @app.put("/activities/<int:activity_id>")
@@ -401,8 +423,7 @@ def update_activity(activity_id):
     data = request.get_json() or {}
     payload = validate_activity_update_payload(data)
 
-    conn = get_db_connection()
-    try:
+    with db_transaction() as conn:
         cur = conn.execute("SELECT name FROM activities WHERE id = ?", (activity_id,))
         row = cur.fetchone()
         if not row:
@@ -439,10 +460,7 @@ def update_activity(activity_id):
                 entry_params,
             )
 
-        conn.commit()
-        return jsonify({"message": "Aktivita aktualizována"}), 200
-    finally:
-        conn.close()
+    return jsonify({"message": "Aktivita aktualizována"}), 200
 
 
 @app.patch("/activities/<int:activity_id>/deactivate")
@@ -453,18 +471,14 @@ def deactivate_activity(activity_id):
         return limited
     deactivation_date = datetime.now().strftime("%Y-%m-%d")
 
-    conn = get_db_connection()
-    try:
+    with db_transaction() as conn:
         cur = conn.execute(
             "UPDATE activities SET active = 0, deactivated_at = ? WHERE id = ?",
             (deactivation_date, activity_id),
         )
-        conn.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Aktivita nenalezena"}), 404
-        return jsonify({"message": "Aktivita deaktivována"}), 200
-    finally:
-        conn.close()
+    return jsonify({"message": "Aktivita deaktivována"}), 200
 
 
 @app.patch("/activities/<int:activity_id>/activate")
@@ -474,15 +488,11 @@ def activate_activity(activity_id):
     if limited:
         return limited
 
-    conn = get_db_connection()
-    try:
+    with db_transaction() as conn:
         cur = conn.execute("UPDATE activities SET active = 1, deactivated_at = NULL WHERE id = ?", (activity_id,))
-        conn.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Aktivita nenalezena"}), 404
-        return jsonify({"message": "Aktivita aktivována"}), 200
-    finally:
-        conn.close()
+    return jsonify({"message": "Aktivita aktivována"}), 200
 
 
 @app.get("/stats/progress")
@@ -621,19 +631,15 @@ def delete_activity(activity_id):
     if limited:
         return limited
 
-    conn = get_db_connection()
-    try:
+    with db_transaction() as conn:
         row = conn.execute("SELECT active FROM activities WHERE id = ?", (activity_id,)).fetchone()
         if not row:
             return jsonify({"error": "Aktivita nenalezena"}), 404
         if row["active"] == 1:
             return jsonify({"error": "Aktivitu nelze smazat, nejprve ji deaktivujte"}), 400
 
-        cur = conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
-        conn.commit()
+        conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
         return jsonify({"message": "Aktivita smazána"}), 200
-    finally:
-        conn.close()
 
 
 @app.post("/finalize_day")
@@ -646,8 +652,7 @@ def finalize_day():
     payload = validate_finalize_day_payload(request.get_json() or {})
     date = payload["date"]
 
-    conn = get_db_connection()
-    try:
+    with db_transaction() as conn:
         # získej všechny aktivní aktivity
         active_activities = conn.execute(
             """
@@ -672,10 +677,7 @@ def finalize_day():
                     (date, a["name"], a["description"], a["category"], a["goal"])
                 )
                 created += 1
-        conn.commit()
-        return jsonify({"message": f"{created} missing entries added for {date}"}), 200
-    finally:
-        conn.close()
+    return jsonify({"message": f"{created} missing entries added for {date}"}), 200
 
 
 @app.post("/import_csv")

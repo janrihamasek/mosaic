@@ -17,8 +17,8 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
 
 ## Architecture
 - **Frontend**: React 18 with Create React App, component-driven UI, shared inline style system in `frontend/src/styles/common.js`.
-- **Backend**: Flask + SQLite, simple REST API served from `backend/app.py`.
-- **Database**: SQLite schema in `database/schema.sql`, migrated via `database/init_db.py`.
+- **Backend**: Flask + SQLite with Pydantic validation and explicit transactions in `backend/app.py`.
+- **Database**: SQLite schema managed by migrations via Flask-Migrate (`backend/manage.py`) with historical bootstrap scripts in `database/`.
 
 ## Getting Started
 
@@ -36,6 +36,18 @@ This script recreates `database/mosaic.db` from `schema.sql`. Optionally seed hi
 cd ../backend
 python3 import_data.py  # reads data_for_mosaic - january.csv
 ```
+
+### Database migrations
+The backend ships with a lightweight migration wrapper in `backend/manage.py` built on Flask-Migrate.
+
+```bash
+cd backend
+python3 manage.py init       # create migrations/ (run once)
+python3 manage.py migrate -m "describe change"  # autogenerate revision
+python3 manage.py upgrade    # apply to the current database
+```
+
+The helper commands run inside the Flask app context so they share configuration (`MOSAIC_DB_PATH`, rate limits, etc.). Generated scripts live under `backend/migrations/versions`.
 
 ### 2. Run the backend
 ```bash
