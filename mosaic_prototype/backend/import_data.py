@@ -75,6 +75,20 @@ def ensure_schema(conn):
         conn.execute("ALTER TABLE activities ADD COLUMN deactivated_at TEXT")
         conn.commit()
 
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    if not cursor.fetchone():
+        conn.execute(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.commit()
+
 
 def get_db_connection(db_path: Optional[str] = None):
     path = db_path or DB_PATH

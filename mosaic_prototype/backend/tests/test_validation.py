@@ -34,6 +34,7 @@ def test_validate_entry_payload_missing_fields():
     with pytest.raises(ValidationError) as err:
         validate_entry_payload({"activity": "Run"})
     assert err.value.message == "Missing required field(s): date"
+    assert err.value.details["fields"] == ["date"]
 
 
 def test_validate_activity_create_payload_invalid_frequency():

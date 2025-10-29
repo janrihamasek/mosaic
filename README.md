@@ -17,7 +17,7 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
 
 ## Architecture
 - **Frontend**: React 18 with Create React App, component-driven UI, shared inline style system in `frontend/src/styles/common.js`.
-- **Backend**: Flask + SQLite with Pydantic validation and explicit transactions in `backend/app.py`.
+- **Backend**: Flask + SQLite with Pydantic validation, standardized error responses, and explicit transactions in `backend/app.py`.
 - **Database**: SQLite schema managed by migrations via Flask-Migrate (`backend/manage.py`) with historical bootstrap scripts in `database/`.
 
 ## Getting Started
@@ -60,6 +60,13 @@ python app.py
 By default the API listens on `http://127.0.0.1:5000`.
 Set `MOSAIC_DB_PATH` to point the Flask app at a different SQLite file (useful for tests/CI).
 To secure the API, set `MOSAIC_API_KEY=<your-secret>` and include `X-API-Key` on requests. Rate limiting (configurable via `app.config["RATE_LIMITS"]`) guards mutating endpoints by default.
+
+#### Authentication workflow
+- Create a user: `POST /register` with `{"username": "alice", "password": "changeMe123"}`.
+- Log in: `POST /login` with the same credentials. The response includes `access_token`, `csrf_token`, `token_type`, and `expires_in`.
+- Authorise every subsequent request by sending `Authorization: Bearer <access_token>`.
+- For mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) also send `X-CSRF-Token: <csrf_token>` alongside the bearer token.
+- Configure the signing secret via `MOSAIC_JWT_SECRET` (fallback value is for development only). Token lifetime defaults to 60 minutes and can be overridden with `MOSAIC_JWT_EXP_MINUTES`.
 
 To run the backend test suite:
 ```bash

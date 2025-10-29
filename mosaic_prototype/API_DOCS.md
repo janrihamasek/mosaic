@@ -10,7 +10,9 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 ---
 
 ## Authentication
-- **API Key**: Some endpoints require an API key to be sent in the `X-API-Key` header.
+- **JWT access token**: Obtain by calling `POST /login` (see [Authentication Endpoints](#authentication-endpoints)). Include it on subsequent requests as `Authorization: Bearer <token>`.
+- **CSRF token**: Each login response also returns a `csrf_token`. Provide it as `X-CSRF-Token` on every mutating request (`POST`, `PUT`, `PATCH`, `DELETE`).
+- **API Key** (optional): When `MOSAIC_API_KEY` is configured, include `X-API-Key` **together with** the JWT headers above.
 - **Rate Limiting**: Mutating endpoints are rate-limited. See the [Rate Limits](#rate-limits) section for details.
 
 ---
@@ -27,6 +29,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 | `/entries/*` (delete)  | 90               | 60               |
 | `/finalize_day`        | 10               | 60               |
 | `/import_csv`          | 5                | 300              |
+| `/login`               | 10               | 60               |
+| `/register`            | 5                | 3600             |
 
 ---
 
@@ -42,6 +46,48 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
     "database": "path/to/database/mosaic.db"
   }
   ```
+
+---
+
+### **Authentication**
+#### **Register**
+- **Endpoint**: `POST /register`
+- **Description**: Create a new user account.
+- **Request Body**:
+  ```json
+  {
+    "username": "alice",
+    "password": "changeMe123"
+  }
+  ```
+- **Response** (`201 Created`):
+  ```json
+  {
+    "message": "User registered"
+  }
+  ```
+- **Notes**: Usernames must be unique, 3–80 characters, and without spaces. Passwords must be at least 8 characters.
+
+#### **Login**
+- **Endpoint**: `POST /login`
+- **Description**: Exchange credentials for an access token.
+- **Request Body**:
+  ```json
+  {
+    "username": "alice",
+    "password": "changeMe123"
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "access_token": "<JWT>",
+    "csrf_token": "<csrf>",
+    "token_type": "Bearer",
+    "expires_in": 3600
+  }
+  ```
+- **Usage**: Send `Authorization: Bearer <JWT>` on every request and `X-CSRF-Token: <csrf>` on every mutating request.
 
 ---
 
@@ -290,7 +336,7 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 
 ## Input Validation
 - All payloads are validated with **Pydantic 2** models defined in `backend/schemas.py`. Pydantic was chosen because it offers declarative schemas, high-performance parsing, and clean integration with type hints already used in the project.
-- Every endpoint with a JSON or file payload delegates to the helpers in `backend/security.py`, which wrap the Pydantic models and convert validation issues into the standard error response: `{"error": "message"}` with HTTP 400.
+- Every endpoint with a JSON or file payload delegates to the helpers in `backend/security.py`, which wrap the Pydantic models and convert validation issues into the standard error response: `{"error": {"code": "...", "message": "...", "details": {...}}}` with HTTP 400.
 - Existing schemas:
   | Endpoint / Use case | Helper | Schema |
   |---------------------|--------|--------|
@@ -299,6 +345,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   | `PUT /activities/<id>` | `validate_activity_update_payload` | `ActivityUpdatePayload` |
   | `POST /finalize_day` | `validate_finalize_day_payload` | `FinalizeDayPayload` |
   | `POST /import_csv` | `validate_csv_import_payload` | `CSVImportPayload` |
+  | `POST /register` | `validate_register_payload` | `RegisterPayload` |
+  | `POST /login` | `validate_login_payload` | `LoginPayload` |
 - Adding a new payload:
   1. Define a Pydantic model in `backend/schemas.py` with explicit field types, defaults, and `field_validator`/`model_validator` hooks for custom business rules.
   2. Expose a thin wrapper in `backend/security.py` that calls `.model_validate()` and raises `ValidationError` with the schema’s message.
@@ -307,11 +355,14 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 
 ---
 
-## Error Responses
-- **400 Bad Request**: Invalid payload or parameters.
-- **401 Unauthorized**: Missing or invalid API key.
-- **404 Not Found**: Resource not found.
-- **409 Conflict**: Resource already exists.
-- **500 Internal Server Error**: Server error.
+- **Error payload format**: Every error response returns `{"error": {"code": "string", "message": "string", "details": {}}}`. The `details` object is optional and omitted if empty.
+- **400 Bad Request** (`code: invalid_input` or `invalid_query`): Invalid payload or parameters.
+- **401 Unauthorized** (`code: unauthorized` or `invalid_credentials`): Missing/invalid token or wrong credentials.
+- **403 Forbidden** (`code: invalid_csrf`): CSRF token missing or mismatched.
+- **404 Not Found** (`code: not_found`): Resource not found.
+- **409 Conflict** (`code: conflict`): Resource already exists.
+- **429 Too Many Requests** (`code: too_many_requests`): Rate limit exceeded.
+- **500 Internal Server Error** (`code: internal_error`): Server error.
+- **Token expiry**: When the JWT expires the API responds with `401`/`token_expired`.
 
 ---

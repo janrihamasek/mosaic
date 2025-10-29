@@ -1,20 +1,25 @@
 import os
+import secrets
 import sqlite3
 import tempfile
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, cast
+from typing import Iterator, Optional, cast
 
-from flask import Flask, jsonify, request
+import jwt
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from import_data import import_csv as run_import_csv
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from security import (
     ValidationError,
+    error_response,
     rate_limit,
     require_api_key,
     validate_activity_create_payload,
@@ -22,6 +27,8 @@ from security import (
     validate_csv_import_payload,
     validate_entry_payload,
     validate_finalize_day_payload,
+    validate_login_payload,
+    validate_register_payload,
 )
 from extensions import db, migrate
 
@@ -46,13 +53,71 @@ app.config.setdefault(
         "delete_entry": {"limit": 90, "window": 60},
         "finalize_day": {"limit": 10, "window": 60},
         "import_csv": {"limit": 5, "window": 300},
+        "login": {"limit": 10, "window": 60},
+        "register": {"limit": 5, "window": 3600},
     },
 )
 app.config["API_KEY"] = os.environ.get("MOSAIC_API_KEY")
 app.config.setdefault("PUBLIC_ENDPOINTS", {"home"})
+app.config.setdefault("JWT_SECRET", os.environ.get("MOSAIC_JWT_SECRET") or "change-me")
+app.config.setdefault("JWT_ALGORITHM", "HS256")
+app.config.setdefault("JWT_EXP_MINUTES", int(os.environ.get("MOSAIC_JWT_EXP_MINUTES", "60")))
+app.config["PUBLIC_ENDPOINTS"].update({"login", "register"})
 
 db.init_app(app)
 migrate.init_app(app, db)
+
+ERROR_CODE_BY_STATUS = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    405: "method_not_allowed",
+    409: "conflict",
+    415: "unsupported_media_type",
+    429: "too_many_requests",
+    500: "internal_error",
+    502: "bad_gateway",
+    503: "service_unavailable",
+}
+
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _create_access_token(user_id: int, username: str) -> tuple[str, str]:
+    csrf_token = secrets.token_hex(16)
+    now = datetime.now(timezone.utc)
+    exp_minutes = app.config.get("JWT_EXP_MINUTES", 60)
+    payload = {
+        "sub": str(user_id),
+        "username": username,
+        "csrf": csrf_token,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=int(exp_minutes))).timestamp()),
+    }
+    token = jwt.encode(
+        payload,
+        app.config["JWT_SECRET"],
+        algorithm=app.config.get("JWT_ALGORITHM", "HS256"),
+    )
+    return token, csrf_token
+
+
+def _decode_access_token(token: str) -> dict:
+    return jwt.decode(
+        token,
+        app.config["JWT_SECRET"],
+        algorithms=[app.config.get("JWT_ALGORITHM", "HS256")],
+    )
+
+
+def _is_public_endpoint(endpoint: Optional[str]) -> bool:
+    if not endpoint:
+        return False
+    if endpoint.startswith("static"):
+        return True
+    public = app.config.get("PUBLIC_ENDPOINTS", set())
+    return endpoint in public
 
 
 def configure_database_path(path: str):
@@ -145,6 +210,20 @@ def ensure_schema(conn):
         conn.execute("ALTER TABLE entries ADD COLUMN activity_goal REAL NOT NULL DEFAULT 0")
         conn.commit()
 
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    if not cursor.fetchone():
+        conn.execute(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.commit()
+
     # backfill newly added entry metadata when possible
     if not app.config.get("_ENTRY_METADATA_READY"):
         conn.execute(
@@ -206,6 +285,64 @@ def home():
     return jsonify({"message": "Backend běží!", "database": DB_PATH})
 
 
+@app.post("/register")
+def register():
+    limits = app.config["RATE_LIMITS"]["register"]
+    limited = rate_limit("register", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    data = request.get_json() or {}
+    payload = validate_register_payload(data)
+    username = payload["username"]
+    password_hash = generate_password_hash(payload["password"])
+    del payload
+
+    try:
+        with db_transaction() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                (username, password_hash, datetime.now(timezone.utc).isoformat()),
+            )
+    except sqlite3.IntegrityError:
+        return error_response("conflict", "Username already exists", 409)
+
+    return jsonify({"message": "User registered"}), 201
+
+
+@app.post("/login")
+def login():
+    limits = app.config["RATE_LIMITS"]["login"]
+    limited = rate_limit("login", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    data = request.get_json() or {}
+    payload = validate_login_payload(data)
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, password_hash FROM users WHERE username = ?",
+            (payload["username"],),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row or not check_password_hash(row["password_hash"], payload["password"]):
+        return error_response("invalid_credentials", "Invalid username or password", 401)
+
+    access_token, csrf_token = _create_access_token(row["id"], payload["username"])
+    return jsonify(
+        {
+            "access_token": access_token,
+            "csrf_token": csrf_token,
+            "token_type": "Bearer",
+            "expires_in": int(app.config.get("JWT_EXP_MINUTES", 60)) * 60,
+        }
+    )
+
+
 @app.before_request
 def _enforce_api_key():
     auth_result = require_api_key()
@@ -213,9 +350,69 @@ def _enforce_api_key():
         return auth_result
 
 
+@app.before_request
+def _enforce_jwt_authentication():
+    if request.method == "OPTIONS":  # preflight requests are exempt
+        return None
+
+    endpoint = request.endpoint
+    if _is_public_endpoint(endpoint):
+        return None
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return error_response("unauthorized", "Missing or invalid access token", 401)
+
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        return error_response("unauthorized", "Missing or invalid access token", 401)
+
+    try:
+        payload = _decode_access_token(token)
+    except jwt.ExpiredSignatureError:
+        return error_response("token_expired", "Access token expired", 401)
+    except jwt.InvalidTokenError:
+        return error_response("unauthorized", "Invalid access token", 401)
+
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        return error_response("unauthorized", "Invalid access token", 401)
+
+    csrf_claim = payload.get("csrf")
+    if not csrf_claim:
+        return error_response("invalid_csrf", "Missing CSRF token claim", 403)
+
+    g.current_user = {"id": user_id, "username": payload.get("username")}
+    g.csrf_token = csrf_claim
+
+    if request.method not in SAFE_METHODS:
+        csrf_header = request.headers.get("X-CSRF-Token")
+        if not csrf_header or csrf_header != csrf_claim:
+            return error_response("invalid_csrf", "Missing or invalid CSRF token", 403)
+
+    return None
+
+
 @app.errorhandler(ValidationError)
 def handle_validation(error: ValidationError):
-    return jsonify({"error": error.message}), 400
+    return error_response(error.code, error.message, error.status, error.details)
+
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(exc: HTTPException):
+    status = exc.code or 500
+    message = exc.description or exc.name or "HTTP error"
+    code = ERROR_CODE_BY_STATUS.get(status)
+    if code is None:
+        code = "internal_error" if status >= 500 else "bad_request"
+    return error_response(code, message, status)
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(exc: Exception):
+    app.logger.exception("Unhandled exception", exc_info=exc)
+    return error_response("internal_error", "An unexpected error occurred", 500)
 
 
 @app.get("/entries")
@@ -231,7 +428,7 @@ def get_entries():
         if end_date:
             datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
-        return jsonify({"error": "Invalid date filter"}), 400
+        return error_response("invalid_query", "Invalid date filter", 400)
 
     def normalize_filter(value, all_markers):
         candidate = value.strip()
@@ -278,7 +475,7 @@ def get_entries():
         entries = conn.execute(query, params).fetchall()
         return jsonify([dict(row) for row in entries])
     except sqlite3.OperationalError as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response("database_error", str(e), 500)
     finally:
         conn.close()
 
@@ -341,7 +538,7 @@ def add_entry():
                 )
                 response = jsonify({"message": "Záznam uložen"}), 201
     except sqlite3.OperationalError as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response("database_error", str(e), 500)
     else:
         return response
 
@@ -357,10 +554,10 @@ def delete_entry(entry_id):
         with db_transaction() as conn:
             cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         if cur.rowcount == 0:
-            return jsonify({"error": "Záznam nenalezen"}), 404
+            return error_response("not_found", "Záznam nenalezen", 404)
         return jsonify({"message": "Záznam smazán"}), 200
     except sqlite3.OperationalError as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response("database_error", str(e), 500)
 
 
 @app.get("/activities")
@@ -378,7 +575,7 @@ def get_activities():
             ).fetchall()
         return jsonify([dict(r) for r in rows])
     except sqlite3.OperationalError as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response("database_error", str(e), 500)
     finally:
         conn.close()
 
@@ -410,7 +607,7 @@ def add_activity():
             )
         return jsonify({"message": "Kategorie přidána"}), 201
     except sqlite3.IntegrityError:
-        return jsonify({"error": "Kategorie s tímto názvem již existuje"}), 409
+        return error_response("conflict", "Kategorie s tímto názvem již existuje", 409)
 
 
 @app.put("/activities/<int:activity_id>")
@@ -427,7 +624,7 @@ def update_activity(activity_id):
         cur = conn.execute("SELECT name FROM activities WHERE id = ?", (activity_id,))
         row = cur.fetchone()
         if not row:
-            return jsonify({"error": "Aktivita nenalezena"}), 404
+            return error_response("not_found", "Aktivita nenalezena", 404)
 
         update_clauses = []
         params = []
@@ -477,7 +674,7 @@ def deactivate_activity(activity_id):
             (deactivation_date, activity_id),
         )
         if cur.rowcount == 0:
-            return jsonify({"error": "Aktivita nenalezena"}), 404
+            return error_response("not_found", "Aktivita nenalezena", 404)
     return jsonify({"message": "Aktivita deaktivována"}), 200
 
 
@@ -491,7 +688,7 @@ def activate_activity(activity_id):
     with db_transaction() as conn:
         cur = conn.execute("UPDATE activities SET active = 1, deactivated_at = NULL WHERE id = ?", (activity_id,))
         if cur.rowcount == 0:
-            return jsonify({"error": "Aktivita nenalezena"}), 404
+            return error_response("not_found", "Aktivita nenalezena", 404)
     return jsonify({"message": "Aktivita aktivována"}), 200
 
 
@@ -499,21 +696,21 @@ def activate_activity(activity_id):
 def get_progress_stats():
     group_by = request.args.get("group", "activity").lower()
     if group_by not in {"activity", "category"}:
-        return jsonify({"error": "Invalid group"}), 400
+        return error_response("invalid_query", "Invalid group", 400)
 
     period_raw = request.args.get("period", "30")
     try:
         window = int(period_raw)
     except ValueError:
-        return jsonify({"error": "Invalid period"}), 400
+        return error_response("invalid_query", "Invalid period", 400)
     if window not in {30, 90}:
-        return jsonify({"error": "Unsupported period"}), 400
+        return error_response("invalid_query", "Unsupported period", 400)
 
     target_date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
     try:
         end_dt = datetime.strptime(target_date, "%Y-%m-%d")
     except ValueError:
-        return jsonify({"error": "Invalid date"}), 400
+        return error_response("invalid_query", "Invalid date", 400)
     start_dt = end_dt - timedelta(days=window - 1)
     start_date = start_dt.strftime("%Y-%m-%d")
     end_date = end_dt.strftime("%Y-%m-%d")
@@ -634,9 +831,9 @@ def delete_activity(activity_id):
     with db_transaction() as conn:
         row = conn.execute("SELECT active FROM activities WHERE id = ?", (activity_id,)).fetchone()
         if not row:
-            return jsonify({"error": "Aktivita nenalezena"}), 404
+            return error_response("not_found", "Aktivita nenalezena", 404)
         if row["active"] == 1:
-            return jsonify({"error": "Aktivitu nelze smazat, nejprve ji deaktivujte"}), 400
+            return error_response("invalid_state", "Aktivitu nelze smazat, nejprve ji deaktivujte", 400)
 
         conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
         return jsonify({"message": "Aktivita smazána"}), 200
@@ -699,7 +896,7 @@ def import_csv_endpoint():
     except Exception as exc:  # pragma: no cover - defensive
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
-        return jsonify({"error": f"Failed to import CSV: {exc}"}), 500
+        return error_response("import_failed", f"Failed to import CSV: {exc}", 500)
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)

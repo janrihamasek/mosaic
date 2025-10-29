@@ -235,3 +235,51 @@ class FinalizeDayPayload(BaseModel):
         except ValueError:
             raise ValueError("Date must be in YYYY-MM-DD format")
         return value
+
+
+class RegisterPayload(BaseModel):
+    username: str
+    password: str
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        username = (value or "").strip()
+        if len(username) < 3:
+            raise ValueError("username must be at least 3 characters")
+        if len(username) > 80:
+            raise ValueError("username must be at most 80 characters")
+        if " " in username:
+            raise ValueError("username must not contain spaces")
+        return username
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if not isinstance(value, str) or len(value) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return value
+
+
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        username = (value or "").strip()
+        if not username:
+            raise ValueError("username must not be empty")
+        return username
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if not isinstance(value, str) or not value:
+            raise ValueError("password must not be empty")
+        return value

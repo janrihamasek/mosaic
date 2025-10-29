@@ -20,3 +20,10 @@ CREATE TABLE IF NOT EXISTS activities (
     frequency_per_week INTEGER NOT NULL DEFAULT 1,
     deactivated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
