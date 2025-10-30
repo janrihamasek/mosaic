@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { styles } from '../styles/common';
 import { formatError } from '../utils/errors';
 import { createActivity, selectActivitiesState } from '../store/activitiesSlice';
+import { useCompactLayout } from '../utils/useBreakpoints';
 
 const errorTextStyle = { color: '#f28b82', fontSize: 12 };
 const buildInputStyle = (hasError, overrides) => ({
@@ -24,6 +25,19 @@ export default function ActivityForm({ onNotify }) {
   const dispatch = useDispatch();
   const { mutationStatus } = useSelector(selectActivitiesState);
   const isSaving = mutationStatus === 'loading';
+  const { isMobile, isCompact } = useCompactLayout();
+  const fieldWrapperStyle = { display: 'flex', flexDirection: 'column', gap: 4 };
+  const formStyle = {
+    ...styles.form,
+    flexDirection: 'column',
+    gap: isCompact ? '0.75rem' : '1rem',
+  };
+  const frequencySectionStyle = {
+    display: 'grid',
+    gridTemplateColumns: isCompact ? '1fr' : 'repeat(auto-fit, minmax(9rem, 1fr))',
+    gap: '0.75rem',
+    alignItems: 'flex-start',
+  };
 
   const {
     register,
@@ -68,9 +82,9 @@ export default function ActivityForm({ onNotify }) {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      style={{ ...styles.form, display: 'flex', flexDirection: 'column', gap: 12 }}
+      style={formStyle}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={fieldWrapperStyle}>
         <input
           type="text"
           placeholder="Activity"
@@ -86,7 +100,7 @@ export default function ActivityForm({ onNotify }) {
         {errors.name && <span style={errorTextStyle}>{errors.name.message}</span>}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={fieldWrapperStyle}>
         <input
           type="text"
           placeholder="Category"
@@ -102,7 +116,7 @@ export default function ActivityForm({ onNotify }) {
         {errors.category && <span style={errorTextStyle}>{errors.category.message}</span>}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={fieldWrapperStyle}>
         <input
           type="text"
           placeholder="Description (optional)"
@@ -115,8 +129,8 @@ export default function ActivityForm({ onNotify }) {
         {errors.description && <span style={errorTextStyle}>{errors.description.message}</span>}
       </div>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, gap: 4 }}>
+      <div style={frequencySectionStyle}>
+        <label style={{ ...fieldWrapperStyle, fontSize: 13 }}>
           <span>Per day</span>
           <select
             {...register('frequencyPerDay', {
@@ -125,7 +139,7 @@ export default function ActivityForm({ onNotify }) {
               min: { value: 1, message: 'Minimum is 1 per day.' },
               max: { value: 3, message: 'Maximum is 3 per day.' },
             })}
-            style={buildInputStyle(!!errors.frequencyPerDay, { width: 100 })}
+            style={buildInputStyle(!!errors.frequencyPerDay, { width: '100%' })}
             aria-invalid={errors.frequencyPerDay ? 'true' : 'false'}
           >
             {[1, 2, 3].map((v) => (
@@ -134,12 +148,12 @@ export default function ActivityForm({ onNotify }) {
               </option>
             ))}
           </select>
-          {errors.frequencyPerDay && (
-            <span style={errorTextStyle}>{errors.frequencyPerDay.message}</span>
+            {errors.frequencyPerDay && (
+              <span style={errorTextStyle}>{errors.frequencyPerDay.message}</span>
           )}
         </label>
 
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, gap: 4 }}>
+        <label style={{ ...fieldWrapperStyle, fontSize: 13 }}>
           <span>Per week</span>
           <select
             {...register('frequencyPerWeek', {
@@ -148,7 +162,7 @@ export default function ActivityForm({ onNotify }) {
               min: { value: 1, message: 'Minimum is 1 per week.' },
               max: { value: 7, message: 'Maximum is 7 per week.' },
             })}
-            style={buildInputStyle(!!errors.frequencyPerWeek, { width: 100 })}
+            style={buildInputStyle(!!errors.frequencyPerWeek, { width: '100%' })}
             aria-invalid={errors.frequencyPerWeek ? 'true' : 'false'}
           >
             {[1, 2, 3, 4, 5, 6, 7].map((v) => (
@@ -157,20 +171,12 @@ export default function ActivityForm({ onNotify }) {
               </option>
             ))}
           </select>
-          {errors.frequencyPerWeek && (
-            <span style={errorTextStyle}>{errors.frequencyPerWeek.message}</span>
+            {errors.frequencyPerWeek && (
+              <span style={errorTextStyle}>{errors.frequencyPerWeek.message}</span>
           )}
         </label>
 
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-            fontSize: 13,
-            gap: 4,
-          }}
-        >
+        <div style={{ ...fieldWrapperStyle, justifyContent: 'flex-end', fontSize: 13 }}>
           <span style={{ fontWeight: 600 }}>Avg/day</span>
           <span>{avgGoalPerDay.toFixed(2)}</span>
         </div>
@@ -180,6 +186,7 @@ export default function ActivityForm({ onNotify }) {
         type="submit"
         style={{
           ...styles.button,
+          ...(isMobile ? styles.buttonMobile : {}),
           opacity: isSaving || isSubmitting || !isValid ? 0.7 : 1,
           cursor: isSaving || isSubmitting || !isValid ? 'not-allowed' : styles.button.cursor,
         }}

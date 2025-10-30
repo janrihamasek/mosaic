@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { loadStats, selectStatsState } from "../store/entriesSlice";
+import { useCompactLayout } from "../utils/useBreakpoints";
 
 const metricOptions = [{ value: "progress", label: "Progress" }];
 const groupOptions = [
@@ -28,6 +29,17 @@ export default function Stats({ onNotify }) {
   const { data, status, options, range } = useSelector(selectStatsState);
   const [metric, setMetric] = useState("progress");
   const loading = status === "loading";
+  const { isCompact } = useCompactLayout();
+  const filterRowStyle = {
+    display: "grid",
+    gridTemplateColumns: isCompact ? "1fr" : "repeat(auto-fit, minmax(10rem, 1fr))",
+    gap: "0.75rem",
+    marginBottom: "1rem",
+  };
+  const filterSelectStyle = {
+    ...styles.input,
+    width: "100%",
+  };
 
   const handleLoad = async (nextOptions) => {
     try {
@@ -97,11 +109,11 @@ export default function Stats({ onNotify }) {
 
   return (
     <div style={styles.card}>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+      <div style={filterRowStyle}>
         <select
           value={metric}
           onChange={(e) => setMetric(e.target.value)}
-          style={{ ...styles.input, width: 140 }}
+          style={filterSelectStyle}
         >
           {metricOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -112,7 +124,7 @@ export default function Stats({ onNotify }) {
         <select
           value={options.group}
           onChange={(e) => handleLoad({ group: e.target.value })}
-          style={{ ...styles.input, width: 140 }}
+          style={filterSelectStyle}
         >
           {groupOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -123,7 +135,7 @@ export default function Stats({ onNotify }) {
         <select
           value={options.period}
           onChange={(e) => handleLoad({ period: Number(e.target.value) })}
-          style={{ ...styles.input, width: 140 }}
+          style={filterSelectStyle}
         >
           {periodOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -131,12 +143,12 @@ export default function Stats({ onNotify }) {
             </option>
           ))}
         </select>
-        {range.start && range.end && (
-          <div style={{ alignSelf: "center", fontSize: 12, color: "#9ba3af" }}>
-            {range.start} → {range.end}
-          </div>
-        )}
       </div>
+      {range.start && range.end && (
+        <div style={{ alignSelf: "flex-start", fontSize: "0.8125rem", color: "#9ba3af" }}>
+          {range.start} → {range.end}
+        </div>
+      )}
 
       {loading && <div style={styles.loadingText}>⏳ Loading stats...</div>}
 
