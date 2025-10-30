@@ -55,6 +55,18 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handler = (event) => {
+      const detail = event?.detail || {};
+      if (detail.message) {
+        showNotification(detail.message, 'error');
+      }
+    };
+    window.addEventListener('mosaic-api-error', handler);
+    return () => window.removeEventListener('mosaic-api-error', handler);
+  }, [showNotification]);
+
+  useEffect(() => {
     dispatch(loadActivities());
     dispatch(loadEntries());
     dispatch(loadToday());

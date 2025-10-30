@@ -2,13 +2,16 @@ import React from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
-import { deleteEntry, selectEntriesList, selectEntriesState } from "../store/entriesSlice";
+import { deleteEntry, loadEntries, selectEntriesList, selectEntriesState } from "../store/entriesSlice";
+import Loading from "./Loading";
+import ErrorState from "./ErrorState";
 
 export default function EntryTable({ onNotify }) {
   const dispatch = useDispatch();
   const entries = useSelector(selectEntriesList);
-  const { deletingId, status } = useSelector(selectEntriesState);
+  const { deletingId, status, error } = useSelector(selectEntriesState);
   const loading = status === "loading";
+  const refreshing = loading && entries.length > 0;
 
   const handleDelete = async (id) => {
     if (deletingId !== null) return;
@@ -20,9 +23,24 @@ export default function EntryTable({ onNotify }) {
     }
   };
 
+  if (status === "failed") {
+    const message = error?.friendlyMessage || error?.message || "Failed to load entries.";
+    return (
+      <ErrorState
+        message={message}
+        onRetry={() => dispatch(loadEntries())}
+        actionLabel="Retry load"
+      />
+    );
+  }
+
+  if (loading && entries.length === 0) {
+    return <Loading message="Loading entries…" />;
+  }
+
   return (
     <div>
-      {loading && <div style={styles.loadingText}>⏳ Loading entries...</div>}
+      {refreshing && <Loading message="Refreshing entries…" inline />}
 
       <table style={styles.table}>
         <thead>

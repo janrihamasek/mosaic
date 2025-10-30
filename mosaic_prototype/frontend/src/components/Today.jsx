@@ -10,6 +10,8 @@ import {
   saveDirtyTodayRows,
   finalizeToday,
 } from "../store/entriesSlice";
+import Loading from "./Loading";
+import ErrorState from "./ErrorState";
 
 const toLocalDateString = (dateObj) => {
   const tzOffset = dateObj.getTimezoneOffset();
@@ -19,7 +21,7 @@ const toLocalDateString = (dateObj) => {
 
 export default function Today({ onNotify }) {
   const dispatch = useDispatch();
-  const { date, rows, status, dirty, savingStatus } = useSelector(selectTodayState);
+  const { date, rows, status, dirty, savingStatus, error: todayError } = useSelector(selectTodayState);
   const loading = status === "loading";
   const autoSaving = savingStatus === "loading";
   const dirtyCount = Object.keys(dirty || {}).length;
@@ -163,8 +165,24 @@ export default function Today({ onNotify }) {
       : "";
   const progressColor = rawPercent >= 50 ? styles.highlightRow.backgroundColor : "#8b1e3f";
 
+  if (status === "failed") {
+    const message = todayError?.friendlyMessage || todayError?.message || "Failed to load today view.";
+    return (
+      <ErrorState
+        message={message}
+        onRetry={() => dispatch(loadToday(date))}
+        actionLabel="Retry load"
+      />
+    );
+  }
+
+  if (loading && rows.length === 0) {
+    return <Loading message="Loading day overview…" />;
+  }
+
   return (
     <div>
+      {loading && rows.length > 0 && <Loading message="Refreshing day…" inline />}
       <div style={styles.rowBetween}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button

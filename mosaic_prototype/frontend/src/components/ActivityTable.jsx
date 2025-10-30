@@ -8,14 +8,18 @@ import {
   activateActivity,
   deactivateActivity,
   removeActivity,
+  loadActivities,
 } from '../store/activitiesSlice';
+import Loading from './Loading';
+import ErrorState from './ErrorState';
 
 export default function ActivityTable({ onNotify, onOpenDetail }) {
   const dispatch = useDispatch();
-  const { status } = useSelector(selectActivitiesState);
+  const { status, error } = useSelector(selectActivitiesState);
   const activities = useSelector(selectAllActivities);
   const [actionId, setActionId] = useState(null);
   const loading = status === 'loading';
+  const refreshing = loading && activities.length > 0;
 
   const sortedActivities = useMemo(() => {
     return [...activities].sort((a, b) => {
@@ -45,9 +49,24 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
     }
   };
 
+  if (status === 'failed') {
+    const message = error?.friendlyMessage || error?.message || 'Failed to load activities.';
+    return (
+      <ErrorState
+        message={message}
+        onRetry={() => dispatch(loadActivities())}
+        actionLabel="Retry load"
+      />
+    );
+  }
+
+  if (loading && activities.length === 0) {
+    return <Loading message="Loading activities…" />;
+  }
+
   return (
     <div>
-      {loading && <div style={styles.loadingText}>⏳ Loading activities...</div>}
+      {refreshing && <Loading message="Refreshing activities…" inline />}
 
       <table style={styles.table}>
         <thead>

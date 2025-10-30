@@ -34,6 +34,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const { response } = error || {};
+    const config = error?.config || {};
     const payload = response?.data?.error;
     if (payload && payload.message) {
       error.message = payload.message;
@@ -59,6 +60,26 @@ apiClient.interceptors.response.use(
         window.location.assign('/login');
       }
     }
+
+    const status = response?.status;
+    const shouldNotify =
+      !config.skipErrorNotification && (!status || status >= 500);
+    const friendlyMessage =
+      error?.friendlyMessage || error?.message || 'Unexpected error occurred.';
+    if (shouldNotify && typeof window !== 'undefined' && friendlyMessage) {
+      window.dispatchEvent(
+        new CustomEvent('mosaic-api-error', {
+          detail: {
+            message: friendlyMessage,
+            status,
+            code: error?.code,
+            url: config?.url,
+            method: config?.method,
+          },
+        })
+      );
+    }
+
     return Promise.reject(error);
   }
 );
