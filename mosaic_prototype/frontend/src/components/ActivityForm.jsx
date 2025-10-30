@@ -1,126 +1,192 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useForm } from 'react-hook-form';
 import { styles } from '../styles/common';
 import { formatError } from '../utils/errors';
 import { createActivity, selectActivitiesState } from '../store/activitiesSlice';
 
+const errorTextStyle = { color: '#f28b82', fontSize: 12 };
+const buildInputStyle = (hasError, overrides) => ({
+  ...styles.input,
+  border: hasError ? '1px solid #d93025' : styles.input.border,
+  ...(overrides || {}),
+});
+
+const defaultValues = {
+  name: '',
+  category: '',
+  frequencyPerDay: 1,
+  frequencyPerWeek: 1,
+  description: '',
+};
+
 export default function ActivityForm({ onNotify }) {
   const dispatch = useDispatch();
   const { mutationStatus } = useSelector(selectActivitiesState);
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState('');
-  const [frequencyPerDay, setFrequencyPerDay] = useState(1);
-  const [frequencyPerWeek, setFrequencyPerWeek] = useState(1);
-  const [description, setDescription] = useState('');
   const isSaving = mutationStatus === 'loading';
 
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors, isValid, isSubmitting },
+  } = useForm({
+    mode: 'onChange',
+    defaultValues,
+  });
+
+  const frequencyPerDay = watch('frequencyPerDay');
+  const frequencyPerWeek = watch('frequencyPerWeek');
+
   const avgGoalPerDay = useMemo(() => {
-    const day = Number(frequencyPerDay) || 0;
-    const week = Number(frequencyPerWeek) || 0;
-    return (day * week) / 7;
+    const perDay = Number(frequencyPerDay) || 0;
+    const perWeek = Number(frequencyPerWeek) || 0;
+    return (perDay * perWeek) / 7;
   }, [frequencyPerDay, frequencyPerWeek]);
 
-  const resetForm = () => {
-    setName('');
-    setCategory('');
-    setFrequencyPerDay(1);
-    setFrequencyPerWeek(1);
-    setDescription('');
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!name.trim() || !category.trim()) return;
+  const onSubmit = async (data) => {
     if (isSaving) return;
-
     try {
-      const perDay = Number.parseInt(frequencyPerDay, 10);
-      const perWeek = Number.parseInt(frequencyPerWeek, 10);
-      if (Number.isNaN(perDay) || perDay < 1 || perDay > 3) {
-        throw new Error("Frequency per day must be between 1 and 3");
-      }
-      if (Number.isNaN(perWeek) || perWeek < 1 || perWeek > 7) {
-        throw new Error("Frequency per week must be between 1 and 7");
-      }
+      // Backend derives `goal` server-side; avoid sending it because the schema forbids extra fields.
       await dispatch(
         createActivity({
-          name: name.trim(),
-          category: category.trim(),
-          frequency_per_day: perDay,
-          frequency_per_week: perWeek,
-          goal: avgGoalPerDay,
-          description: description.trim(),
+          name: data.name.trim(),
+          category: data.category.trim(),
+          frequency_per_day: Number(data.frequencyPerDay),
+          frequency_per_week: Number(data.frequencyPerWeek),
+          description: data.description.trim(),
         })
       ).unwrap();
       onNotify?.('Activity was created', 'success');
-      resetForm();
+      reset(defaultValues);
     } catch (err) {
       onNotify?.(`Failed to create activity: ${formatError(err)}`, 'error');
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} style={styles.form}>
-      <input
-        type="text"
-        placeholder="Activity"
-        value={name}
-        onChange={e => setName(e.target.value)}
-        required
-        style={styles.input}
-      />
-      <input
-        type="text"
-        placeholder="Category"
-        value={category}
-        onChange={e => setCategory(e.target.value)}
-        required
-        style={styles.input}
-      />
-      <input
-        type="text"
-        placeholder="Description (optional)"
-        value={description}
-        onChange={e => setDescription(e.target.value)}
-        style={styles.input}
-      />
-      <button
-        type="submit"
-        style={{ ...styles.button, opacity: isSaving ? 0.7 : 1 }}
-        disabled={isSaving}
-      >
-        {isSaving ? 'Saving...' : 'Enter'}
-      </button>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      style={{ ...styles.form, display: 'flex', flexDirection: 'column', gap: 12 }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <input
+          type="text"
+          placeholder="Activity"
+          {...register('name', {
+            required: 'Activity name is required.',
+            minLength: { value: 2, message: 'Activity name must be at least 2 characters.' },
+            maxLength: { value: 80, message: 'Activity name must be at most 80 characters.' },
+            validate: (value) => value.trim().length > 0 || 'Activity name cannot be empty.',
+          })}
+          style={buildInputStyle(!!errors.name)}
+          aria-invalid={errors.name ? 'true' : 'false'}
+        />
+        {errors.name && <span style={errorTextStyle}>{errors.name.message}</span>}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <input
+          type="text"
+          placeholder="Category"
+          {...register('category', {
+            required: 'Category is required.',
+            minLength: { value: 2, message: 'Category must be at least 2 characters.' },
+            maxLength: { value: 80, message: 'Category must be at most 80 characters.' },
+            validate: (value) => value.trim().length > 0 || 'Category cannot be empty.',
+          })}
+          style={buildInputStyle(!!errors.category)}
+          aria-invalid={errors.category ? 'true' : 'false'}
+        />
+        {errors.category && <span style={errorTextStyle}>{errors.category.message}</span>}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <input
+          type="text"
+          placeholder="Description (optional)"
+          {...register('description', {
+            maxLength: { value: 240, message: 'Description must be at most 240 characters.' },
+          })}
+          style={buildInputStyle(!!errors.description)}
+          aria-invalid={errors.description ? 'true' : 'false'}
+        />
+        {errors.description && <span style={errorTextStyle}>{errors.description.message}</span>}
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, gap: 4 }}>
           <span>Per day</span>
           <select
-            value={frequencyPerDay}
-            onChange={e => setFrequencyPerDay(Number(e.target.value))}
-            style={{ ...styles.input, width: 100 }}
+            {...register('frequencyPerDay', {
+              valueAsNumber: true,
+              required: 'Select frequency per day.',
+              min: { value: 1, message: 'Minimum is 1 per day.' },
+              max: { value: 3, message: 'Maximum is 3 per day.' },
+            })}
+            style={buildInputStyle(!!errors.frequencyPerDay, { width: 100 })}
+            aria-invalid={errors.frequencyPerDay ? 'true' : 'false'}
           >
-            {[1, 2, 3].map(v => (
-              <option key={v} value={v}>{v}</option>
+            {[1, 2, 3].map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
             ))}
           </select>
+          {errors.frequencyPerDay && (
+            <span style={errorTextStyle}>{errors.frequencyPerDay.message}</span>
+          )}
         </label>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
+
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, gap: 4 }}>
           <span>Per week</span>
           <select
-            value={frequencyPerWeek}
-            onChange={e => setFrequencyPerWeek(Number(e.target.value))}
-            style={{ ...styles.input, width: 100 }}
+            {...register('frequencyPerWeek', {
+              valueAsNumber: true,
+              required: 'Select frequency per week.',
+              min: { value: 1, message: 'Minimum is 1 per week.' },
+              max: { value: 7, message: 'Maximum is 7 per week.' },
+            })}
+            style={buildInputStyle(!!errors.frequencyPerWeek, { width: 100 })}
+            aria-invalid={errors.frequencyPerWeek ? 'true' : 'false'}
           >
-            {[1, 2, 3, 4, 5, 6, 7].map(v => (
-              <option key={v} value={v}>{v}</option>
+            {[1, 2, 3, 4, 5, 6, 7].map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
             ))}
           </select>
+          {errors.frequencyPerWeek && (
+            <span style={errorTextStyle}>{errors.frequencyPerWeek.message}</span>
+          )}
         </label>
-        <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", fontSize: 13 }}>
+
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+            fontSize: 13,
+            gap: 4,
+          }}
+        >
           <span style={{ fontWeight: 600 }}>Avg/day</span>
           <span>{avgGoalPerDay.toFixed(2)}</span>
         </div>
       </div>
+
+      <button
+        type="submit"
+        style={{
+          ...styles.button,
+          opacity: isSaving || isSubmitting || !isValid ? 0.7 : 1,
+          cursor: isSaving || isSubmitting || !isValid ? 'not-allowed' : styles.button.cursor,
+        }}
+        disabled={isSaving || isSubmitting || !isValid}
+      >
+        {isSaving || isSubmitting ? 'Saving...' : 'Enter'}
+      </button>
     </form>
   );
 }
