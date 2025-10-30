@@ -13,9 +13,40 @@ export default function CsvImportButton({ onNotify, variant = "default" }) {
     inputRef.current?.click();
   };
 
+  const resetInput = () => {
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  };
+
+  const validateFile = (file) => {
+    // Guard against accidentally uploading wrong/empty files before hitting the API.
+    if (!file) {
+      return false;
+    }
+
+    const name = file.name?.toLowerCase() || "";
+    if (!name.endsWith(".csv")) {
+      onNotify?.("Please select a CSV file (.csv).", "error");
+      return false;
+    }
+
+    if (file.size === 0) {
+      onNotify?.("Selected CSV file is empty.", "error");
+      return false;
+    }
+
+    return true;
+  };
+
   const handleChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!validateFile(file)) {
+      resetInput();
+      return;
+    }
 
     setLoading(true);
     try {
@@ -32,9 +63,7 @@ export default function CsvImportButton({ onNotify, variant = "default" }) {
       onNotify?.(`CSV import failed: ${formatError(err)}`, "error");
     } finally {
       setLoading(false);
-      if (inputRef.current) {
-        inputRef.current.value = "";
-      }
+      resetInput();
     }
   };
 
