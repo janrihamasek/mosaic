@@ -10,7 +10,12 @@ const baseContainerStyle = {
   padding: "16px 0",
 };
 
-export default function Loading({ message = "Loading…", inline = false }) {
+interface LoadingProps {
+  message?: string;
+  inline?: boolean;
+}
+
+const Loading: React.FC<LoadingProps> = ({ message = "Loading…", inline = false }) => {
   useEffect(() => {
     ensureStatusAnimations();
   }, []);
@@ -35,4 +40,6 @@ export default function Loading({ message = "Loading…", inline = false }) {
       <span style={{ ...styles.loadingText, margin: 0 }}>{message}</span>
     </div>
   );
-}
+};
+
+export default Loading;

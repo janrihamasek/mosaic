@@ -4,7 +4,17 @@ import { useCompactLayout } from "../../utils/useBreakpoints";
 
 const noop = () => {};
 
-export default function ModalForm({
+interface ModalFormProps {
+  isOpen: boolean;
+  onClose?: () => void;
+  title: string;
+  children?: React.ReactNode;
+  footerContent?: React.ReactNode;
+  closeLabel?: string;
+  isDismissDisabled?: boolean;
+}
+
+const ModalForm: React.FC<ModalFormProps> = ({
   isOpen,
   onClose = noop,
   title,
@@ -12,11 +22,11 @@ export default function ModalForm({
   footerContent,
   closeLabel = "Close",
   isDismissDisabled = false,
-}) {
+}) => {
   const { isCompact } = useCompactLayout();
 
   const handleKeyDown = useCallback(
-    (event) => {
+    (event: KeyboardEvent) => {
       if (isDismissDisabled) return;
       if (event.key === "Escape") {
         event.preventDefault();
@@ -98,4 +108,6 @@ export default function ModalForm({
       </div>
     </div>
   );
-}
+};
+
+export default ModalForm;

@@ -2,7 +2,17 @@ import React, { useEffect } from "react";
 import { styles } from "../styles/common";
 import { ensureStatusAnimations } from "../utils/animations";
 
-export default function ErrorState({ message = "Something went wrong.", onRetry, actionLabel = "Try again" }) {
+interface ErrorStateProps {
+  message?: string;
+  onRetry?: () => void;
+  actionLabel?: string;
+}
+
+const ErrorState: React.FC<ErrorStateProps> = ({
+  message = "Something went wrong.",
+  onRetry,
+  actionLabel = "Try again",
+}) => {
   useEffect(() => {
     ensureStatusAnimations();
   }, []);
@@ -37,4 +47,6 @@ export default function ErrorState({ message = "Something went wrong.", onRetry,
       )}
     </div>
   );
-}
+};
+
+export default ErrorState;
