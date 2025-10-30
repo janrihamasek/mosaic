@@ -5,6 +5,7 @@ import { styles } from '../styles/common';
 import { formatError } from '../utils/errors';
 import { createActivity, selectActivitiesState } from '../store/activitiesSlice';
 import { useCompactLayout } from '../utils/useBreakpoints';
+import FormWrapper from './shared/FormWrapper';
 
 const errorTextStyle = { color: '#f28b82', fontSize: 12 };
 const buildInputStyle = (hasError, overrides) => ({
@@ -25,13 +26,8 @@ export default function ActivityForm({ onNotify }) {
   const dispatch = useDispatch();
   const { mutationStatus } = useSelector(selectActivitiesState);
   const isSaving = mutationStatus === 'loading';
-  const { isMobile, isCompact } = useCompactLayout();
+  const { isCompact } = useCompactLayout();
   const fieldWrapperStyle = { display: 'flex', flexDirection: 'column', gap: 4 };
-  const formStyle = {
-    ...styles.form,
-    flexDirection: 'column',
-    gap: isCompact ? '0.75rem' : '1rem',
-  };
   const frequencySectionStyle = {
     display: 'grid',
     gridTemplateColumns: isCompact ? '1fr' : 'repeat(auto-fit, minmax(9rem, 1fr))',
@@ -79,54 +75,61 @@ export default function ActivityForm({ onNotify }) {
     }
   };
 
+  const submitLabel = isSaving || isSubmitting ? 'Saving...' : 'Enter';
+
   return (
-    <form
+    <FormWrapper
+      title="Create activity"
       onSubmit={handleSubmit(onSubmit)}
-      style={formStyle}
+      isSubmitting={isSaving || isSubmitting}
+      isSubmitDisabled={!isValid}
+      submitLabel={submitLabel}
     >
-      <div style={fieldWrapperStyle}>
-        <input
-          type="text"
-          placeholder="Activity"
-          {...register('name', {
-            required: 'Activity name is required.',
-            minLength: { value: 2, message: 'Activity name must be at least 2 characters.' },
-            maxLength: { value: 80, message: 'Activity name must be at most 80 characters.' },
-            validate: (value) => value.trim().length > 0 || 'Activity name cannot be empty.',
-          })}
-          style={buildInputStyle(!!errors.name)}
-          aria-invalid={errors.name ? 'true' : 'false'}
-        />
-        {errors.name && <span style={errorTextStyle}>{errors.name.message}</span>}
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '0.75rem' : '1rem' }}>
+        <div style={fieldWrapperStyle}>
+          <input
+            type="text"
+            placeholder="Activity"
+            {...register('name', {
+              required: 'Activity name is required.',
+              minLength: { value: 2, message: 'Activity name must be at least 2 characters.' },
+              maxLength: { value: 80, message: 'Activity name must be at most 80 characters.' },
+              validate: (value) => value.trim().length > 0 || 'Activity name cannot be empty.',
+            })}
+            style={buildInputStyle(!!errors.name)}
+            aria-invalid={errors.name ? 'true' : 'false'}
+          />
+          {errors.name && <span style={errorTextStyle}>{errors.name.message}</span>}
+        </div>
 
-      <div style={fieldWrapperStyle}>
-        <input
-          type="text"
-          placeholder="Category"
-          {...register('category', {
-            required: 'Category is required.',
-            minLength: { value: 2, message: 'Category must be at least 2 characters.' },
-            maxLength: { value: 80, message: 'Category must be at most 80 characters.' },
-            validate: (value) => value.trim().length > 0 || 'Category cannot be empty.',
-          })}
-          style={buildInputStyle(!!errors.category)}
-          aria-invalid={errors.category ? 'true' : 'false'}
-        />
-        {errors.category && <span style={errorTextStyle}>{errors.category.message}</span>}
-      </div>
+        <div style={fieldWrapperStyle}>
+          <input
+            type="text"
+            placeholder="Category"
+            {...register('category', {
+              required: 'Category is required.',
+              minLength: { value: 2, message: 'Category must be at least 2 characters.' },
+              maxLength: { value: 80, message: 'Category must be at most 80 characters.' },
+              validate: (value) => value.trim().length > 0 || 'Category cannot be empty.',
+            })}
+            style={buildInputStyle(!!errors.category)}
+            aria-invalid={errors.category ? 'true' : 'false'}
+          />
+          {errors.category && <span style={errorTextStyle}>{errors.category.message}</span>}
+        </div>
 
-      <div style={fieldWrapperStyle}>
-        <input
-          type="text"
-          placeholder="Description (optional)"
-          {...register('description', {
-            maxLength: { value: 240, message: 'Description must be at most 240 characters.' },
-          })}
-          style={buildInputStyle(!!errors.description)}
-          aria-invalid={errors.description ? 'true' : 'false'}
-        />
-        {errors.description && <span style={errorTextStyle}>{errors.description.message}</span>}
+        <div style={fieldWrapperStyle}>
+          <input
+            type="text"
+            placeholder="Description (optional)"
+            {...register('description', {
+              maxLength: { value: 240, message: 'Description must be at most 240 characters.' },
+            })}
+            style={buildInputStyle(!!errors.description)}
+            aria-invalid={errors.description ? 'true' : 'false'}
+          />
+          {errors.description && <span style={errorTextStyle}>{errors.description.message}</span>}
+        </div>
       </div>
 
       <div style={frequencySectionStyle}>
@@ -148,9 +151,7 @@ export default function ActivityForm({ onNotify }) {
               </option>
             ))}
           </select>
-            {errors.frequencyPerDay && (
-              <span style={errorTextStyle}>{errors.frequencyPerDay.message}</span>
-          )}
+          {errors.frequencyPerDay && <span style={errorTextStyle}>{errors.frequencyPerDay.message}</span>}
         </label>
 
         <label style={{ ...fieldWrapperStyle, fontSize: 13 }}>
@@ -171,9 +172,7 @@ export default function ActivityForm({ onNotify }) {
               </option>
             ))}
           </select>
-            {errors.frequencyPerWeek && (
-              <span style={errorTextStyle}>{errors.frequencyPerWeek.message}</span>
-          )}
+          {errors.frequencyPerWeek && <span style={errorTextStyle}>{errors.frequencyPerWeek.message}</span>}
         </label>
 
         <div style={{ ...fieldWrapperStyle, justifyContent: 'flex-end', fontSize: 13 }}>
@@ -181,19 +180,6 @@ export default function ActivityForm({ onNotify }) {
           <span>{avgGoalPerDay.toFixed(2)}</span>
         </div>
       </div>
-
-      <button
-        type="submit"
-        style={{
-          ...styles.button,
-          ...(isMobile ? styles.buttonMobile : {}),
-          opacity: isSaving || isSubmitting || !isValid ? 0.7 : 1,
-          cursor: isSaving || isSubmitting || !isValid ? 'not-allowed' : styles.button.cursor,
-        }}
-        disabled={isSaving || isSubmitting || !isValid}
-      >
-        {isSaving || isSubmitting ? 'Saving...' : 'Enter'}
-      </button>
-    </form>
+    </FormWrapper>
   );
 }

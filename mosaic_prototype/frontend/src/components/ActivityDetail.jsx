@@ -3,8 +3,9 @@ import { useDispatch } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { updateActivityDetails } from "../store/activitiesSlice";
+import ModalForm from "./shared/ModalForm";
 
-export default function ActivityDetail({ activity, onClose, onNotify }) {
+export default function ActivityDetail({ activity, onClose: dismiss, onNotify }) {
   const dispatch = useDispatch();
   const [category, setCategory] = useState(activity.category || "");
   const [frequencyPerDay, setFrequencyPerDay] = useState(activity.frequency_per_day || 1);
@@ -41,8 +42,9 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
     description !== initialState.description;
 
   const handleClose = async () => {
-    if (!hasChanges || isSaving) {
-      onClose();
+    if (isSaving) return;
+    if (!hasChanges) {
+      dismiss();
       return;
     }
 
@@ -68,7 +70,7 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
         },
       })).unwrap();
       onNotify?.("Activity updated", "success");
-      onClose();
+      dismiss();
     } catch (err) {
       onNotify?.(`Failed to update activity: ${formatError(err)}`, "error");
     } finally {
@@ -76,23 +78,37 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
     }
   };
 
+  const handleDiscard = () => {
+    if (isSaving) return;
+    dismiss();
+  };
+
   return (
-    <div style={styles.card}>
-      <div style={{ ...styles.rowBetween, alignItems: "flex-start" }}>
-        <h3 style={{ margin: 0 }}>{activity.name} - overview</h3>
-        <button
-          style={{ ...styles.button, opacity: isSaving ? 0.7 : 1 }}
-          onClick={handleClose}
-          disabled={isSaving}
-        >
-          {hasChanges ? (isSaving ? "Saving..." : "Save") : "Close"}
-        </button>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+    <ModalForm
+      isOpen
+      onClose={handleClose}
+      title={`${activity.name} - overview`}
+      closeLabel={hasChanges ? (isSaving ? "Saving..." : "Save") : "Close"}
+      isDismissDisabled={isSaving}
+      footerContent={
+        hasChanges ? (
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              style={{ ...styles.button, backgroundColor: "#b0b0b0" }}
+              onClick={handleDiscard}
+              disabled={isSaving}
+            >
+              Not Save
+            </button>
+          </div>
+        ) : null
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontWeight: 600 }}>Activity name</span>
-            <input value={activity.name} readOnly style={{ ...styles.input}} />
+            <input value={activity.name} readOnly style={{ ...styles.input }} />
           </label>
         </div>
         <div>
@@ -101,7 +117,7 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
             <input
               type="text"
               value={category}
-              onChange={e => setCategory(e.target.value)}
+              onChange={(e) => setCategory(e.target.value)}
               style={styles.input}
             />
           </label>
@@ -113,11 +129,13 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
               <span>Per day</span>
               <select
                 value={frequencyPerDay}
-                onChange={e => setFrequencyPerDay(Number(e.target.value))}
+                onChange={(e) => setFrequencyPerDay(Number(e.target.value))}
                 style={{ ...styles.input, width: 120 }}
               >
-                {[1, 2, 3].map(v => (
-                  <option key={v} value={v}>{v}</option>
+                {[1, 2, 3].map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
                 ))}
               </select>
             </label>
@@ -125,11 +143,13 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
               <span>Per week</span>
               <select
                 value={frequencyPerWeek}
-                onChange={e => setFrequencyPerWeek(Number(e.target.value))}
+                onChange={(e) => setFrequencyPerWeek(Number(e.target.value))}
                 style={{ ...styles.input, width: 120 }}
               >
-                {[1, 2, 3, 4, 5, 6, 7].map(v => (
-                  <option key={v} value={v}>{v}</option>
+                {[1, 2, 3, 4, 5, 6, 7].map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
                 ))}
               </select>
             </label>
@@ -144,22 +164,13 @@ export default function ActivityDetail({ activity, onClose, onNotify }) {
             <span style={{ fontWeight: 600 }}>Description</span>
             <textarea
               value={description}
-              onChange={e => setDescription(e.target.value)}
+              onChange={(e) => setDescription(e.target.value)}
               rows={3}
               style={{ ...styles.input, resize: "vertical" }}
             />
           </label>
         </div>
       </div>
-      {hasChanges && (
-        <button
-          style={{ ...styles.button, marginTop: 12, backgroundColor: "#b0b0b0" }}
-          onClick={onClose}
-          disabled={isSaving}
-        >
-          Not Save
-        </button>
-      )}
-    </div>
+    </ModalForm>
   );
 }

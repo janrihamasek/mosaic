@@ -6,6 +6,7 @@ import CsvImportButton from "./CsvImportButton";
 import { selectAllActivities } from "../store/activitiesSlice";
 import { loadEntries, selectEntriesFilters, selectEntriesList } from "../store/entriesSlice";
 import { formatError } from "../utils/errors";
+import FormWrapper from "./shared/FormWrapper";
 
 const toLocalDateString = (dateObj) => {
   const tzOffset = dateObj.getTimezoneOffset();
@@ -194,172 +195,175 @@ export default function EntryForm({ onNotify }) {
   };
 
   return (
-    <form
+    <FormWrapper
+      title="Filter entries"
       onSubmit={handleSubmit(onSubmit)}
-      style={{ ...styles.form, display: "flex", flexWrap: "wrap", gap: 12 }}
+      isSubmitting={isSubmitting}
+      isSubmitDisabled={!isValid}
+      submitLabel={isSubmitting ? "Applying…" : "Enter"}
+      footer={
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <CsvImportButton onNotify={onNotify} variant="import" />
+        </div>
+      }
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <select
-          {...register("dateMode", {
-            required: "Select a date mode.",
-          })}
-          style={buildInputStyle(!!errors.dateMode, { minWidth: 160 })}
-        >
-          {dateModes.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        {errors.dateMode && <span style={errorTextStyle}>{errors.dateMode.message}</span>}
-      </div>
-
-      {dateModeValue === "single" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <input
-            type="date"
-            {...register("singleDate", {
-              required: "Please select a date.",
-              maxLength: {
-                value: 10,
-                message: "Date value should be 10 characters.",
-              },
-            })}
-            style={buildInputStyle(!!errors.singleDate)}
-          />
-          {errors.singleDate && <span style={errorTextStyle}>{errors.singleDate.message}</span>}
-        </div>
-      )}
-
-      {dateModeValue === "month" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <input
-            type="month"
-            {...register("month", {
-              required: "Please select a month.",
-              maxLength: {
-                value: 7,
-                message: "Month value should be YYYY-MM.",
-              },
-              validate: {
-                format: (value) =>
-                  /^\d{4}-(0[1-9]|1[0-2])$/.test(value) || "Invalid month format.",
-                yearRange: (value) => {
-                  if (!value) return true;
-                  const [yearStr] = value.split("-");
-                  const year = Number(yearStr);
-                  return (year >= 2000 && year <= 2100) || "Year must be between 2000 and 2100.";
-                },
-              },
-            })}
-            style={buildInputStyle(!!errors.month)}
-          />
-          {errors.month && <span style={errorTextStyle}>{errors.month.message}</span>}
-        </div>
-      )}
-
-      {dateModeValue === "range" && (
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <input
-              type="date"
-              {...register("rangeStart", {
-                required: "Select start date.",
-                maxLength: {
-                  value: 10,
-                  message: "Date value should be 10 characters.",
-                },
-                validate: {
-                  beforeEnd: (value) => {
-                    const end = getValues("rangeEnd");
-                    if (!value || !end) return true;
-                    return value <= end || "Range start must be on or before end date.";
-                  },
-                },
-              })}
-              style={buildInputStyle(!!errors.rangeStart)}
-            />
-            {errors.rangeStart && (
-              <span style={errorTextStyle}>{errors.rangeStart.message}</span>
-            )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <input
-              type="date"
-              {...register("rangeEnd", {
-                required: "Select end date.",
-                maxLength: {
-                  value: 10,
-                  message: "Date value should be 10 characters.",
-                },
-                validate: {
-                  afterStart: (value) => {
-                    const start = getValues("rangeStart");
-                    if (!value || !start) return true;
-                    return start <= value || "Range end must be on or after start date.";
-                  },
-                },
-              })}
-              style={buildInputStyle(!!errors.rangeEnd)}
-            />
-            {errors.rangeEnd && <span style={errorTextStyle}>{errors.rangeEnd.message}</span>}
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <select
-          {...register("activity", {
-            required: "Select an activity option.",
-            maxLength: {
-              value: 120,
-              message: "Activity value is too long.",
-            },
-          })}
-          style={buildInputStyle(!!errors.activity, { minWidth: 200 })}
-        >
-          {activityOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        {errors.activity && <span style={errorTextStyle}>{errors.activity.message}</span>}
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <select
-          {...register("category", {
-            required: "Select a category option.",
-            maxLength: {
-              value: 120,
-              message: "Category value is too long.",
-            },
-          })}
-          style={buildInputStyle(!!errors.category, { minWidth: 180 })}
-        >
-          {categoryOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        {errors.category && <span style={errorTextStyle}>{errors.category.message}</span>}
-      </div>
-
-      <button
-        type="submit"
+      <div
         style={{
-          ...styles.button,
-          opacity: !isValid || isSubmitting ? 0.7 : 1,
-          cursor: !isValid || isSubmitting ? "not-allowed" : styles.button.cursor,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.75rem",
+          alignItems: "flex-start",
         }}
-        disabled={!isValid || isSubmitting}
       >
-        {isSubmitting ? "Applying…" : "Enter"}
-      </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <select
+            {...register("dateMode", {
+              required: "Select a date mode.",
+            })}
+            style={buildInputStyle(!!errors.dateMode, { minWidth: 160 })}
+          >
+            {dateModes.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {errors.dateMode && <span style={errorTextStyle}>{errors.dateMode.message}</span>}
+        </div>
 
-      <CsvImportButton onNotify={onNotify} variant="import" />
-    </form>
+        {dateModeValue === "single" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <input
+              type="date"
+              {...register("singleDate", {
+                required: "Please select a date.",
+                maxLength: {
+                  value: 10,
+                  message: "Date value should be 10 characters.",
+                },
+              })}
+              style={buildInputStyle(!!errors.singleDate)}
+            />
+            {errors.singleDate && <span style={errorTextStyle}>{errors.singleDate.message}</span>}
+          </div>
+        )}
+
+        {dateModeValue === "month" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <input
+              type="month"
+              {...register("month", {
+                required: "Please select a month.",
+                maxLength: {
+                  value: 7,
+                  message: "Month value should be YYYY-MM.",
+                },
+                validate: {
+                  format: (value) =>
+                    /^\d{4}-(0[1-9]|1[0-2])$/.test(value) || "Invalid month format.",
+                  yearRange: (value) => {
+                    if (!value) return true;
+                    const [yearStr] = value.split("-");
+                    const year = Number(yearStr);
+                    return (year >= 2000 && year <= 2100) || "Year must be between 2000 and 2100.";
+                  },
+                },
+              })}
+              style={buildInputStyle(!!errors.month)}
+            />
+            {errors.month && <span style={errorTextStyle}>{errors.month.message}</span>}
+          </div>
+        )}
+
+        {dateModeValue === "range" && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <input
+                type="date"
+                {...register("rangeStart", {
+                  required: "Select start date.",
+                  maxLength: {
+                    value: 10,
+                    message: "Date value should be 10 characters.",
+                  },
+                  validate: {
+                    beforeEnd: (value) => {
+                      const end = getValues("rangeEnd");
+                      if (!value || !end) return true;
+                      return value <= end || "Range start must be on or before end date.";
+                    },
+                  },
+                })}
+                style={buildInputStyle(!!errors.rangeStart)}
+              />
+              {errors.rangeStart && (
+                <span style={errorTextStyle}>{errors.rangeStart.message}</span>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <input
+                type="date"
+                {...register("rangeEnd", {
+                  required: "Select end date.",
+                  maxLength: {
+                    value: 10,
+                    message: "Date value should be 10 characters.",
+                  },
+                  validate: {
+                    afterStart: (value) => {
+                      const start = getValues("rangeStart");
+                      if (!value || !start) return true;
+                      return start <= value || "Range end must be on or after start date.";
+                    },
+                  },
+                })}
+                style={buildInputStyle(!!errors.rangeEnd)}
+              />
+              {errors.rangeEnd && <span style={errorTextStyle}>{errors.rangeEnd.message}</span>}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <select
+            {...register("activity", {
+              required: "Select an activity option.",
+              maxLength: {
+                value: 120,
+                message: "Activity value is too long.",
+              },
+            })}
+            style={buildInputStyle(!!errors.activity, { minWidth: 200 })}
+          >
+            {activityOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {errors.activity && <span style={errorTextStyle}>{errors.activity.message}</span>}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <select
+            {...register("category", {
+              required: "Select a category option.",
+              maxLength: {
+                value: 120,
+                message: "Category value is too long.",
+              },
+            })}
+            style={buildInputStyle(!!errors.category, { minWidth: 180 })}
+          >
+            {categoryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {errors.category && <span style={errorTextStyle}>{errors.category.message}</span>}
+        </div>
+      </div>
+    </FormWrapper>
   );
 }

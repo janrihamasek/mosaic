@@ -41,6 +41,9 @@ export default function DataTable({
   };
 
   const renderStateMessage = (message, tone = "info") => {
+    if (React.isValidElement(message)) {
+      return message;
+    }
     const toneStyle =
       tone === "error"
         ? { color: "#f28b82" }
@@ -109,9 +112,9 @@ export default function DataTable({
                 <span style={{ ...styles.textMuted, fontSize: "0.75rem" }}>
                   {column.label}
                 </span>
-                <span style={{ fontSize: "0.95rem" }}>
+                <div style={{ fontSize: "0.95rem" }}>
                   {resolveCellValue(row, column)}
-                </span>
+                </div>
               </div>
             ))}
           </div>

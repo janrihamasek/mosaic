@@ -11,11 +11,13 @@ export default function FormWrapper({
   onSubmit,
   children,
   isSubmitting = false,
+  isSubmitDisabled = false,
   submitLabel = "Submit",
   onCancel,
   cancelLabel = "Cancel",
   description,
   footer,
+  submitButtonProps = {},
   ...formProps
 }) {
   const { isCompact } = useCompactLayout();
@@ -79,9 +81,10 @@ export default function FormWrapper({
           style={{
             ...buttonBase,
             opacity: isSubmitting ? 0.75 : 1,
-            cursor: isSubmitting ? "not-allowed" : styles.button.cursor,
+            cursor: isSubmitting || isSubmitDisabled ? "not-allowed" : styles.button.cursor,
           }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isSubmitDisabled}
+          {...submitButtonProps}
         >
           {submitLabel}
         </button>

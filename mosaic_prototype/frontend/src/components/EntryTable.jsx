@@ -1,11 +1,11 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { deleteEntry, loadEntries, selectEntriesList, selectEntriesState } from "../store/entriesSlice";
 import Loading from "./Loading";
 import ErrorState from "./ErrorState";
-import { useCompactLayout } from "../utils/useBreakpoints";
+import DataTable from "./shared/DataTable";
 
 export default function EntryTable({ onNotify }) {
   const dispatch = useDispatch();
@@ -13,30 +13,99 @@ export default function EntryTable({ onNotify }) {
   const { deletingId, status, error } = useSelector(selectEntriesState);
   const loading = status === "loading";
   const refreshing = loading && entries.length > 0;
-  const { isCompact } = useCompactLayout();
-  const entryCardBase = {
-    ...styles.card,
-    margin: 0,
-    padding: "1rem",
+
+  const handleDelete = useCallback(
+    async (id) => {
+      if (deletingId !== null) return;
+      try {
+        await dispatch(deleteEntry(id)).unwrap();
+        onNotify?.("Entry was deleted", "success");
+      } catch (err) {
+        onNotify?.(`Failed to delete entry: ${formatError(err)}`, "error");
+      }
+    },
+    [deletingId, dispatch, onNotify]
+  );
+
+  const actionCellStyle = {
     display: "flex",
-    flexDirection: "column",
-    gap: "0.75rem",
-  };
-  const deleteButtonStyle = {
-    ...styles.button,
-    backgroundColor: "#8b1e3f",
-    width: isCompact ? "100%" : "auto",
+    gap: "0.5rem",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
   };
 
-  const handleDelete = async (id) => {
-    if (deletingId !== null) return;
-    try {
-      await dispatch(deleteEntry(id)).unwrap();
-      onNotify?.("Entry was deleted", "success");
-    } catch (err) {
-      onNotify?.(`Failed to delete entry: ${formatError(err)}`, "error");
-    }
-  };
+  const tableData = useMemo(
+    () =>
+      entries.map((entry, index) => ({
+        ...entry,
+        _rowIndex: index,
+      })),
+    [entries]
+  );
+
+  const columns = useMemo(
+    () => [
+      {
+        key: "date",
+        label: "Date",
+        width: "15%",
+        render: (entry) => entry.date,
+      },
+      {
+        key: "activity",
+        label: "Activity",
+        width: "30%",
+        render: (entry) => (
+          <span title={entry.category ? `Category: ${entry.category}` : "Category: N/A"}>
+            {entry.activity}
+          </span>
+        ),
+      },
+      {
+        key: "category",
+        label: "Category",
+        width: "20%",
+        render: (entry) => entry.category || "N/A",
+      },
+      {
+        key: "goal",
+        label: "Goal",
+        width: "15%",
+        render: (entry) => {
+          const goalValue = Number(entry.goal ?? 0);
+          return goalValue ? goalValue.toFixed(2) : "0.00";
+        },
+      },
+      {
+        key: "actions",
+        label: "Actions",
+        width: "20%",
+        render: (entry) => {
+          const id = entry.id ?? entry._rowIndex;
+          const isDeleting = deletingId === id;
+          return (
+            <div style={actionCellStyle}>
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleDelete(id);
+                }}
+                style={{
+                  ...styles.button,
+                  backgroundColor: "#8b1e3f",
+                  opacity: isDeleting ? 0.6 : 1,
+                }}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          );
+        },
+      },
+    ],
+    [deletingId, handleDelete]
+  );
 
   if (status === "failed") {
     const message = error?.friendlyMessage || error?.message || "Failed to load entries.";
@@ -49,88 +118,18 @@ export default function EntryTable({ onNotify }) {
     );
   }
 
-  if (loading && entries.length === 0) {
-    return <Loading message="Loading entries…" />;
-  }
+  const isInitialLoading = loading && entries.length === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       {refreshing && <Loading message="Refreshing entries…" inline />}
-
-      {isCompact ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {entries.map((entry, idx) => {
-            const id = entry.id ?? idx;
-            const goalValue = Number(entry.goal ?? 0);
-            return (
-              <div key={id} style={entryCardBase}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 600 }}>{entry.activity}</span>
-                  <span style={{ ...styles.textMuted, fontSize: "0.8125rem" }}>{entry.date}</span>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", color: "#c5ccd6", fontSize: "0.875rem" }}>
-                  <span>Category: {entry.category || "N/A"}</span>
-                  <span>Goal: {goalValue ? goalValue.toFixed(2) : "0.00"}</span>
-                </div>
-                <button
-                  onClick={() => handleDelete(id)}
-                  style={{ ...deleteButtonStyle, opacity: deletingId === id ? 0.6 : 1 }}
-                  disabled={deletingId === id}
-                >
-                  {deletingId === id ? "Deleting..." : "Delete"}
-                </button>
-              </div>
-            );
-          })}
-          {!loading && entries.length === 0 && (
-            <div style={{ ...styles.card, margin: 0, padding: "1rem", color: "#9ba3af", fontStyle: "italic" }}>
-              No entries to display.
-            </div>
-          )}
-        </div>
-      ) : (
-        <table style={styles.table}>
-          <thead>
-            <tr style={styles.tableHeader}>
-              <th>Date</th>
-              <th>Activity</th>
-              <th>Category</th>
-              <th>Goal</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry, idx) => {
-              const id = entry.id ?? idx;
-              const goalValue = Number(entry.goal ?? 0);
-              return (
-                <tr key={id} style={styles.tableRow}>
-                  <td>{entry.date}</td>
-                  <td title={entry.category ? `Category: ${entry.category}` : "Category: N/A"}>{entry.activity}</td>
-                  <td>{entry.category || "N/A"}</td>
-                  <td>{goalValue ? goalValue.toFixed(2) : "0.00"}</td>
-                  <td style={{ ...styles.tableCellActions }}>
-                    <button
-                      onClick={() => handleDelete(id)}
-                      style={{ ...styles.button, backgroundColor: "#8b1e3f", opacity: deletingId === id ? 0.6 : 1 }}
-                      disabled={deletingId === id}
-                    >
-                      {deletingId === id ? "Deleting..." : "Delete"}
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-            {!loading && entries.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ padding: "0.75rem", color: "#9ba3af", fontStyle: "italic" }}>
-                  No entries to display.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      )}
+      <DataTable
+        columns={columns}
+        data={tableData}
+        isLoading={isInitialLoading}
+        loadingMessage={<Loading message="Loading entries…" />}
+        emptyMessage="No entries to display."
+      />
     </div>
   );
 }

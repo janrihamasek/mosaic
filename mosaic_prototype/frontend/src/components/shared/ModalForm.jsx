@@ -11,17 +11,19 @@ export default function ModalForm({
   children,
   footerContent,
   closeLabel = "Close",
+  isDismissDisabled = false,
 }) {
   const { isCompact } = useCompactLayout();
 
   const handleKeyDown = useCallback(
     (event) => {
+      if (isDismissDisabled) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
       }
     },
-    [onClose]
+    [isDismissDisabled, onClose]
   );
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export default function ModalForm({
   return (
     <div
       onClick={(event) => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget && !isDismissDisabled) {
           onClose();
         }
       }}
@@ -86,6 +88,7 @@ export default function ModalForm({
               backgroundColor: "#3a3b3f",
               minWidth: isCompact ? "auto" : "6rem",
             }}
+            disabled={isDismissDisabled}
           >
             {closeLabel}
           </button>
