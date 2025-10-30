@@ -1,15 +1,19 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useDispatch } from 'react-redux';
+import { logout } from '../store/authSlice';
 import { styles } from '../styles/common';
 
 export default function LogoutButton({ className, style }) {
-  const { logout } = useAuth();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout({ silent: true });
-    navigate('/login', { replace: true });
+  const handleLogout = async () => {
+    try {
+      await dispatch(logout({ silent: true })).unwrap();
+    } finally {
+      navigate('/login', { replace: true });
+    }
   };
 
   return (

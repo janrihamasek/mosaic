@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { updateActivity } from "../api";
+import { useDispatch } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
+import { updateActivityDetails } from "../store/activitiesSlice";
 
-export default function ActivityDetail({ activity, onClose, onNotify, onDataChanged }) {
+export default function ActivityDetail({ activity, onClose, onNotify }) {
+  const dispatch = useDispatch();
   const [category, setCategory] = useState(activity.category || "");
   const [frequencyPerDay, setFrequencyPerDay] = useState(activity.frequency_per_day || 1);
   const [frequencyPerWeek, setFrequencyPerWeek] = useState(activity.frequency_per_week || 1);
@@ -55,15 +57,17 @@ export default function ActivityDetail({ activity, onClose, onNotify, onDataChan
         throw new Error("Frequency per week must be between 1 and 7");
       }
 
-      await updateActivity(activity.id, {
-        category: category.trim(),
-        frequency_per_day: perDay,
-        frequency_per_week: perWeek,
-        goal: avgGoalPerDay,
-        description: description.trim(),
-      });
+      await dispatch(updateActivityDetails({
+        id: activity.id,
+        payload: {
+          category: category.trim(),
+          frequency_per_day: perDay,
+          frequency_per_week: perWeek,
+          goal: avgGoalPerDay,
+          description: description.trim(),
+        },
+      })).unwrap();
       onNotify?.("Activity updated", "success");
-      await onDataChanged?.();
       onClose();
     } catch (err) {
       onNotify?.(`Failed to update activity: ${formatError(err)}`, "error");

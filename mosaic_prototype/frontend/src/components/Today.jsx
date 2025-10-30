@@ -1,7 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchToday, addEntry, finalizeDay } from "../api";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
+import {
+  selectTodayState,
+  setTodayDate,
+  loadToday,
+  updateTodayRow,
+  saveDirtyTodayRows,
+  finalizeToday,
+} from "../store/entriesSlice";
 
 const toLocalDateString = (dateObj) => {
   const tzOffset = dateObj.getTimezoneOffset();
@@ -9,60 +17,23 @@ const toLocalDateString = (dateObj) => {
   return adjusted.toISOString().slice(0, 10);
 };
 
-export default function Today({ onDataChanged, onNotify }) {
-  const [date, setDate] = useState(() => toLocalDateString(new Date()));
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [autoSaving, setAutoSaving] = useState(false);
-  const [dirtyRowsState, setDirtyRowsState] = useState({});
-  const dirtyRef = useRef({});
+export default function Today({ onNotify }) {
+  const dispatch = useDispatch();
+  const { date, rows, status, dirty, savingStatus } = useSelector(selectTodayState);
+  const loading = status === "loading";
+  const autoSaving = savingStatus === "loading";
+  const dirtyCount = Object.keys(dirty || {}).length;
+  const dirtyRef = useRef(dirty || {});
   const debounceRef = useRef(null);
   const SAVE_DEBOUNCE_MS = 600;
 
-  const sortRows = useCallback((list) => {
-    return [...list].sort((a, b) => {
-      const aDone = Number(a.value) > 0 ? 1 : 0;
-      const bDone = Number(b.value) > 0 ? 1 : 0;
-      if (aDone !== bDone) {
-        return aDone - bDone;
-      }
-      const catCompare = (a.category || "").localeCompare(b.category || "", undefined, {
-        sensitivity: "base",
-      });
-      if (catCompare !== 0) {
-        return catCompare;
-      }
-      return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
-    });
-  }, []);
-
-  const load = useCallback(async (targetDate) => {
-    const effectiveDate = targetDate ?? date;
-    setLoading(true);
-    try {
-      const data = await fetchToday(effectiveDate);
-      const formatted = data.map((r) => {
-        const goalValue = Number(r.goal ?? r.activity_goal ?? 0) || 0;
-        return {
-          ...r,
-          category: r.category ?? "",
-          value: r.value ?? 0,
-          note: r.note ?? "",
-          goal: goalValue,
-        };
-      });
-      setRows(sortRows(formatted));
-    } catch (err) {
-      onNotify?.(`Failed to load day overview: ${formatError(err)}`, "error");
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [date, onNotify, sortRows]);
+  useEffect(() => {
+    dirtyRef.current = dirty || {};
+  }, [dirty]);
 
   useEffect(() => {
-    load(date);
-  }, [date, load]);
+    dispatch(loadToday(date));
+  }, [dispatch, date]);
 
   useEffect(() => {
     const checkFinalize = async () => {
@@ -71,7 +42,7 @@ export default function Today({ onDataChanged, onNotify }) {
       midnight.setHours(0, 0, 0, 0);
       if (now.getTime() - midnight.getTime() < 60 * 1000) {
         try {
-          await finalizeDay(date);
+          await dispatch(finalizeToday(date)).unwrap();
         } catch (err) {
           onNotify?.(`Failed to finalize day: ${formatError(err)}`, "error");
         }
@@ -79,47 +50,31 @@ export default function Today({ onDataChanged, onNotify }) {
     };
     const interval = setInterval(checkFinalize, 60 * 1000);
     return () => clearInterval(interval);
-  }, [date, onNotify]);
+  }, [dispatch, date, onNotify]);
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    },
+    []
+  );
 
   const flushDirtyRows = useCallback(async () => {
     if (autoSaving) return;
-    const entries = Object.values(dirtyRef.current);
-    if (!entries.length) return;
-
+    if (!Object.keys(dirtyRef.current || {}).length) return;
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-
-    setAutoSaving(true);
-    dirtyRef.current = {};
-    setDirtyRowsState({});
-
     try {
-      await Promise.all(
-        entries.map((row) =>
-          addEntry({
-            date,
-            activity: row.name,
-            value: Number(row.value) || 0,
-            note: row.note || "",
-          })
-        )
-      );
+      await dispatch(saveDirtyTodayRows()).unwrap();
       onNotify?.("Changes auto-saved", "info");
-      await onDataChanged?.();
     } catch (err) {
       onNotify?.(`Auto-save failed: ${formatError(err)}`, "error");
-      const restored = entries.reduce((acc, row) => {
-        acc[row.name] = row;
-        return acc;
-      }, {});
-      dirtyRef.current = restored;
-      setDirtyRowsState(restored);
-    } finally {
-      setAutoSaving(false);
     }
-  }, [date, onDataChanged, onNotify, autoSaving]);
+  }, [autoSaving, dispatch, onNotify]);
 
   const scheduleAutoSave = useCallback(() => {
     if (autoSaving) return;
@@ -129,27 +84,27 @@ export default function Today({ onDataChanged, onNotify }) {
     debounceRef.current = setTimeout(() => {
       flushDirtyRows();
     }, SAVE_DEBOUNCE_MS);
-  }, [flushDirtyRows, autoSaving]);
+  }, [autoSaving, flushDirtyRows]);
 
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, []);
+  const handleValueChange = (row, newValue) => {
+    dispatch(
+      updateTodayRow({
+        name: row.name,
+        changes: { value: Number(newValue) || 0 },
+      })
+    );
+    scheduleAutoSave();
+  };
 
-  const markRowDirty = useCallback(
-    (rowName, updatedRow) => {
-      setDirtyRowsState((prev) => {
-        const next = { ...prev, [rowName]: updatedRow };
-        dirtyRef.current = next;
-        return next;
-      });
-      scheduleAutoSave();
-    },
-    [scheduleAutoSave]
-  );
+  const handleNoteChange = (row, newNote) => {
+    dispatch(
+      updateTodayRow({
+        name: row.name,
+        changes: { note: newNote.slice(0, 100) },
+      })
+    );
+    scheduleAutoSave();
+  };
 
   const todayString = useMemo(() => toLocalDateString(new Date()), []);
 
@@ -159,12 +114,12 @@ export default function Today({ onDataChanged, onNotify }) {
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
-      if (Object.keys(dirtyRef.current).length) {
+      if (Object.keys(dirtyRef.current || {}).length) {
         await flushDirtyRows();
       }
-      setDate(newDate);
+      dispatch(setTodayDate(newDate));
     },
-    [flushDirtyRows]
+    [dispatch, flushDirtyRows]
   );
 
   const shiftDay = useCallback(
@@ -183,20 +138,6 @@ export default function Today({ onDataChanged, onNotify }) {
     [date, handleDateChange, todayString]
   );
 
-  const handleValueChange = (row, newValue) => {
-    const updatedRow = { ...row, value: Number(newValue) || 0 };
-    setRows((prev) => sortRows(prev.map((p) => (p.name === row.name ? updatedRow : p))));
-    markRowDirty(row.name, updatedRow);
-  };
-
-  const handleNoteChange = (row, newNote) => {
-    const trimmed = newNote.slice(0, 100);
-    const updatedRow = { ...row, note: trimmed };
-    setRows((prev) => sortRows(prev.map((p) => (p.name === row.name ? updatedRow : p))));
-    markRowDirty(row.name, updatedRow);
-  };
-
-  const dirtyCount = Object.keys(dirtyRowsState).length;
   const progressStats = useMemo(() => {
     return rows.reduce(
       (acc, row) => {
@@ -210,6 +151,7 @@ export default function Today({ onDataChanged, onNotify }) {
       { totalValue: 0, totalGoal: 0 }
     );
   }, [rows]);
+
   const rawPercent =
     progressStats.totalGoal > 0 ? (progressStats.totalValue / progressStats.totalGoal) * 100 : 0;
   const cappedPercent = progressStats.totalGoal > 0 ? Math.min(rawPercent, 100) : 0;

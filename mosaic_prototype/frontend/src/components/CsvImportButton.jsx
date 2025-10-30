@@ -1,9 +1,11 @@
 import React, { useRef, useState } from "react";
-import { importEntriesCsv } from "../api";
+import { useDispatch } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
+import { importEntries } from "../store/entriesSlice";
 
-export default function CsvImportButton({ onImported, onNotify, variant = "default" }) {
+export default function CsvImportButton({ onNotify, variant = "default" }) {
+  const dispatch = useDispatch();
   const inputRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
@@ -17,7 +19,7 @@ export default function CsvImportButton({ onImported, onNotify, variant = "defau
 
     setLoading(true);
     try {
-      const result = await importEntriesCsv(file);
+      const result = await dispatch(importEntries(file)).unwrap();
       const summary = result?.summary;
       const created = summary?.created ?? 0;
       const updated = summary?.updated ?? 0;
@@ -26,7 +28,6 @@ export default function CsvImportButton({ onImported, onNotify, variant = "defau
         `CSV import completed (${created} created, ${updated} updated, ${skipped} skipped)`,
         "success"
       );
-      await onImported?.();
     } catch (err) {
       onNotify?.(`CSV import failed: ${formatError(err)}`, "error");
     } finally {

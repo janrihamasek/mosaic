@@ -1,14 +1,18 @@
 import React, { useMemo, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { styles } from '../styles/common';
 import { formatError } from '../utils/errors';
+import { createActivity, selectActivitiesState } from '../store/activitiesSlice';
 
-export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
+export default function ActivityForm({ onNotify }) {
+  const dispatch = useDispatch();
+  const { mutationStatus } = useSelector(selectActivitiesState);
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [frequencyPerDay, setFrequencyPerDay] = useState(1);
   const [frequencyPerWeek, setFrequencyPerWeek] = useState(1);
   const [description, setDescription] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  const isSaving = mutationStatus === 'loading';
 
   const avgGoalPerDay = useMemo(() => {
     const day = Number(frequencyPerDay) || 0;
@@ -29,7 +33,6 @@ export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
     if (!name.trim() || !category.trim()) return;
     if (isSaving) return;
 
-    setIsSaving(true);
     try {
       const perDay = Number.parseInt(frequencyPerDay, 10);
       const perWeek = Number.parseInt(frequencyPerWeek, 10);
@@ -39,21 +42,20 @@ export default function ActivityForm({ onSave, onDataChanged, onNotify }) {
       if (Number.isNaN(perWeek) || perWeek < 1 || perWeek > 7) {
         throw new Error("Frequency per week must be between 1 and 7");
       }
-      await onSave({
-        name: name.trim(),
-        category: category.trim(),
-        frequency_per_day: perDay,
-        frequency_per_week: perWeek,
-        goal: avgGoalPerDay,
-        description: description.trim(),
-      });
+      await dispatch(
+        createActivity({
+          name: name.trim(),
+          category: category.trim(),
+          frequency_per_day: perDay,
+          frequency_per_week: perWeek,
+          goal: avgGoalPerDay,
+          description: description.trim(),
+        })
+      ).unwrap();
       onNotify?.('Activity was created', 'success');
-      await onDataChanged?.();
       resetForm();
     } catch (err) {
       onNotify?.(`Failed to create activity: ${formatError(err)}`, 'error');
-    } finally {
-      setIsSaving(false);
     }
   };
 

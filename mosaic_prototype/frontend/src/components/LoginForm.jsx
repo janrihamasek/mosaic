@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useDispatch, useSelector } from 'react-redux';
+import { login, selectIsAuthenticated } from '../store/authSlice';
+import { getFriendlyMessage } from '../services/authService';
 import { styles } from '../styles/common';
 
 const formContainerStyle = {
@@ -18,7 +20,8 @@ function extractMessage(error, getFriendlyMessage) {
 }
 
 export default function LoginForm() {
-  const { login, isAuthenticated, getFriendlyMessage } = useAuth();
+  const dispatch = useDispatch();
+  const isAuthenticated = useSelector(selectIsAuthenticated);
   const navigate = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState('');
@@ -38,7 +41,7 @@ export default function LoginForm() {
     setLoading(true);
     setError('');
     try {
-      await login(username.trim(), password);
+      await dispatch(login({ username: username.trim(), password })).unwrap();
       const redirectTo = location.state?.from?.pathname || '/';
       navigate(redirectTo, { replace: true });
     } catch (err) {

@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { fetchProgressStats } from "../api";
+import React, { useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
+import { loadStats, selectStatsState } from "../store/entriesSlice";
 
 const metricOptions = [{ value: "progress", label: "Progress" }];
 const groupOptions = [
@@ -23,59 +24,39 @@ const progressBarStyle = {
 };
 
 export default function Stats({ onNotify }) {
+  const dispatch = useDispatch();
+  const { data, status, options, range } = useSelector(selectStatsState);
   const [metric, setMetric] = useState("progress");
-  const [group, setGroup] = useState("activity");
-  const [period, setPeriod] = useState(30);
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState([]);
-  const [range, setRange] = useState({ start: null, end: null });
+  const loading = status === "loading";
 
-  useEffect(() => {
-    if (metric !== "progress") return;
-    let isMounted = true;
-
-    const load = async () => {
-      setLoading(true);
-      try {
-        const payload = await fetchProgressStats({ group, period });
-        if (!isMounted) return;
-        setData(payload?.data || []);
-        setRange({ start: payload?.start_date, end: payload?.end_date });
-      } catch (err) {
-        if (isMounted) {
-          setData([]);
-          onNotify?.(`Failed to load stats: ${formatError(err)}`, "error");
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    load();
-    return () => {
-      isMounted = false;
-    };
-  }, [metric, group, period, onNotify]);
+  const handleLoad = async (nextOptions) => {
+    try {
+      await dispatch(loadStats(nextOptions)).unwrap();
+    } catch (err) {
+      onNotify?.(`Failed to load stats: ${formatError(err)}`, "error");
+    }
+  };
 
   const processed = useMemo(() => {
-    return data.map((item) => {
-      const totalGoal = Number(item.total_goal) || 0;
-      const totalValue = Number(item.total_value) || 0;
-      const ratio = totalGoal > 0 ? totalValue / totalGoal : 0;
-      return {
-        ...item,
-        totalGoal,
-        totalValue,
-        ratio,
-        percent: totalGoal > 0 ? Math.min(ratio * 100, 100) : 0,
-      };
-    }).sort((a, b) => b.ratio - a.ratio);
+    return data
+      .map((item) => {
+        const totalGoal = Number(item.total_goal) || 0;
+        const totalValue = Number(item.total_value) || 0;
+        const ratio = totalGoal > 0 ? totalValue / totalGoal : 0;
+        return {
+          ...item,
+          totalGoal,
+          totalValue,
+          ratio,
+          percent: totalGoal > 0 ? Math.min(ratio * 100, 100) : 0,
+        };
+      })
+      .sort((a, b) => b.ratio - a.ratio);
   }, [data]);
 
   const renderRow = (item) => {
-    const ratioLabel = item.totalGoal > 0 ? `${item.totalValue.toFixed(1)} / ${item.totalGoal.toFixed(1)}` : "N/A";
+    const ratioLabel =
+      item.totalGoal > 0 ? `${item.totalValue.toFixed(1)} / ${item.totalGoal.toFixed(1)}` : "N/A";
     const percentLabel = item.totalGoal > 0 ? `${Math.round(item.ratio * 100)}%` : "N/A";
 
     return (
@@ -101,7 +82,7 @@ export default function Stats({ onNotify }) {
             style={{
               ...progressBarStyle.fill,
               width: `${item.percent}%`,
-              backgroundColor: item.ratio >= 0.5 ? styles.highlightRow.backgroundColor : '#8b1e3f',
+              backgroundColor: item.ratio >= 0.5 ? styles.highlightRow.backgroundColor : "#8b1e3f",
             }}
             role="progressbar"
             aria-label={`Progress for ${item.name}`}
@@ -129,8 +110,8 @@ export default function Stats({ onNotify }) {
           ))}
         </select>
         <select
-          value={group}
-          onChange={(e) => setGroup(e.target.value)}
+          value={options.group}
+          onChange={(e) => handleLoad({ group: e.target.value })}
           style={{ ...styles.input, width: 140 }}
         >
           {groupOptions.map((option) => (
@@ -140,8 +121,8 @@ export default function Stats({ onNotify }) {
           ))}
         </select>
         <select
-          value={period}
-          onChange={(e) => setPeriod(Number(e.target.value))}
+          value={options.period}
+          onChange={(e) => handleLoad({ period: Number(e.target.value) })}
           style={{ ...styles.input, width: 140 }}
         >
           {periodOptions.map((option) => (
@@ -160,14 +141,12 @@ export default function Stats({ onNotify }) {
       {loading && <div style={styles.loadingText}>⏳ Loading stats...</div>}
 
       {!loading && processed.length === 0 && (
-        <div style={{ color: "#9ba3af", fontStyle: "italic" }}>No data available for the selected filters.</div>
-      )}
-
-      {!loading && processed.length > 0 && (
-        <div>
-          {processed.map(renderRow)}
+        <div style={{ color: "#9ba3af", fontStyle: "italic" }}>
+          No data available for the selected filters.
         </div>
       )}
+
+      {!loading && processed.length > 0 && <div>{processed.map(renderRow)}</div>}
     </div>
   );
 }

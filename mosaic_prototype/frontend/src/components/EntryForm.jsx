@@ -1,6 +1,10 @@
 import React, { useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import CsvImportButton from "./CsvImportButton";
+import { selectAllActivities } from "../store/activitiesSlice";
+import { loadEntries, selectEntriesFilters, selectEntriesList } from "../store/entriesSlice";
+import { formatError } from "../utils/errors";
 
 const toLocalDateString = (dateObj) => {
   const tzOffset = dateObj.getTimezoneOffset();
@@ -15,13 +19,11 @@ const dateModes = [
   { value: "range", label: "Range" },
 ];
 
-export default function EntryForm({
-  activities = [],
-  categories = [],
-  onApplyFilters,
-  onNotify,
-  onImported,
-}) {
+export default function EntryForm({ onNotify }) {
+  const dispatch = useDispatch();
+  const activities = useSelector(selectAllActivities);
+  const entries = useSelector(selectEntriesList);
+  const filters = useSelector(selectEntriesFilters);
   const [dateMode, setDateMode] = useState("all");
   const [singleDate, setSingleDate] = useState(() => toLocalDateString(new Date()));
   const [month, setMonth] = useState(() => {
@@ -32,6 +34,42 @@ export default function EntryForm({
   const [rangeEnd, setRangeEnd] = useState("");
   const [selectedActivity, setSelectedActivity] = useState("all");
   const [selectedCategory, setSelectedCategory] = useState("all");
+
+  React.useEffect(() => {
+    setSelectedActivity(filters.activity ?? "all");
+    setSelectedCategory(filters.category ?? "all");
+    const { startDate, endDate } = filters;
+    if (!startDate && !endDate) {
+      setDateMode("all");
+      return;
+    }
+    if (startDate && endDate && startDate === endDate) {
+      setDateMode("single");
+      setSingleDate(startDate);
+      return;
+    }
+    if (startDate && endDate) {
+      const start = new Date(`${startDate}T00:00:00`);
+      const end = new Date(`${endDate}T00:00:00`);
+      const isSameMonth =
+        start.getFullYear() === end.getFullYear() &&
+        start.getMonth() === end.getMonth() &&
+        start.getDate() === 1 &&
+        toLocalDateString(new Date(start.getFullYear(), start.getMonth() + 1, 0)) === endDate;
+      if (isSameMonth) {
+        setDateMode("month");
+        setMonth(`${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`);
+        return;
+      }
+      setDateMode("range");
+      setRangeStart(startDate);
+      setRangeEnd(endDate);
+      return;
+    }
+    setDateMode("range");
+    if (startDate) setRangeStart(startDate);
+    if (endDate) setRangeEnd(endDate);
+  }, [filters]);
 
   const activityOptions = useMemo(() => {
     const list = [...activities]
@@ -46,11 +84,15 @@ export default function EntryForm({
   }, [activities]);
 
   const categoryOptions = useMemo(() => {
-    const unique = new Set(
-      categories
-        .map((c) => c?.trim())
-        .filter((c) => c && c.length > 0)
-    );
+    const unique = new Set();
+    activities.forEach((activity) => {
+      const category = activity?.category?.trim();
+      if (category) unique.add(category);
+    });
+    entries.forEach((entry) => {
+      const category = entry?.category?.trim();
+      if (category) unique.add(category);
+    });
     const list = Array.from(unique).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
@@ -58,9 +100,9 @@ export default function EntryForm({
       { value: "all", label: "All categories" },
       ...list.map((c) => ({ value: c, label: c })),
     ];
-  }, [categories]);
+  }, [activities, entries]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     let startDate = null;
     let endDate = null;
@@ -107,12 +149,18 @@ export default function EntryForm({
         break;
     }
 
-    onApplyFilters?.({
-      startDate,
-      endDate,
-      activity: selectedActivity,
-      category: selectedCategory,
-    });
+    try {
+      await dispatch(
+        loadEntries({
+          startDate,
+          endDate,
+          activity: selectedActivity,
+          category: selectedCategory,
+        })
+      ).unwrap();
+    } catch (err) {
+      onNotify?.(`Failed to apply filters: ${formatError(err)}`, "error");
+    }
   };
 
   return (
@@ -192,7 +240,7 @@ export default function EntryForm({
         Enter
       </button>
 
-      <CsvImportButton onImported={onImported} onNotify={onNotify} variant="import" />
+      <CsvImportButton onNotify={onNotify} variant="import" />
     </form>
   );
 }

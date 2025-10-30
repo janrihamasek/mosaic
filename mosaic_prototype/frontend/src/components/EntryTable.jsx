@@ -1,21 +1,22 @@
-import React, { useState } from "react";
+import React from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
+import { deleteEntry, selectEntriesList, selectEntriesState } from "../store/entriesSlice";
 
-export default function EntryTable({ entries, onDelete, onDataChanged, loading = false, onNotify }) {
-  const [deletingId, setDeletingId] = useState(null);
+export default function EntryTable({ onNotify }) {
+  const dispatch = useDispatch();
+  const entries = useSelector(selectEntriesList);
+  const { deletingId, status } = useSelector(selectEntriesState);
+  const loading = status === "loading";
 
   const handleDelete = async (id) => {
     if (deletingId !== null) return;
-    setDeletingId(id);
     try {
-      await onDelete?.(id);
+      await dispatch(deleteEntry(id)).unwrap();
       onNotify?.("Entry was deleted", "success");
-      await onDataChanged?.();
     } catch (err) {
       onNotify?.(`Failed to delete entry: ${formatError(err)}`, "error");
-    } finally {
-      setDeletingId(null);
     }
   };
 
@@ -46,7 +47,7 @@ export default function EntryTable({ entries, onDelete, onDataChanged, loading =
                 <td style={{ width: "12%", textAlign: "right" }}>
                   <button
                     onClick={() => handleDelete(id)}
-                    style={{ ...styles.button, backgroundColor : "#8b1e3f", opacity: deletingId === id ? 0.6 : 1 }}
+                    style={{ ...styles.button, backgroundColor: "#8b1e3f", opacity: deletingId === id ? 0.6 : 1 }}
                     disabled={deletingId === id}
                   >
                     {deletingId === id ? "Deleting..." : "Delete"}

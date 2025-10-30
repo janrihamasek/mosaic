@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useDispatch, useSelector } from 'react-redux';
+import { register as registerUser, selectIsAuthenticated } from '../store/authSlice';
+import { getFriendlyMessage } from '../services/authService';
 import { styles } from '../styles/common';
 
 const containerStyle = {
@@ -11,12 +13,19 @@ const containerStyle = {
 };
 
 export default function RegisterForm() {
-  const { register, getFriendlyMessage } = useAuth();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
+  const isAuthenticated = useSelector(selectIsAuthenticated);
   const [form, setForm] = useState({ username: '', password: '', confirmPassword: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -33,7 +42,7 @@ export default function RegisterForm() {
     setError('');
     setLoading(true);
     try {
-      await register(form.username.trim(), form.password);
+      await dispatch(registerUser({ username: form.username.trim(), password: form.password })).unwrap();
       setSuccess('Registrace proběhla úspěšně. Můžete se přihlásit.');
       setTimeout(() => navigate('/login'), 1200);
     } catch (err) {
