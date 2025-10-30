@@ -1,12 +1,7 @@
 import React, { useEffect } from "react";
 import { styles } from "../styles/common";
 import { ensureStatusAnimations } from "../utils/animations";
-
-interface ErrorStateProps {
-  message?: string;
-  onRetry?: () => void;
-  actionLabel?: string;
-}
+import type { ErrorStateProps } from "../types/props";
 
 const ErrorState: React.FC<ErrorStateProps> = ({
   message = "Something went wrong.",

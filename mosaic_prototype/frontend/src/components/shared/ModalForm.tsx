@@ -1,18 +1,9 @@
 import React, { useCallback, useEffect } from "react";
 import { styles } from "../../styles/common";
 import { useCompactLayout } from "../../utils/useBreakpoints";
+import type { ModalFormProps } from "../../types/props";
 
 const noop = () => {};
-
-interface ModalFormProps {
-  isOpen: boolean;
-  onClose?: () => void;
-  title: string;
-  children?: React.ReactNode;
-  footerContent?: React.ReactNode;
-  closeLabel?: string;
-  isDismissDisabled?: boolean;
-}
 
 const ModalForm: React.FC<ModalFormProps> = ({
   isOpen,
@@ -54,7 +45,7 @@ const ModalForm: React.FC<ModalFormProps> = ({
 
   return (
     <div
-      onClick={(event) => {
+      onClick={(event: React.MouseEvent<HTMLDivElement>) => {
         if (event.target === event.currentTarget && !isDismissDisabled) {
           onClose();
         }

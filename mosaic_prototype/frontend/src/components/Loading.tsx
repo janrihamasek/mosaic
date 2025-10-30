@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { styles } from "../styles/common";
 import { ensureStatusAnimations } from "../utils/animations";
+import type { LoadingProps } from "../types/props";
 
 const baseContainerStyle = {
   display: "flex",
@@ -9,11 +10,6 @@ const baseContainerStyle = {
   gap: 10,
   padding: "16px 0",
 };
-
-interface LoadingProps {
-  message?: string;
-  inline?: boolean;
-}
 
 const Loading: React.FC<LoadingProps> = ({ message = "Loading…", inline = false }) => {
   useEffect(() => {
