@@ -796,15 +796,24 @@ def get_progress_stats():
     today_str = target_date.strftime("%Y-%m-%d")
     window_30_start = (target_date - timedelta(days=29)).strftime("%Y-%m-%d")
 
-    def compute_completion(total_value: Optional[float], total_goal: Optional[float]) -> float:
-        value = float(total_value or 0.0)
-        goal = float(total_goal or 0.0)
-        if goal <= 0:
-            return 0.0
-        return min(value / goal, 1.0)
-
     conn = get_db_connection()
     try:
+        try:
+            total_goal_row = conn.execute(
+                "SELECT COALESCE(SUM(avg_goal_per_day), 0) AS total_goal FROM activities WHERE active = 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            total_goal_row = conn.execute(
+                "SELECT COALESCE(SUM(goal), 0) AS total_goal FROM activities WHERE active = 1"
+            ).fetchone()
+        total_active_goal = float(total_goal_row["total_goal"] or 0.0)
+
+        def compute_ratio(total_value: Optional[float]) -> float:
+            if total_active_goal <= 0:
+                return 0.0
+            value = max(float(total_value or 0.0), 0.0)
+            return min(value / total_active_goal, 1.0)
+
         daily_rows = conn.execute(
             """
             SELECT
@@ -821,35 +830,23 @@ def get_progress_stats():
 
         daily_completion = {}
         for row in daily_rows:
-            ratio = compute_completion(row["total_value"], row["total_goal"])
+            ratio = compute_ratio(row["total_value"])
             daily_completion[row["date"]] = ratio
 
-        goal_completion_today = round(daily_completion.get(today_str, 0.0) * 100, 1)
-
-        streak_rows = conn.execute(
-            """
-            SELECT
-                date,
-                COALESCE(SUM(value), 0) AS total_value,
-                COALESCE(SUM(activity_goal), 0) AS total_goal
-            FROM entries
-            WHERE date <= ?
-            GROUP BY date
-            ORDER BY date DESC
-        """,
-            (today_str,),
-        ).fetchall()
-
-        streak_map = {row["date"]: compute_completion(row["total_value"], row["total_goal"]) for row in streak_rows}
         streak_length = 0
-        cursor = target_date
-        while True:
-            key = cursor.strftime("%Y-%m-%d")
-            ratio = streak_map.get(key)
-            if ratio is None or ratio < 1.0:
-                break
-            streak_length += 1
-            cursor -= timedelta(days=1)
+        if total_active_goal > 0:
+            cursor = target_date - timedelta(days=1)
+            for _ in range(30):
+                key = cursor.strftime("%Y-%m-%d")
+                ratio = daily_completion.get(key)
+                if ratio is None or ratio < 0.5:
+                    break
+                streak_length += 1
+                cursor -= timedelta(days=1)
+
+        goal_ratio_today = daily_completion.get(today_str, 0.0)
+        goal_completion_today = round(min(goal_ratio_today * 100, 100.0), 1)
+
 
         distribution_rows = conn.execute(
             """
