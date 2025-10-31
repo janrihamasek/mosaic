@@ -58,10 +58,8 @@ export async function deleteActivity(id) {
 }
 
 // --- STATS ---
-export async function fetchProgressStats({ group = 'activity', period = 30, date } = {}) {
+export async function fetchProgressStats({ date } = {}) {
   const params = {};
-  if (group) params.group = group;
-  if (period) params.period = String(period);
   if (date) params.date = date;
   const response = await apiClient.get('/stats/progress', { params });
   return response.data;

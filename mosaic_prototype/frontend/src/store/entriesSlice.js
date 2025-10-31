@@ -35,18 +35,10 @@ const initialState = {
     saveError: null,
   },
   stats: {
-    data: [],
+    snapshot: null,
     status: 'idle',
     error: null,
-    options: {
-      group: 'activity',
-      period: 30,
-      date: null,
-    },
-    range: {
-      start: null,
-      end: null,
-    },
+    date: null,
   },
   finalizeStatus: 'idle',
 };
@@ -126,25 +118,15 @@ export const loadStats = createAsyncThunk(
   'entries/loadStats',
   async (options, { getState, rejectWithValue }) => {
     const state = getState();
-    const current = state.entries.stats.options;
-    const effective = {
-      group: options?.group ?? current.group,
-      period: options?.period ?? current.period,
-      date: options?.date ?? current.date ?? null,
-    };
+    const currentDate = state.entries.stats.date;
+    const effectiveDate = options?.date ?? currentDate ?? null;
     try {
-      const payload = await fetchProgressStats({
-        group: effective.group,
-        period: effective.period,
-        date: effective.date || undefined,
+      const snapshot = await fetchProgressStats({
+        date: effectiveDate || undefined,
       });
       return {
-        data: payload?.data || [],
-        options: effective,
-        range: {
-          start: payload?.start_date ?? null,
-          end: payload?.end_date ?? null,
-        },
+        snapshot: snapshot || null,
+        date: effectiveDate,
       };
     } catch (error) {
       return rejectWithValue(serialiseError(error));
@@ -192,7 +174,7 @@ export const saveDirtyTodayRows = createAsyncThunk(
       );
       dispatch(loadToday(today.date));
       dispatch(loadEntries(filters));
-      dispatch(loadStats(stats.options));
+      dispatch(loadStats({ date: stats.date }));
       return { saved: entriesToSave.length, date: today.date };
     } catch (error) {
       return rejectWithValue(serialiseError(error));
@@ -206,7 +188,7 @@ export const deleteEntry = createAsyncThunk(
     try {
       await deleteEntryApi(id);
       const state = getState();
-      dispatch(loadStats(state.entries.stats.options));
+      dispatch(loadStats({ date: state.entries.stats.date }));
       dispatch(loadToday(state.entries.today.date));
       return id;
     } catch (error) {
@@ -222,7 +204,7 @@ export const importEntries = createAsyncThunk(
       const response = await importEntriesCsv(file);
       const state = getState();
       dispatch(loadEntries(state.entries.filters));
-      dispatch(loadStats(state.entries.stats.options));
+      dispatch(loadStats({ date: state.entries.stats.date }));
       dispatch(loadToday(state.entries.today.date));
       return response;
     } catch (error) {
@@ -357,14 +339,13 @@ const entriesSlice = createSlice({
       })
       .addCase(loadStats.fulfilled, (state, action) => {
         state.stats.status = 'succeeded';
-        state.stats.data = action.payload.data;
-        state.stats.options = action.payload.options;
-        state.stats.range = action.payload.range;
+        state.stats.snapshot = action.payload.snapshot;
+        state.stats.date = action.payload.date ?? null;
         state.stats.error = null;
       })
       .addCase(loadStats.rejected, (state, action) => {
         state.stats.status = 'failed';
-        state.stats.data = [];
+        state.stats.snapshot = null;
         state.stats.error = action.payload || serialiseError(action.error);
       })
       .addCase(finalizeToday.pending, (state) => {

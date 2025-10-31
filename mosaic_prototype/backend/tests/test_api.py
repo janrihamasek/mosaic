@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from app import _cache_storage
+
 
 @pytest.fixture
 def auth_headers(client):
@@ -283,14 +285,6 @@ def test_delete_entry_not_found_returns_standard_error(client, auth_headers):
     assert body["error"]["message"]
 
 
-def test_invalid_stats_query_returns_standard_error(client, auth_headers):
-    response = client.get("/stats/progress?group=invalid", headers=auth_headers)
-    assert response.status_code == 400
-    body = response.get_json()
-    assert body["error"]["code"] == "invalid_query"
-    assert body["error"]["message"]
-
-
 def test_auth_is_required_for_entries(client):
     response = client.get("/entries")
     assert response.status_code == 401
@@ -476,73 +470,134 @@ def test_entries_filtering(client, auth_headers):
     assert all(row["category"] == "Health" for row in health_entries)
 
 
-def test_stats_progress_activity_and_category(client, auth_headers):
-    client.post(
-        "/add_activity",
-        json={
+def test_stats_progress_payload_structure(client, auth_headers):
+    activities = [
+        {
+            "name": "Walking",
+            "category": "Health",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "Daily walk",
+        },
+        {
+            "name": "Reading",
+            "category": "Art",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "Leisure time",
+        },
+        {
             "name": "Coding",
             "category": "Work",
             "frequency_per_day": 1,
-            "frequency_per_week": 7,
-            "description": "",
+            "frequency_per_week": 5,
+            "description": "Focus session",
         },
-        headers=auth_headers,
-    )
-    client.post(
-        "/add_activity",
-        json={
-            "name": "Run",
-            "category": "Health",
-            "frequency_per_day": 2,
-            "frequency_per_week": 7,
-            "description": "",
-        },
-        headers=auth_headers,
-    )
-
-    entries = [
-        ("2024-02-01", "Coding", 10),
-        ("2024-02-10", "Coding", 10),
-        ("2024-02-05", "Run", 15),
-        ("2024-02-12", "Run", 25),
     ]
-    for date, activity, value in entries:
-        client.post(
+    for payload in activities:
+        resp = client.post("/add_activity", json=payload, headers=auth_headers)
+        assert resp.status_code == 201
+
+    sample_entries = [
+        ("2024-05-30", "Walking", 1.0),
+        ("2024-05-30", "Reading", 1.0),
+        ("2024-05-29", "Walking", 1.0),
+        ("2024-05-28", "Coding", 0.2),
+        ("2024-05-27", "Coding", 1.0),
+        ("2024-05-20", "Reading", 1.0),
+        ("2024-05-10", "Coding", 0.6),
+    ]
+    for date, activity, value in sample_entries:
+        resp = client.post(
             "/add_entry",
             json={"date": date, "activity": activity, "value": value, "note": ""},
             headers=auth_headers,
         )
+        assert resp.status_code in {200, 201}
 
-    activity_resp = client.get("/stats/progress?group=activity&period=30&date=2024-02-20", headers=auth_headers)
-    assert activity_resp.status_code == 200
-    payload = activity_resp.get_json()
-    assert payload["window"] == 30
-    activity_stats = {row["name"]: row for row in payload["data"]}
-    assert "Coding" in activity_stats and "Run" in activity_stats
+    response = client.get("/stats/progress?date=2024-05-30", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.get_json()
 
-    coding = activity_stats["Coding"]
-    assert coding["total_value"] == pytest.approx(20.0)
-    assert coding["total_goal"] == pytest.approx(30.0)
-    assert coding["progress"] == pytest.approx(20.0 / 30.0)
+    expected_keys = {
+        "goal_completion_today",
+        "streak_length",
+        "activity_distribution",
+        "avg_goal_fulfillment",
+        "active_days_ratio",
+        "positive_vs_negative",
+        "top_consistent_activities",
+    }
+    assert expected_keys.issubset(payload.keys())
 
-    run_stats = activity_stats["Run"]
-    assert run_stats["total_value"] == pytest.approx(40.0)
-    assert run_stats["total_goal"] == pytest.approx(60.0)
-    assert run_stats["progress"] == pytest.approx(40.0 / 60.0)
-
-    category_resp = client.get(
-        "/stats/progress?group=category&period=30&date=2024-02-20",
-        headers=auth_headers,
+    assert isinstance(payload["goal_completion_today"], (int, float))
+    assert 0.0 <= payload["goal_completion_today"] <= 100.0
+    assert pytest.approx(payload["goal_completion_today"], rel=0, abs=0.05) == round(
+        payload["goal_completion_today"], 1
     )
-    assert category_resp.status_code == 200
-    category_payload = category_resp.get_json()
-    categories = {row["name"]: row for row in category_payload["data"]}
-    assert categories["Work"]["total_value"] == pytest.approx(20.0)
-    assert categories["Work"]["total_goal"] == pytest.approx(30.0)
-    assert categories["Work"]["progress"] == pytest.approx(20.0 / 30.0)
-    assert categories["Health"]["total_value"] == pytest.approx(40.0)
-    assert categories["Health"]["total_goal"] == pytest.approx(60.0)
-    assert categories["Health"]["progress"] == pytest.approx(40.0 / 60.0)
+
+    assert isinstance(payload["streak_length"], int)
+    assert payload["streak_length"] >= 0
+
+    distribution = payload["activity_distribution"]
+    assert isinstance(distribution, list) and distribution
+    total_percent = 0.0
+    total_count = 0
+    for bucket in distribution:
+        assert {"category", "count", "percent"}.issubset(bucket.keys())
+        assert isinstance(bucket["category"], str)
+        assert isinstance(bucket["count"], int)
+        assert bucket["count"] >= 0
+        assert isinstance(bucket["percent"], (int, float))
+        assert 0.0 <= bucket["percent"] <= 100.0
+        total_percent += bucket["percent"]
+        total_count += bucket["count"]
+    assert total_count > 0
+    assert pytest.approx(100.0, abs=0.6) == total_percent
+
+    averages = payload["avg_goal_fulfillment"]
+    assert set(averages.keys()) == {"last_7_days", "last_30_days"}
+    for value in averages.values():
+        assert isinstance(value, (int, float))
+        assert 0.0 <= value <= 100.0
+        assert pytest.approx(value, rel=0, abs=0.05) == round(value, 1)
+
+    active_ratio = payload["active_days_ratio"]
+    assert {"active_days", "total_days", "percent"} == set(active_ratio.keys())
+    assert isinstance(active_ratio["active_days"], int)
+    assert isinstance(active_ratio["total_days"], int)
+    assert active_ratio["total_days"] == 30
+    assert 0 <= active_ratio["active_days"] <= 30
+    assert isinstance(active_ratio["percent"], (int, float))
+    assert pytest.approx(active_ratio["percent"], rel=0, abs=0.05) == round(active_ratio["percent"], 1)
+
+    polarity = payload["positive_vs_negative"]
+    assert {"positive", "negative", "ratio"} == set(polarity.keys())
+    assert isinstance(polarity["positive"], int)
+    assert isinstance(polarity["negative"], int)
+    assert polarity["positive"] >= 0 and polarity["negative"] >= 0
+    assert isinstance(polarity["ratio"], (int, float))
+    assert polarity["ratio"] >= 0.0
+
+    consistent = payload["top_consistent_activities"]
+    assert isinstance(consistent, list)
+    assert len(consistent) <= 3
+    for entry in consistent:
+        assert {"name", "consistency_percent"} == set(entry.keys())
+        assert isinstance(entry["name"], str)
+        assert isinstance(entry["consistency_percent"], (int, float))
+        assert 0.0 <= entry["consistency_percent"] <= 100.0
+        assert pytest.approx(entry["consistency_percent"], rel=0, abs=0.05) == round(
+            entry["consistency_percent"], 1
+        )
+
+
+def test_stats_progress_invalid_date(client, auth_headers):
+    response = client.get("/stats/progress?date=2024-13-01", headers=auth_headers)
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"]["code"] == "invalid_query"
+    assert body["error"]["message"]
 
 
 def test_entries_pagination(client, auth_headers):
@@ -601,29 +656,6 @@ def test_activities_pagination(client, auth_headers):
     assert len(resp_all.get_json()) == 2
 
 
-def test_stats_pagination(client, auth_headers):
-    for name in ("Alpha", "Beta", "Gamma"):
-        client.post(
-            "/add_activity",
-            json={
-                "name": name,
-                "category": name,
-                "frequency_per_day": 1,
-                "frequency_per_week": 7,
-                "description": "",
-            },
-            headers=auth_headers,
-        )
-
-    response = client.get("/stats/progress?group=activity&limit=2", headers=auth_headers)
-    assert response.status_code == 200
-    assert len(response.get_json()["data"]) == 2
-
-    response_category = client.get("/stats/progress?group=category&limit=1", headers=auth_headers)
-    assert response_category.status_code == 200
-    assert len(response_category.get_json()["data"]) == 1
-
-
 def test_today_pagination(client, auth_headers):
     for idx in range(5):
         client.post(
@@ -673,40 +705,55 @@ def test_today_cache_invalidation(client, auth_headers):
 
 
 def test_stats_cache_invalidation(client, auth_headers):
-    client.post(
+    _cache_storage.clear()
+    target_date = "2024-06-01"
+    cache_key = f"stats::dashboard::{target_date}"
+
+    resp = client.post(
         "/add_activity",
         json={
             "name": "CacheStat",
             "category": "Cache",
             "frequency_per_day": 1,
             "frequency_per_week": 7,
-            "description": "",
+            "description": "Cache tracker",
         },
         headers=auth_headers,
     )
+    assert resp.status_code == 201
 
-    baseline = client.get(
-        "/stats/progress?group=activity&date=2024-04-30",
-        headers=auth_headers,
-    )
+    baseline = client.get(f"/stats/progress?date={target_date}", headers=auth_headers)
     assert baseline.status_code == 200
-    payload = baseline.get_json()
-    cache_entry = next((row for row in payload["data"] if row["name"] == "CacheStat"), None)
-    assert cache_entry is not None
-    assert cache_entry["total_value"] == pytest.approx(0.0)
+    initial_payload = baseline.get_json()
+    assert cache_key in _cache_storage
+    assert initial_payload["goal_completion_today"] == pytest.approx(0.0)
+    baseline_positive = initial_payload["positive_vs_negative"]["positive"]
 
-    client.post(
+    resp = client.post(
         "/add_entry",
-        json={"date": "2024-04-01", "activity": "CacheStat", "value": 5, "note": ""},
+        json={"date": target_date, "activity": "CacheStat", "value": 1.0, "note": ""},
         headers=auth_headers,
     )
+    assert resp.status_code in {200, 201}
+    assert cache_key not in _cache_storage
 
-    updated = client.get(
-        "/stats/progress?group=activity&date=2024-04-30",
-        headers=auth_headers,
-    )
+    updated = client.get(f"/stats/progress?date={target_date}", headers=auth_headers)
     assert updated.status_code == 200
     updated_payload = updated.get_json()
-    updated_entry = next((row for row in updated_payload["data"] if row["name"] == "CacheStat"), None)
-    assert updated_entry is not None
-    assert updated_entry["total_value"] == pytest.approx(5.0)
+    assert updated_payload["goal_completion_today"] > initial_payload["goal_completion_today"]
+    assert updated_payload["positive_vs_negative"]["positive"] == baseline_positive + 1
+    assert cache_key in _cache_storage
+
+    resp = client.post(
+        "/add_activity",
+        json={
+            "name": "AnotherStat",
+            "category": "New",
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "description": "Second tracker",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assert cache_key not in _cache_storage

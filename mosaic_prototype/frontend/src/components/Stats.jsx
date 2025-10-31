@@ -1,164 +1,455 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import Loading from "./Loading";
+import ErrorState from "./ErrorState";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { loadStats, selectStatsState } from "../store/entriesSlice";
 import { useCompactLayout } from "../utils/useBreakpoints";
 
-const metricOptions = [{ value: "progress", label: "Progress" }];
-const groupOptions = [
-  { value: "activity", label: "Activity" },
-  { value: "category", label: "Category" },
-];
-const periodOptions = [
-  { value: 30, label: "30 days" },
-  { value: 90, label: "90 days" },
-];
+const pieColors = ["#3a7bd5", "#f1b24a", "#8b1e3f", "#43cea2", "#8f36ff", "#9ba3af"];
 
-const progressBarStyle = {
-  container: { height: 8, backgroundColor: "#333", borderRadius: 4, overflow: "hidden" },
-  fill: {
-    backgroundColor: "#3a7bd5",
-    height: "100%",
-    transition: "width 0.3s ease",
-  },
+const containerStyle = {
+  ...styles.card,
+  display: "flex",
+  flexDirection: "column",
+  gap: "1.5rem",
 };
+
+const headerStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  flexWrap: "wrap",
+};
+
+const sectionGridBase = {
+  display: "grid",
+  gap: "1.5rem",
+};
+
+const meterContainer = {
+  backgroundColor: "#2f3034",
+  borderRadius: "999px",
+  overflow: "hidden",
+  height: "0.75rem",
+};
+
+const meterFillBase = {
+  height: "100%",
+  transition: "width 220ms ease-in-out",
+  borderRadius: "999px",
+};
+
+const dualBarContainer = {
+  ...meterContainer,
+  display: "flex",
+};
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatPercent = (value) => `${toNumber(value).toFixed(1)}%`;
 
 export default function Stats({ onNotify }) {
   const dispatch = useDispatch();
-  const { data, status, options, range } = useSelector(selectStatsState);
-  const [metric, setMetric] = useState("progress");
-  const loading = status === "loading";
+  const { snapshot, status, error, date } = useSelector(selectStatsState);
   const { isCompact } = useCompactLayout();
-  const filterRowStyle = {
-    display: "grid",
-    gridTemplateColumns: isCompact ? "1fr" : "repeat(auto-fit, minmax(10rem, 1fr))",
-    gap: "0.75rem",
-    marginBottom: "1rem",
-  };
-  const filterSelectStyle = {
-    ...styles.input,
-    width: "100%",
-  };
 
-  const handleLoad = async (nextOptions) => {
+  const handleRefresh = async () => {
     try {
-      await dispatch(loadStats(nextOptions)).unwrap();
+      await dispatch(loadStats({ date })).unwrap();
     } catch (err) {
       onNotify?.(`Failed to load stats: ${formatError(err)}`, "error");
     }
   };
 
-  const processed = useMemo(() => {
-    return data
-      .map((item) => {
-        const totalGoal = Number(item.total_goal) || 0;
-        const totalValue = Number(item.total_value) || 0;
-        const ratio = totalGoal > 0 ? totalValue / totalGoal : 0;
-        return {
-          ...item,
-          totalGoal,
-          totalValue,
-          ratio,
-          percent: totalGoal > 0 ? Math.min(ratio * 100, 100) : 0,
-        };
-      })
-      .sort((a, b) => b.ratio - a.ratio);
-  }, [data]);
+  const distributionWithColors = useMemo(() => {
+    if (!snapshot?.activity_distribution?.length) {
+      return [];
+    }
+    return snapshot.activity_distribution.map((item, index) => ({
+      ...item,
+      color: pieColors[index % pieColors.length],
+    }));
+  }, [snapshot]);
 
-  const renderRow = (item) => {
-    const ratioLabel =
-      item.totalGoal > 0 ? `${item.totalValue.toFixed(1)} / ${item.totalGoal.toFixed(1)}` : "N/A";
-    const percentLabel = item.totalGoal > 0 ? `${Math.round(item.ratio * 100)}%` : "N/A";
+  const pieBackground = useMemo(() => {
+    if (!distributionWithColors.length) {
+      return "#2f3034";
+    }
+    let currentAngle = 0;
+    const segments = distributionWithColors.map((item, idx) => {
+      const percent = Math.max(0, Math.min(100, toNumber(item.percent)));
+      let sweep = (percent / 100) * 360;
+      if (idx === distributionWithColors.length - 1) {
+        sweep = Math.max(0, 360 - currentAngle);
+      }
+      const start = currentAngle;
+      const end = Math.min(360, start + sweep);
+      currentAngle = end;
+      return `${item.color} ${start}deg ${end}deg`;
+    });
+    return `conic-gradient(${segments.join(", ")})`;
+  }, [distributionWithColors]);
 
-    return (
-      <div
-        key={item.name}
-        style={{
-          padding: "12px 0",
-          borderBottom: "1px solid #333",
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontWeight: 600 }}>{item.name}</span>
-          <span style={{ fontSize: 12, color: "#9ba3af" }}>
-            {percentLabel}
-            {item.totalGoal > 0 && ` (${ratioLabel})`}
-          </span>
-        </div>
-        <div style={progressBarStyle.container}>
-          <div
-            style={{
-              ...progressBarStyle.fill,
-              width: `${item.percent}%`,
-              backgroundColor: item.ratio >= 0.5 ? styles.highlightRow.backgroundColor : "#8b1e3f",
-            }}
-            role="progressbar"
-            aria-label={`Progress for ${item.name}`}
-            aria-valuemin={0}
-            aria-valuemax={item.totalGoal > 0 ? item.totalGoal : undefined}
-            aria-valuenow={item.totalGoal > 0 ? Math.min(item.totalValue, item.totalGoal) : undefined}
-          />
-        </div>
-      </div>
-    );
+  const lineChart = useMemo(() => {
+    const last7 = toNumber(snapshot?.avg_goal_fulfillment?.last_7_days);
+    const last30 = toNumber(snapshot?.avg_goal_fulfillment?.last_30_days);
+    const values = [last7, last30];
+    const labels = ["7d", "30d"];
+    const width = 200;
+    const height = 110;
+    const padding = 18;
+    const drawableHeight = height - padding * 2;
+    const step = values.length > 1 ? (width - padding * 2) / (values.length - 1) : 0;
+    const points = values.map((value, index) => {
+      const x = padding + index * step;
+      const y = height - padding - (Math.min(100, Math.max(0, value)) / 100) * drawableHeight;
+      return { x, y, label: labels[index], value };
+    });
+    const path = points.length > 1 ? points.map((p) => `${p.x},${p.y}`).join(" ") : "";
+    return { points, path, width, height };
+  }, [snapshot]);
+
+  const goalCompletion = toNumber(snapshot?.goal_completion_today);
+  const streakLength = toNumber(snapshot?.streak_length, 0);
+  const activeRatio = snapshot?.active_days_ratio || {};
+  const activeDays = toNumber(activeRatio.active_days, 0);
+  const totalDays = toNumber(activeRatio.total_days, 0) || 30;
+  const activePercent = toNumber(activeRatio.percent, 0);
+
+  const polarity = snapshot?.positive_vs_negative || {};
+  const positiveCount = toNumber(polarity.positive, 0);
+  const negativeCount = toNumber(polarity.negative, 0);
+  const polarityRatio = toNumber(polarity.ratio, 0);
+  const totalPolarity = positiveCount + negativeCount;
+  const positiveWidth = totalPolarity ? (positiveCount / totalPolarity) * 100 : 0;
+  const negativeWidth = totalPolarity ? (negativeCount / totalPolarity) * 100 : 0;
+
+  const consistency = snapshot?.top_consistent_activities || [];
+
+  const showInitialLoading = status === "loading" && !snapshot;
+  const showRefreshing = status === "loading" && snapshot;
+  const formattedError = error ? formatError(error, "Failed to load stats.") : null;
+
+  const sectionGridStyle = {
+    ...sectionGridBase,
+    gridTemplateColumns: isCompact ? "1fr" : "repeat(2, minmax(0, 1fr))",
   };
 
   return (
-    <div style={styles.card}>
-      <div style={filterRowStyle}>
-        <select
-          value={metric}
-          onChange={(e) => setMetric(e.target.value)}
-          style={filterSelectStyle}
+    <div style={containerStyle}>
+      <div style={headerStyle}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+          <h2 style={{ margin: 0, fontSize: "1.35rem" }}>Progress Overview</h2>
+          <span style={{ color: "#9ba3af", fontSize: "0.95rem" }}>
+            Unified snapshot for the past 30 days to power the dashboard.
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          style={{ ...styles.button, opacity: status === "loading" ? 0.7 : 1 }}
+          disabled={status === "loading"}
         >
-          {metricOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={options.group}
-          onChange={(e) => handleLoad({ group: e.target.value })}
-          style={filterSelectStyle}
-        >
-          {groupOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={options.period}
-          onChange={(e) => handleLoad({ period: Number(e.target.value) })}
-          style={filterSelectStyle}
-        >
-          {periodOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          Refresh
+        </button>
       </div>
-      {range.start && range.end && (
-        <div style={{ alignSelf: "flex-start", fontSize: "0.8125rem", color: "#9ba3af" }}>
-          {range.start} → {range.end}
-        </div>
+
+      {showInitialLoading && <Loading message="Loading dashboard stats…" />}
+
+      {formattedError && status === "failed" && (
+        <ErrorState message={formattedError} onRetry={handleRefresh} actionLabel="Retry" />
       )}
 
-      {loading && <div style={styles.loadingText}>⏳ Loading stats...</div>}
+      {showRefreshing && !showInitialLoading && <Loading message="Refreshing…" inline />}
 
-      {!loading && processed.length === 0 && (
+      {!snapshot && status === "succeeded" && (
         <div style={{ color: "#9ba3af", fontStyle: "italic" }}>
-          No data available for the selected filters.
+          No statistics available yet. Log a few activities to get insights.
         </div>
       )}
 
-      {!loading && processed.length > 0 && <div>{processed.map(renderRow)}</div>}
+      {snapshot && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <div style={sectionGridStyle}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+                padding: "1rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "#232428",
+                border: "1px solid #303136",
+              }}
+            >
+              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
+                Goal Completion Today
+              </span>
+              <div style={{ fontSize: "2.1rem", fontWeight: 600 }}>{formatPercent(goalCompletion)}</div>
+              <div style={meterContainer} aria-hidden="true">
+                <div
+                  style={{
+                    ...meterFillBase,
+                    width: `${Math.min(goalCompletion, 100)}%`,
+                    background:
+                      goalCompletion >= 80 ? "linear-gradient(90deg,#3a7bd5,#43cea2)" : "#8b1e3f",
+                  }}
+                />
+              </div>
+              <span
+                style={{
+                  alignSelf: "flex-start",
+                  backgroundColor: "#3a7bd533",
+                  border: "1px solid #3a7bd5",
+                  borderRadius: "999px",
+                  padding: "0.25rem 0.75rem",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  color: "#c4d9ff",
+                }}
+              >
+                Streak: {streakLength} day{streakLength === 1 ? "" : "s"}
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+                padding: "1rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "#232428",
+                border: "1px solid #303136",
+              }}
+            >
+              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
+                Active Days (30d)
+              </span>
+              <div style={{ fontSize: "1.8rem", fontWeight: 600 }}>
+                {activeDays}/{totalDays}
+              </div>
+              <span style={{ color: "#c5ccd5" }}>{formatPercent(activePercent)} active</span>
+              <div style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
+                Keep logging to extend your streaks and improve consistency.
+              </div>
+            </div>
+          </div>
+
+          <div style={sectionGridStyle}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "1rem",
+                padding: "1rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "#232428",
+                border: "1px solid #303136",
+              }}
+            >
+              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
+                Activity Distribution
+              </span>
+              <div style={{ display: "flex", gap: "1.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    width: 160,
+                    height: 160,
+                    borderRadius: "50%",
+                    background: pieBackground,
+                    border: "8px solid #1f2024",
+                    minWidth: 160,
+                  }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {distributionWithColors.length === 0 && (
+                    <span style={{ color: "#9ba3af", fontStyle: "italic" }}>No activity entries</span>
+                  )}
+                  {distributionWithColors.map((item) => (
+                    <div
+                      key={item.category}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.6rem",
+                        fontSize: "0.95rem",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: "2px",
+                          display: "inline-block",
+                          backgroundColor: item.color,
+                        }}
+                      />
+                      <span style={{ flex: 1 }}>{item.category}</span>
+                      <span style={{ color: "#9ba3af" }}>
+                        {item.count} · {formatPercent(item.percent)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "1rem",
+                padding: "1rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "#232428",
+                border: "1px solid #303136",
+              }}
+            >
+              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
+                Goal Fulfillment Trend
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <svg
+                  viewBox={`0 0 ${lineChart.width} ${lineChart.height}`}
+                  role="img"
+                  aria-label="Average goal fulfillment for last 7 and 30 days"
+                  style={{ width: "100%", maxWidth: "18rem" }}
+                >
+                  <polyline
+                    fill="none"
+                    stroke="#3a7bd5"
+                    strokeWidth="3"
+                    points={lineChart.path}
+                    strokeLinecap="round"
+                  />
+                  {lineChart.points.map((point) => (
+                    <g key={point.label}>
+                      <circle cx={point.x} cy={point.y} r="4" fill="#3a7bd5" />
+                      <text
+                        x={point.x}
+                        y={lineChart.height - 6}
+                        textAnchor="middle"
+                        fill="#9ba3af"
+                        fontSize="0.75rem"
+                      >
+                        {point.label}
+                      </text>
+                      <text
+                        x={point.x}
+                        y={point.y - 10}
+                        textAnchor="middle"
+                        fill="#e6e6e6"
+                        fontSize="0.75rem"
+                      >
+                        {formatPercent(point.value)}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+                <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
+                  Stable averages mean you are meeting goals consistently. Keep an eye on the 7-day trend for
+                  short-term momentum.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div style={sectionGridStyle}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+                padding: "1rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "#232428",
+                border: "1px solid #303136",
+              }}
+            >
+              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
+                Positive vs Negative Entries
+              </span>
+              <div>
+                <div style={dualBarContainer}>
+                  <div
+                    style={{
+                      ...meterFillBase,
+                      width: `${positiveWidth}%`,
+                      backgroundColor: "#43cea2",
+                    }}
+                  />
+                  <div
+                    style={{
+                      ...meterFillBase,
+                      width: `${negativeWidth}%`,
+                      backgroundColor: "#8b1e3f",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: "0.5rem",
+                    fontSize: "0.95rem",
+                    color: "#c5ccd5",
+                  }}
+                >
+                  <span>Positive: {positiveCount}</span>
+                  <span>
+                    Negative: {negativeCount} · Ratio {polarityRatio.toFixed(1)}x
+                  </span>
+                </div>
+              </div>
+              <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
+                Compare daily successes against underperforming entries to stay balanced.
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.9rem",
+                padding: "1.1rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "#232428",
+                border: "1px solid #303136",
+              }}
+            >
+              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
+                Top Consistent Activities
+              </span>
+              {consistency.length === 0 && (
+                <span style={{ color: "#9ba3af", fontStyle: "italic" }}>No standout activities yet.</span>
+              )}
+              {consistency.map((item) => (
+                <div key={item.name} style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+                    <span>{item.name}</span>
+                    <span>{formatPercent(item.consistency_percent)}</span>
+                  </div>
+                  <div style={meterContainer}>
+                    <div
+                      style={{
+                        ...meterFillBase,
+                        width: `${Math.min(100, Math.max(0, toNumber(item.consistency_percent)))}%`,
+                        backgroundColor: "#3a7bd5",
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
