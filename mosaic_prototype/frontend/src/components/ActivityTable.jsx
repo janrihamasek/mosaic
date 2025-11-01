@@ -53,12 +53,15 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
     [dispatch, onNotify]
   );
 
-  const actionCellStyle = {
-    display: 'flex',
-    gap: '0.5rem',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-  };
+  const actionCellStyle = useMemo(
+    () => ({
+      display: 'flex',
+      gap: '0.5rem',
+      flexWrap: 'wrap',
+      justifyContent: 'flex-end',
+    }),
+    []
+  );
 
   const columns = useMemo(
     () => [
@@ -162,7 +165,7 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
         },
       },
     ],
-    [actionId, handleAction, onOpenDetail]
+    [actionCellStyle, actionId, handleAction, onOpenDetail]
   );
 
   if (status === 'failed') {

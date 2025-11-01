@@ -3,8 +3,8 @@ import { styles } from "../styles/common";
 import { useCompactLayout } from "../utils/useBreakpoints";
 
 export default function Notification({ message, visible, type = "success" }) {
-  if (!visible || !message) return null;
   const { isCompact } = useCompactLayout();
+  if (!visible || !message) return null;
 
   const variantStyleMap = {
     success: styles.toastSuccess,

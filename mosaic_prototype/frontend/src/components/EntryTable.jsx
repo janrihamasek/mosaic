@@ -27,12 +27,15 @@ export default function EntryTable({ onNotify }) {
     [deletingId, dispatch, onNotify]
   );
 
-  const actionCellStyle = {
-    display: "flex",
-    gap: "0.5rem",
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
-  };
+  const actionCellStyle = useMemo(
+    () => ({
+      display: "flex",
+      gap: "0.5rem",
+      justifyContent: "flex-end",
+      flexWrap: "wrap",
+    }),
+    []
+  );
 
   const tableData = useMemo(
     () =>
@@ -104,7 +107,7 @@ export default function EntryTable({ onNotify }) {
         },
       },
     ],
-    [deletingId, handleDelete]
+    [actionCellStyle, deletingId, handleDelete]
   );
 
   if (status === "failed") {
