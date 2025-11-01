@@ -38,5 +38,7 @@ jobs:
         run: npm install
       - name: Run ESLint
         run: npm run lint -- --max-warnings=0
+      - name: Run Jest
+        run: npm test -- --runInBand
       - name: Build (lint/test placeholder)
         run: npm run build --if-present

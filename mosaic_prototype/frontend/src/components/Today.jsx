@@ -28,7 +28,7 @@ export default function Today({ onNotify }) {
   const dirtyCount = Object.keys(dirty || {}).length;
   const dirtyRef = useRef(dirty || {});
   const debounceRef = useRef(null);
-  const SAVE_DEBOUNCE_MS = 600;
+  const SAVE_DEBOUNCE_MS = 5000;
 
   useEffect(() => {
     dirtyRef.current = dirty || {};
