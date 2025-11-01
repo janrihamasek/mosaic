@@ -55,9 +55,7 @@ describe('LoginForm', () => {
 
     await userEvent.click(submitButton);
 
-    await waitFor(() => {
-      expect(mockDispatch).toHaveBeenCalled();
-      expect(mockedLogin).toHaveBeenCalledWith({ username: 'tester', password: 'password123' });
-    });
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalled());
+    expect(mockedLogin).toHaveBeenCalledWith({ username: 'tester', password: 'password123' });
   });
 });
