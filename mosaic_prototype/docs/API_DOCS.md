@@ -288,38 +288,46 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 
 ---
 
-### **Progress Stats**
+### **Progress Stats (Dashboard Snapshot)**
 - **Endpoint**: `GET /stats/progress`
-- **Description**: Retrieve progress statistics for activities or categories over a specified period.
+- **Description**: Returns a consolidated snapshot of key metrics used by the dashboard. Values are calculated over the trailing 30 days ending on the requested date (inclusive).
 - **Query Parameters**:
-  - `group` (optional, string): Group by `activity` or `category` (default: `activity`).
-  - `period` (optional, int): Number of days (30 or 90, default: 30).
-  - `date` (optional, string): End date in `YYYY-MM-DD` format (defaults to today).
-  - `limit` (optional, int): Limit the number of result rows (default 100, max 500).
-  - `offset` (optional, int): Skip the given number of rows before returning results.
+  - `date` (optional, string): Anchor date in `YYYY-MM-DD` format. Defaults to the current server date.
 - **Response**:
   ```json
   {
-    "group": "activity",
-    "window": 30,
-    "start_date": "2025-09-30",
-    "end_date": "2025-10-29",
-    "data": [
-      {
-        "name": "Reading",
-        "category": "Learning",
-        "goal_per_day": 1,
-        "total_value": 25,
-        "total_goal": 30,
-        "progress": 0.83
-      }
+    "goal_completion_today": 86.0,
+    "streak_length": 5,
+    "activity_distribution": [
+      {"category": "Health", "count": 12, "percent": 30.0},
+      {"category": "Work", "count": 8, "percent": 20.0}
+    ],
+    "avg_goal_fulfillment": {
+      "last_7_days": 92.1,
+      "last_30_days": 84.7
+    },
+    "active_days_ratio": {
+      "active_days": 22,
+      "total_days": 30,
+      "percent": 73.3
+    },
+    "positive_vs_negative": {
+      "positive": 48,
+      "negative": 12,
+      "ratio": 4.0
+    },
+    "top_consistent_activities": [
+      {"name": "Walking", "consistency_percent": 98.0},
+      {"name": "Reading", "consistency_percent": 91.5},
+      {"name": "Meditation", "consistency_percent": 89.2}
     ]
   }
   ```
 - **Notes**:
-  - The `data` array is sorted by `progress` in descending order.
-  - `progress` is expressed as a float in the range 0–1. Multiply by 100 for a percentage.
-  - Results are cached for about five minutes and invalidated whenever relevant entries or activities change.
+  - Percentages are rounded to one decimal place.
+  - Daily goal completion is computed against the sum of `avg_goal_per_day` for all currently active activities (capped at 100%).
+  - `streak_length` counts consecutive days starting from the day before `date` in which the above ratio stays at or above 0.5.
+  - Results are cached per-date for five minutes and invalidated automatically after any entry or activity mutation.
 
 ---
 
@@ -378,10 +386,10 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 ---
 
 ## Database Indexes
-- `idx_entries_date`: created on `entries(date)` because `/entries` and `/stats/progress` frequently filter by date ranges.
-- `idx_entries_activity`: supports lookups by activity in `/entries`, `/today`, and `/stats/progress` (activity grouping).
-- `idx_entries_activity_category`: speeds category filters in `/entries` and downstream analytics.
-- `idx_activities_category`: optimises category-based ordering and filtering in `/activities` and `/stats/progress`.
+- `idx_entries_date`: created on `entries(date)` because `/entries`, `/today`, and `/stats/progress` aggregate by date ranges.
+- `idx_entries_activity`: supports lookups by activity in `/entries`, `/today`, and streak/consistency calculations for `/stats/progress`.
+- `idx_entries_activity_category`: speeds category filters in `/entries` and the distribution slice of `/stats/progress`.
+- `idx_activities_category`: optimises category-based ordering and filtering in `/activities` and for active-goal lookups in `/stats/progress`.
 - All indexes were validated with `EXPLAIN QUERY PLAN` to ensure the SQLite planner uses them for the slowest queries.
 
 ---

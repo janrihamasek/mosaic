@@ -9,14 +9,14 @@ Mosaic is a full-stack activity tracking platform that helps individuals log dai
 - **Frontend:** React 18 with modern hooks, React Router v6, Redux Toolkit for state management, Axios for HTTP, react-hook-form for form orchestration, and a custom dark-mode design system defined in `styles/common.js`.
 - **Backend:** Flask 3 application organised in `app.py`, supported by Flask-CORS, Flask-SQLAlchemy, Flask-Migrate, PyJWT for authentication, and Pydantic for request validation.
 - **Database:** SQLite (`database/mosaic.db`) accessed via SQLAlchemy models. The project includes schema bootstrap scripts (`database/schema.sql`, `init_db.py`) and indices tuned for reporting queries.
-- **Tooling & Infrastructure:** Jest is not yet configured, but backend tests run via Pytest with coverage reporting. GitHub Actions workflows (`.github/workflows/*.yml`) run backend unit tests, provide coverage artifacts, and build the frontend bundle. The frontend build relies on Create React App.
+- **Tooling & Infrastructure:** Jest is not yet configured, but backend tests run via Pytest with coverage reporting. GitHub Actions workflows (`.github/workflows/*.yml`) run backend unit tests, provide coverage artifacts, and build the frontend bundle. The frontend build relies on Create React App, with TypeScript configured in `allowJs` mode and `noEmit` to keep the workspace lint-only.
 
 ### Development History and Direction
 Recent development (see `docs/changelog/2025-10-29_backend_frontend_summary.md`) delivered:
 - A Pydantic-backed validation layer replacing ad-hoc JSON checks.
 - Transactional guards for all mutating endpoints with consistent error envelopes.
 - Full JWT + CSRF authentication, frontend token storage, and CSRF-aware Axios interceptors.
-- Pagination, indexing, and caching for high-traffic endpoints (`/today`, `/stats/progress`).
+- Unified dashboard statistics pipeline (`/stats/progress`) consolidating 30-day metrics with cache-aware invalidation.
 - React forms migrated to react-hook-form for richer validation.
 - New reusable loading and error states plus centralized toast notifications.
 
@@ -62,14 +62,14 @@ mosaic_prototype/
 ### Redux Store Structure
 - **`authSlice`**: Tracks authentication status, tokens, and async lifecycle states (`login`, `register`, `logout`). Thunks wrap `authService` calls and propagate friendly error messages.
 - **`activitiesSlice`**: Maintains active/all activity lists, mutation status, and selectors for detail modals. Thunks wrap `fetchActivities`, `addActivity`, etc., and coordinate refreshes of related slices (`loadToday`, `loadEntries`).
-- **`entriesSlice`**: Holds paginated entry lists, filters, `/today` data (rows, dirty cache, auto-save state), stats payloads, and import status. Thunks orchestrate entries, stats, and today pipelines, ensuring caches stay in sync.
+- **`entriesSlice`**: Holds paginated entry lists, filters, `/today` data (rows, dirty cache, auto-save state), the stats dashboard snapshot (single payload + anchor date), and import status. Thunks orchestrate entries, stats, and today pipelines, ensuring caches stay in sync.
 - Store composition occurs in `store/index.js` which configures Redux Toolkit with serialisation-aware middleware (defaults) and exports typed hooks.
 
 ### Primary Data Flows
 1. **User Authentication:** `LoginForm` validates credentials client-side, dispatches `auth/login`, receives JWT + CSRF, persists tokens, and updates headers. Private routes in `App.jsx` guard dashboard access.
 2. **Daily Tracking:** `Today.jsx` fetches `/today` via `loadToday`, renders entries, and schedules auto-saves through `saveDirtyTodayRows` (posting to `/add_entry`). Mutations invalidate caches in Flask, prompting Redux to refresh.
 3. **Activity Management:** `ActivityForm` collects metadata, dispatches `createActivity` (`POST /add_activity`), and reloads activities/entries/today slices. `ActivityTable` toggles activation/deletion via RESTful endpoints.
-4. **Statistics:** `Stats.jsx` dispatches `loadStats` to `/stats/progress`, which composes aggregated totals. Responses animate progress bars and update the reporting range subtitle.
+4. **Statistics:** `Stats.jsx` dispatches `loadStats` to `/stats/progress`, receiving a unified snapshot (goal completion, streak, distribution, fulfilment, polarity, consistency) that powers the refreshed dashboard widgets.
 5. **CSV Import:** `CsvImportButton` validates files client-side, dispatches `importEntries`, and shows toast results summarising create/update/skip counts.
 
 ## 3. Data Model and API
@@ -85,7 +85,7 @@ Schema management: `ensure_schema` in `app.py` inspects `PRAGMA table_info` to a
 - **Authentication:** `POST /register`, `POST /login` yield JWT + CSRF tokens. Tokens include per-session CSRF embedded in payload; CSRF enforcement occurs on all unsafe methods.
 - **Entries:** `GET /entries` (paginated & filterable), `POST /add_entry` (upsert by `(date, activity)`), `DELETE /entries/<id>`. `POST /finalize_day` marks a day as locked and clears caches.
 - **Activities:** `GET /activities` (with `?all=true` handles archived items), `POST /add_activity`, `PUT /activities/<id>`, `PATCH /activities/<id>/activate|deactivate`, `DELETE /activities/<id>`.
-- **Analytics:** `GET /today` returns denormalised daily rows, `GET /stats/progress` aggregates totals (grouped by `activity` or `category`), `/import_csv` handles bulk ingestion.
+- **Analytics:** `GET /today` returns denormalised daily rows, `GET /stats/progress` delivers the 30-day dashboard snapshot (goal completion, streaks, distribution, fulfilment), `/import_csv` handles bulk ingestion.
 - **Infrastructure:** `GET /healthz` (if present) & root route verifying DB path.
 
 ### Validation, Auth, and Rate Limiting
@@ -103,7 +103,7 @@ Schema management: `ensure_schema` in `app.py` inspects `PRAGMA table_info` to a
 - **`App.jsx`**: Routes login/register vs. authenticated dashboard; listens for global API error events to trigger toasts.
 - **`Dashboard` (within `App.jsx`)**: Controls tabbed navigation (`Today`, `Activities`, `Stats`, `Entries`), orchestrates data bootstrapping, and hosts `Notification` toasts, `LogoutButton`, and detail modals.
 - **Input Forms**: `LoginForm`, `RegisterForm`, `ActivityForm`, `EntryForm` all migrate to react-hook-form with inline validation, accessibility attributes, and disabled submit states until valid.
-- **Visualisation Components**: `Today` handles daily entry grids with autosave; `Stats` renders aggregated progress bars; `ActivityTable`/`EntryTable` present sortable lists augmented with new `Loading` and `ErrorState` wrappers.
+- **Visualisation Components**: `Today` handles daily entry grids with autosave; `Stats` now renders a dashboard of meters, charts, and consistency bars fed by the unified snapshot; `ActivityTable`/`EntryTable` present sortable lists augmented with new `Loading` and `ErrorState` wrappers.
 - **Utility Components**: `CsvImportButton` (file picker with validation), `Notification` (toast styling), `Loading` (spinner with fade-in), `ErrorState` (retry banner).
 
 ### State and Validation Patterns
@@ -114,7 +114,7 @@ Schema management: `ensure_schema` in `app.py` inspects `PRAGMA table_info` to a
 ### Daily Summaries & Activities
 - `Today` fetches the user’s focus day, calculates progress ratios, and animates bar charts. Auto-save triggers `saveDirtyTodayRows` after debounce, giving user feedback (`Changes auto-saved`).
 - `ActivityForm` computes average daily goal server-side but also derives preview `avgGoalPerDay` for UI display. `ActivityTable` handles activation toggles and detail viewing (tied into `ActivityDetail`).
-- `Stats` enables switching grouping/period; processed results show ratio and percentages with responsive progress bars.
+- `Stats` surfaces the snapshot metrics (today’s completion, streak badge, pie distribution, 7/30-day trend line, polarity split, consistency bars) with shared `Loading`/`ErrorState` states and a refresh action.
 
 ## 5. Testing and Quality
 
@@ -145,7 +145,7 @@ Schema management: `ensure_schema` in `app.py` inspects `PRAGMA table_info` to a
 
 ### Open Work and TODOs
 - **Frontend Automated Tests:** No unit/integration tests yet; high-value targets include form validation, Redux thunks, and component rendering.
-- **Stats Loading Consistency:** `Stats.jsx` still uses legacy inline loading text; migrating to the shared `Loading` component would complete UX unification.
+- **Stats Snapshot Testing:** The refreshed `Stats.jsx` surface lacks automated tests (visual or snapshot) to guard the new charts and ratios.
 - **Type Safety:** The project is JavaScript-only; adopting TypeScript or PropTypes would reduce regressions.
 - **Mobile Responsiveness:** Current layout is desktop centric; responsive breakpoints and mobile gestures remain unimplemented.
 - **Advanced Analytics:** Present stats focus on goal ratios; product roadmap mentions richer analytics and wearable integrations but no code yet.
@@ -167,13 +167,13 @@ Schema management: `ensure_schema` in `app.py` inspects `PRAGMA table_info` to a
 ### Weaknesses
 - **Limited Frontend Test Coverage:** Reliance on manual testing increases regression risk, especially with the growing component surface.
 - **SQLite Concurrency Constraints:** The single-file database works for prototypes but will bottleneck under higher concurrency without migration planning.
-- **Analytics UX Gaps:** The stats view lacks loaders consistent with other screens and could benefit from richer visualisations (charts, trend lines).
+- **Analytics Accessibility Gaps:** The new stats widgets lack dedicated accessible descriptions and keyboard interactions for charts, leaving screen-reader support incomplete.
 - **Documentation Duplication:** API docs live in Markdown, but there is no generated schema or OpenAPI spec to keep backend and frontend fully synchronised.
 
 ### Recommendations
 1. **Testing Investment:** Introduce Jest + React Testing Library to cover form validation, global error handling, and Redux thunks. Pair with Cypress (or Playwright) smoke tests for mission-critical flows.
 2. **Database Evolution:** Prepare a migration plan (Flask-Migrate scripts, staging environment) for moving to PostgreSQL as data volume grows. Define archival strategies for `entries`.
-3. **Analytics Expansion:** Add richer visualisations (e.g., charts via Recharts or Victory) and extend stats endpoints to return rolling averages, streak data, and anomaly detection metrics.
+3. **Analytics Expansion:** Layer accessibility metadata onto the new widgets, explore predictive/compare-to-target metrics, and consider chart libraries for maintainable rendering and tooltips.
 4. **Mobile & Accessibility Enhancements:** Introduce responsive breakpoints, keyboard shortcuts, and screen reader audits to broaden usability.
 5. **DevEx Improvements:** Add linting (ESLint, Prettier) and TypeScript migration roadmap to improve developer ergonomics and catch issues earlier.
 6. **Integration Roadmap:** Design interfaces for wearable or external data ingestion, potentially via scheduled imports plus extended CSV schema support.
