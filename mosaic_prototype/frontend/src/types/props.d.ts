@@ -1,4 +1,9 @@
-import type { ReactNode } from "react";
+import type {
+  ButtonHTMLAttributes,
+  FormEvent,
+  FormHTMLAttributes,
+  ReactNode,
+} from "react";
 
 export interface LoadingProps {
   message?: string;
@@ -19,6 +24,46 @@ export interface ModalFormProps {
   footerContent?: ReactNode;
   closeLabel?: string;
   isDismissDisabled?: boolean;
+}
+
+export interface FormWrapperProps
+  extends Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit"> {
+  title?: string;
+  onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
+  children: ReactNode;
+  isLoading?: boolean;
+  isSubmitting?: boolean;
+  isSubmitDisabled?: boolean;
+  submitLabel?: string;
+  onCancel?: () => void;
+  cancelLabel?: string;
+  description?: ReactNode;
+  footer?: ReactNode;
+  submitButtonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
+}
+
+export interface DataTableColumn {
+  key?: string;
+  label?: string;
+  title?: string;
+  width?: string | number;
+  render?: (row: any) => ReactNode;
+}
+
+export interface DataTableErrorLike {
+  message?: string;
+  friendlyMessage?: string;
+}
+
+export interface DataTableProps {
+  columns: DataTableColumn[];
+  data: any[];
+  isLoading?: boolean;
+  error?: string | DataTableErrorLike | null;
+  emptyMessage?: ReactNode;
+  loadingMessage?: string;
+  errorLabel?: string;
+  onRowClick?: (row: any) => void;
 }
 
 export {};

@@ -185,7 +185,7 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
         columns={columns}
         data={sortedActivities}
         isLoading={isInitialLoading}
-        loadingMessage={<Loading message="Loading activities…" />}
+        loadingMessage="Loading activities…"
         emptyMessage="No activities to display."
       />
     </div>

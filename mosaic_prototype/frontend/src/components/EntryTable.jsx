@@ -127,7 +127,7 @@ export default function EntryTable({ onNotify }) {
         columns={columns}
         data={tableData}
         isLoading={isInitialLoading}
-        loadingMessage={<Loading message="Loading entries…" />}
+        loadingMessage="Loading entries…"
         emptyMessage="No entries to display."
       />
     </div>

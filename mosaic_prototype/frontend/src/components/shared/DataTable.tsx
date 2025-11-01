@@ -1,20 +1,29 @@
 import React, { useMemo } from "react";
+
+import ErrorState from "../ErrorState";
+import Loading from "../Loading";
 import { styles } from "../../styles/common";
 import { useCompactLayout } from "../../utils/useBreakpoints";
+import type { DataTableColumn, DataTableProps } from "../../types/props";
 
-const resolveCellValue = (row, column) => {
+interface ColumnMeta extends DataTableColumn {
+  _id: string;
+  label: string;
+}
+
+const resolveCellValue = (row: Record<string, unknown>, column: DataTableColumn) => {
   if (typeof column.render === "function") {
     return column.render(row);
   }
   if (column.key && Object.prototype.hasOwnProperty.call(row, column.key)) {
-    return row[column.key];
+    return (row as Record<string, unknown>)[column.key];
   }
   return "";
 };
 
-const getColumnKey = (column, index) => column.key ?? `column-${index}`;
+const getColumnKey = (column: DataTableColumn, index: number) => column.key ?? `column-${index}`;
 
-export default function DataTable({
+const DataTable: React.FC<DataTableProps> = ({
   columns = [],
   data = [],
   isLoading = false,
@@ -23,10 +32,10 @@ export default function DataTable({
   emptyMessage = "No records to display.",
   loadingMessage = "Loading…",
   errorLabel = "Unable to load records.",
-}) {
+}) => {
   const { isCompact } = useCompactLayout();
   const hasData = Array.isArray(data) && data.length > 0;
-  const columnMeta = useMemo(
+  const columnMeta = useMemo<ColumnMeta[]>(
     () =>
       columns.map((column, index) => ({
         ...column,
@@ -40,26 +49,8 @@ export default function DataTable({
     cursor: typeof onRowClick === "function" ? "pointer" : "default",
   };
 
-  const renderStateMessage = (message, tone = "info") => {
-    if (React.isValidElement(message)) {
-      return message;
-    }
-    const toneStyle =
-      tone === "error"
-        ? { color: "#f28b82" }
-        : tone === "muted"
-        ? { color: "#9ba3af", fontStyle: "italic" }
-        : {};
-
-    return (
-      <div style={{ ...styles.loadingText, ...toneStyle, marginTop: 0 }}>
-        {message}
-      </div>
-    );
-  };
-
   if (isLoading) {
-    return renderStateMessage(loadingMessage);
+    return <Loading message={loadingMessage} />;
   }
 
   if (error) {
@@ -67,11 +58,15 @@ export default function DataTable({
       typeof error === "string"
         ? error
         : error?.friendlyMessage || error?.message || errorLabel;
-    return renderStateMessage(errorMessage, "error");
+    return <ErrorState message={errorMessage ?? errorLabel} />;
   }
 
   if (!hasData) {
-    return renderStateMessage(emptyMessage, "muted");
+    return (
+      <div style={{ ...styles.loadingText, color: "#9ba3af", fontStyle: "italic", marginTop: 0 }}>
+        {emptyMessage}
+      </div>
+    );
   }
 
   if (isCompact) {
@@ -151,4 +146,6 @@ export default function DataTable({
       </tbody>
     </table>
   );
-}
+};
+
+export default DataTable;

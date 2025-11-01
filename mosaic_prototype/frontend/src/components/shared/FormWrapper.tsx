@@ -1,15 +1,20 @@
 import React from "react";
+import type { ButtonHTMLAttributes } from "react";
+
+import Loading from "../Loading";
 import { styles } from "../../styles/common";
 import { useCompactLayout } from "../../utils/useBreakpoints";
+import type { FormWrapperProps } from "../../types/props";
 
 /**
  * Provides a consistent card-style container and action row for form usage.
  * Optional cancel handling is included to centralize shared layout logic.
  */
-export default function FormWrapper({
+const FormWrapper: React.FC<FormWrapperProps> = ({
   title,
   onSubmit,
   children,
+  isLoading = false,
   isSubmitting = false,
   isSubmitDisabled = false,
   submitLabel = "Submit",
@@ -17,10 +22,13 @@ export default function FormWrapper({
   cancelLabel = "Cancel",
   description,
   footer,
-  submitButtonProps = {},
+  submitButtonProps,
   ...formProps
-}) {
+}) => {
   const { isCompact } = useCompactLayout();
+  const isBusy = isSubmitting || isLoading;
+  const resolvedSubmitButtonProps: ButtonHTMLAttributes<HTMLButtonElement> =
+    submitButtonProps ?? ({} as ButtonHTMLAttributes<HTMLButtonElement>);
 
   const actionRowStyle = {
     display: "flex",
@@ -47,6 +55,7 @@ export default function FormWrapper({
         flexDirection: "column",
         gap: "0.75rem",
       }}
+      aria-busy={isBusy}
       {...formProps}
     >
       {title && (
@@ -63,6 +72,7 @@ export default function FormWrapper({
       {footer}
 
       <div style={actionRowStyle}>
+        {isLoading && <Loading inline />}
         {onCancel && (
           <button
             type="button"
@@ -71,7 +81,7 @@ export default function FormWrapper({
               ...buttonBase,
               backgroundColor: "#3a3b3f",
             }}
-            disabled={isSubmitting}
+            disabled={isBusy}
           >
             {cancelLabel}
           </button>
@@ -80,15 +90,17 @@ export default function FormWrapper({
           type="submit"
           style={{
             ...buttonBase,
-            opacity: isSubmitting ? 0.75 : 1,
-            cursor: isSubmitting || isSubmitDisabled ? "not-allowed" : styles.button.cursor,
+            opacity: isBusy ? 0.75 : 1,
+            cursor: isBusy || isSubmitDisabled ? "not-allowed" : styles.button.cursor,
           }}
-          disabled={isSubmitting || isSubmitDisabled}
-          {...submitButtonProps}
+          disabled={isBusy || isSubmitDisabled}
+          {...resolvedSubmitButtonProps}
         >
           {submitLabel}
         </button>
       </div>
     </form>
   );
-}
+};
+
+export default FormWrapper;
