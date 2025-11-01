@@ -2,7 +2,7 @@ import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import type { AppThunk, RootState } from "./index";
 
-export type NightMotionStatus = "idle" | "connecting" | "playing" | "error";
+export type NightMotionStatus = "idle" | "starting" | "active" | "error";
 
 export interface NightMotionState {
   username: string;
@@ -51,20 +51,14 @@ const nightMotionSlice = createSlice({
 
 export const { setField, setStatus, setError, resetState } = nightMotionSlice.actions;
 
-export const startStream = (): AppThunk<Promise<void>> => async (dispatch, getState) => {
+export const startStream = (): AppThunk => (dispatch, getState) => {
   const { nightMotion } = getState();
-  if (nightMotion.status === "connecting" || nightMotion.status === "playing") {
+  if (nightMotion.status === "starting" || nightMotion.status === "active") {
     return;
   }
 
   dispatch(setError(null));
-  dispatch(setStatus("connecting"));
-
-  await new Promise((resolve) => {
-    setTimeout(resolve, 2000);
-  });
-
-  dispatch(setStatus("playing"));
+  dispatch(setStatus("starting"));
 };
 
 export const stopStream = (): AppThunk => (dispatch, getState) => {

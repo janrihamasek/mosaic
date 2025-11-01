@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useForm } from "react-hook-form";
 
@@ -38,15 +32,15 @@ interface NightMotionFormValues {
 
 const statusColors: Record<NightMotionStatus, string> = {
   idle: "#888888",
-  connecting: "#d0b000",
-  playing: "#2ecc71",
+  starting: "#d0b000",
+  active: "#2ecc71",
   error: "#e74c3c",
 };
 
 const statusLabels: Record<NightMotionStatus, string> = {
   idle: "Idle",
-  connecting: "Connecting…",
-  playing: "Live",
+  starting: "Starting…",
+  active: "Active",
   error: "Error",
 };
 
@@ -81,9 +75,8 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [statusVisible, setStatusVisible] = useState(true);
   const { isCompact } = useCompactLayout();
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const hasHydratedConfig = useRef(false);
-  const streamObjectUrlRef = useRef<string | null>(null);
+  const [streamSrc, setStreamSrc] = useState<string | null>(null);
 
   const {
     register,
@@ -113,16 +106,16 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     [isCompact]
   );
 
-  const videoStyle = useMemo(
+  const streamStyle = useMemo(
     () => ({
       width: "100%",
-      height: isCompact ? "16rem" : "18rem",
+      maxHeight: isCompact ? "50vh" : "60vh",
       backgroundColor: "#000",
       borderRadius: "0.5rem",
       border: "1px solid #333",
-      objectFit: "cover" as const,
+      objectFit: "contain" as const,
       transition: "opacity 0.35s ease, transform 0.35s ease",
-      opacity: status === "playing" ? 1 : 0.85,
+      opacity: status === "active" ? 1 : 0.85,
     }),
     [isCompact, status]
   );
@@ -152,12 +145,12 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     [status]
   );
 
-  const startDisabled = status === "connecting" || status === "playing";
+  const startDisabled = status === "starting";
   const stopDisabled = status === "idle";
   const submitLabel = useMemo(() => {
     if (isSubmitting) return "Starting…";
-    if (status === "connecting") return "Connecting…";
-    if (status === "playing") return "Streaming";
+    if (status === "starting") return "Starting…";
+    if (status === "active") return "Active";
     return "Start";
   }, [isSubmitting, status]);
 
@@ -170,34 +163,17 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     [onNotify]
   );
 
-  const clearVideoSource = useCallback(() => {
-    if (streamObjectUrlRef.current) {
-      if (typeof URL.revokeObjectURL === "function") {
-        URL.revokeObjectURL(streamObjectUrlRef.current);
-      }
-      streamObjectUrlRef.current = null;
-    }
-    const node = videoRef.current;
-    if (!node) return;
-    node.pause();
-    node.removeAttribute("src");
-    node.load();
-  }, []);
-
   const handleStop = useCallback(() => {
-    if (stopDisabled) {
-      return;
-    }
-    clearVideoSource();
+    setStreamSrc(null);
     dispatch(stopStream());
-  }, [clearVideoSource, dispatch, stopDisabled]);
+  }, [dispatch]);
 
   useEffect(
     () => () => {
-      clearVideoSource();
       dispatch(stopStream());
+      setStreamSrc(null);
     },
-    [clearVideoSource, dispatch]
+    [dispatch]
   );
 
   useEffect(() => {
@@ -233,20 +209,6 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
       hasHydratedConfig.current = true;
     }
   }, [dispatch, reset]);
-
-  useEffect(() => {
-    const node = videoRef.current;
-    if (!node) return undefined;
-    const handleVideoError = () => {
-      dispatch(setStatus("error"));
-      dispatch(setError("Stream nelze navázat"));
-      notify("Stream nelze navázat", "error");
-    };
-    node.addEventListener("error", handleVideoError);
-    return () => {
-      node.removeEventListener("error", handleVideoError);
-    };
-  }, [dispatch, notify]);
 
   const registerTextField = useCallback(
     (field: keyof NightMotionFormValues) =>
@@ -297,33 +259,36 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     }
     notify("Nastavení uloženo", "success");
 
-    clearVideoSource();
-
-    try {
-      const streamRequestUrl = getStreamProxyUrl(payload.streamUrl, payload.username, payload.password);
-      const headers = getAuthHeaders();
-      const response = await fetch(streamRequestUrl, { headers });
-      if (!response.ok) {
-        throw new Error(`Stream request failed with status ${response.status}`);
+    const baseStreamUrl = getStreamProxyUrl(payload.streamUrl, payload.username, payload.password);
+    const computedUrl = new URL(baseStreamUrl);
+    const headers = getAuthHeaders();
+    const authHeader = headers.Authorization || headers.authorization;
+    if (authHeader) {
+      const token = authHeader.replace(/^Bearer\s+/i, "");
+      if (token) {
+        computedUrl.searchParams.set("token", token);
       }
-
-      const blob = await response.blob();
-      clearVideoSource();
-      const objectUrl = URL.createObjectURL(blob);
-      streamObjectUrlRef.current = objectUrl;
-      if (videoRef.current) {
-        videoRef.current.src = objectUrl;
-        videoRef.current.load();
-      }
-
-      await dispatch(startStream());
-    } catch {
-      clearVideoSource();
-      dispatch(setStatus("error"));
-      dispatch(setError("Stream nelze navázat"));
-      notify("Stream nelze navázat", "error");
     }
+    const csrfToken = headers["X-CSRF-Token"] || headers["x-csrf-token"];
+    if (csrfToken) {
+      computedUrl.searchParams.set("csrf", csrfToken);
+    }
+
+    dispatch(startStream());
+    setStreamSrc(computedUrl.toString());
   });
+
+  const handleStreamLoad = useCallback(() => {
+    dispatch(setStatus("active"));
+    dispatch(setError(null));
+  }, [dispatch]);
+
+  const handleStreamError = useCallback(() => {
+    setStreamSrc(null);
+    dispatch(setStatus("error"));
+    dispatch(setError("Stream nelze navázat"));
+    notify("Stream nelze navázat", "error");
+  }, [dispatch, notify]);
 
   return (
     <div style={layoutStyle}>
@@ -409,14 +374,30 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
           )}
         </div>
 
-        <video
-          ref={videoRef}
-          controls
-          style={videoStyle}
-          data-testid="nightmotion-video"
-        >
-          <track kind="captions" />
-        </video>
+        {streamSrc ? (
+          <img
+            src={streamSrc}
+            alt="Night motion stream"
+            style={streamStyle}
+            data-testid="nightmotion-stream-img"
+            onLoad={handleStreamLoad}
+            onError={handleStreamError}
+          />
+        ) : (
+          <div
+            style={{
+              ...streamStyle,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#777",
+              fontSize: "0.9rem",
+            }}
+            data-testid="nightmotion-stream-placeholder"
+          >
+            Stream preview
+          </div>
+        )}
 
         <div
           style={{

@@ -1,5 +1,5 @@
 import React, { type ReactElement } from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
@@ -9,13 +9,6 @@ import nightMotionReducer from "../store/nightMotionSlice";
 import { getStreamProxyUrl } from "../api";
 
 const notifyMock = jest.fn();
-const fetchMock = jest.fn();
-const createObjectURLMock = jest.fn(() => "blob:nightmotion-stream");
-const revokeObjectURLMock = jest.fn();
-
-const originalFetch = global.fetch;
-const originalCreateObjectURL = URL.createObjectURL;
-const originalRevokeObjectURL = URL.revokeObjectURL;
 
 function createStore() {
   return configureStore({
@@ -38,70 +31,20 @@ function renderNightMotion() {
 
 describe("NightMotion component", () => {
   beforeAll(() => {
-    Object.defineProperty(window.HTMLMediaElement.prototype, "load", {
-      configurable: true,
-      value: jest.fn(),
-    });
-    Object.defineProperty(window.HTMLMediaElement.prototype, "play", {
+    Object.defineProperty(window.HTMLImageElement.prototype, "decode", {
       configurable: true,
       value: jest.fn().mockResolvedValue(undefined),
-    });
-    Object.defineProperty(window.HTMLMediaElement.prototype, "pause", {
-      configurable: true,
-      value: jest.fn(),
-    });
-    Object.defineProperty(globalThis, "fetch", {
-      configurable: true,
-      writable: true,
-      value: fetchMock as unknown as typeof fetch,
-    });
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      writable: true,
-      value: createObjectURLMock,
-    });
-    Object.defineProperty(URL, "revokeObjectURL", {
-      configurable: true,
-      writable: true,
-      value: revokeObjectURLMock,
     });
   });
 
   beforeEach(() => {
     notifyMock.mockReset();
-    fetchMock.mockReset();
-    createObjectURLMock.mockClear();
-    revokeObjectURLMock.mockClear();
-    const blob = new Blob(["mock"], { type: "image/jpeg" });
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      blob: async () => blob,
-    } as unknown as Response);
     window.localStorage.clear();
   });
 
   afterEach(() => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
-  });
-
-  afterAll(() => {
-    Object.defineProperty(globalThis, "fetch", {
-      configurable: true,
-      writable: true,
-      value: originalFetch,
-    });
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      writable: true,
-      value: originalCreateObjectURL,
-    });
-    Object.defineProperty(URL, "revokeObjectURL", {
-      configurable: true,
-      writable: true,
-      value: originalRevokeObjectURL,
-    });
   });
 
   it("renders credentials form and start button", () => {
@@ -117,7 +60,7 @@ describe("NightMotion component", () => {
     expect(screen.getByTestId("nightmotion-start")).toBeInTheDocument();
   });
 
-  it("transitions from connecting to playing on start", async () => {
+  it("transitions from starting to active on start", async () => {
     jest.useFakeTimers();
     const { store } = renderNightMotion();
     act(() => {
@@ -149,33 +92,26 @@ describe("NightMotion component", () => {
     await user.click(startButton);
 
     await waitFor(() => expect(notifyMock).toHaveBeenCalledWith("Nastavení uloženo", "success"));
-    expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/connecting/i);
-    expect(store.getState().nightMotion.status).toBe("connecting");
+    expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/starting/i);
+    await waitFor(() => expect(store.getState().nightMotion.status).toBe("starting"));
+    await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/starting/i));
 
-    await act(async () => {
-      jest.advanceTimersByTime(2050);
+    const streamImage = await screen.findByTestId("nightmotion-stream-img");
+    const parsedUrl = new URL(streamImage.getAttribute("src") ?? "");
+    const expectedRequestUrl = new URL(getStreamProxyUrl(streamUrl, username, password));
+    expect(parsedUrl.origin + parsedUrl.pathname).toBe(expectedRequestUrl.origin + expectedRequestUrl.pathname);
+    expect(parsedUrl.searchParams.get("url")).toBe(expectedRequestUrl.searchParams.get("url"));
+    expect(parsedUrl.searchParams.get("username")).toBe(expectedRequestUrl.searchParams.get("username"));
+    expect(parsedUrl.searchParams.get("password")).toBe(expectedRequestUrl.searchParams.get("password"));
+    expect(parsedUrl.searchParams.get("token")).toBe("access-token");
+    expect(parsedUrl.searchParams.get("csrf")).toBe("csrf-token");
+
+    act(() => {
+      fireEvent.load(streamImage);
     });
 
-    await act(async () => Promise.resolve());
-
-    expect(store.getState().nightMotion.status).toBe("playing");
-    await waitFor(() => expect(store.getState().nightMotion.status).toBe("playing"));
-    await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/live/i));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const [requestedUrl, requestInit] = fetchMock.mock.calls[0];
-    const expectedRequestUrl = getStreamProxyUrl(streamUrl, username, password);
-    expect(requestedUrl).toBe(expectedRequestUrl);
-    expect(requestInit).toMatchObject({
-      headers: {
-        Authorization: "Bearer access-token",
-        "X-CSRF-Token": "csrf-token",
-      },
-    });
-    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
-
-    const videoElement = screen.getByTestId("nightmotion-video") as HTMLVideoElement;
-    expect(videoElement.getAttribute("src")).toBe("blob:nightmotion-stream");
+    await waitFor(() => expect(store.getState().nightMotion.status).toBe("active"));
+    await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/active/i));
   });
 
   it("stops the stream and returns to idle", async () => {
@@ -193,12 +129,13 @@ describe("NightMotion component", () => {
 
     await user.click(screen.getByTestId("nightmotion-start"));
 
-    await act(async () => {
-      jest.advanceTimersByTime(2050);
+    await waitFor(() => expect(store.getState().nightMotion.status).toBe("starting"));
+    const streamImage = await screen.findByTestId("nightmotion-stream-img");
+    act(() => {
+      fireEvent.load(streamImage);
     });
-    await act(async () => Promise.resolve());
-    await waitFor(() => expect(store.getState().nightMotion.status).toBe("playing"));
-    await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/live/i));
+    await waitFor(() => expect(store.getState().nightMotion.status).toBe("active"));
+    await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/active/i));
 
     const stopButton = screen.getByTestId("nightmotion-stop");
     expect(stopButton).not.toBeDisabled();
@@ -211,9 +148,7 @@ describe("NightMotion component", () => {
 
     await waitFor(() => expect(store.getState().nightMotion.status).toBe("idle"));
     await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/idle/i));
-    const videoElement = screen.getByTestId("nightmotion-video") as HTMLVideoElement;
-    expect(videoElement.getAttribute("src")).toBeNull();
-    expect(revokeObjectURLMock).toHaveBeenCalled();
+    expect(screen.queryByTestId("nightmotion-stream-img")).not.toBeInTheDocument();
   });
 
   it("matches snapshot in idle state", () => {
@@ -227,7 +162,7 @@ describe("NightMotion component", () => {
     expect(asFragment()).toMatchSnapshot();
   });
 
-  it("matches snapshot in playing state", async () => {
+  it("matches snapshot in active state", async () => {
     jest.useFakeTimers();
     const { asFragment, store } = renderNightMotion();
 
@@ -242,13 +177,14 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-stream"), "rtsp://camera/live");
     await user.click(screen.getByTestId("nightmotion-start"));
 
-    await act(async () => {
-      jest.advanceTimersByTime(2050);
+    await waitFor(() => expect(store.getState().nightMotion.status).toBe("starting"));
+    const streamImage = await screen.findByTestId("nightmotion-stream-img");
+    act(() => {
+      fireEvent.load(streamImage);
     });
-    await act(async () => Promise.resolve());
 
-    await waitFor(() => expect(store.getState().nightMotion.status).toBe("playing"));
-    await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/live/i));
+    await waitFor(() => expect(store.getState().nightMotion.status).toBe("active"));
+    await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/active/i));
 
     expect(asFragment()).toMatchSnapshot();
   });

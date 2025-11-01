@@ -7,8 +7,8 @@ import reducer, {
 
 describe("nightMotionSlice reducers", () => {
   it("updates status via setStatus", () => {
-    const next = reducer(initialState, setStatus("connecting"));
-    expect(next.status).toBe("connecting");
+    const next = reducer(initialState, setStatus("starting"));
+    expect(next.status).toBe("starting");
     expect(next.error).toBeNull();
   });
 
@@ -18,8 +18,8 @@ describe("nightMotionSlice reducers", () => {
       status: "error",
       error: "Stream nelze navázat",
     };
-    const next = reducer(erroredState, setStatus("playing"));
-    expect(next.status).toBe("playing");
+    const next = reducer(erroredState, setStatus("active"));
+    expect(next.status).toBe("active");
     expect(next.error).toBeNull();
   });
 
