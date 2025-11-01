@@ -12,6 +12,7 @@ import { styles } from "../styles/common";
 import { useCompactLayout } from "../utils/useBreakpoints";
 import FormWrapper from "./shared/FormWrapper";
 import { getStreamProxyUrl } from "../api";
+import { getAuthHeaders } from "../services/authService";
 import {
   selectNightMotionState,
   setError,
@@ -82,6 +83,7 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
   const { isCompact } = useCompactLayout();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hasHydratedConfig = useRef(false);
+  const streamObjectUrlRef = useRef<string | null>(null);
 
   const {
     register,
@@ -169,6 +171,12 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
   );
 
   const clearVideoSource = useCallback(() => {
+    if (streamObjectUrlRef.current) {
+      if (typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(streamObjectUrlRef.current);
+      }
+      streamObjectUrlRef.current = null;
+    }
     const node = videoRef.current;
     if (!node) return;
     node.pause();
@@ -289,15 +297,28 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     }
     notify("Nastavení uloženo", "success");
 
-    const streamSrc = getStreamProxyUrl(payload.streamUrl, payload.username, payload.password);
-    if (videoRef.current) {
-      videoRef.current.src = streamSrc;
-      videoRef.current.load();
-    }
+    clearVideoSource();
 
     try {
+      const streamRequestUrl = getStreamProxyUrl(payload.streamUrl, payload.username, payload.password);
+      const headers = getAuthHeaders();
+      const response = await fetch(streamRequestUrl, { headers });
+      if (!response.ok) {
+        throw new Error(`Stream request failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      clearVideoSource();
+      const objectUrl = URL.createObjectURL(blob);
+      streamObjectUrlRef.current = objectUrl;
+      if (videoRef.current) {
+        videoRef.current.src = objectUrl;
+        videoRef.current.load();
+      }
+
       await dispatch(startStream());
     } catch {
+      clearVideoSource();
       dispatch(setStatus("error"));
       dispatch(setError("Stream nelze navázat"));
       notify("Stream nelze navázat", "error");

@@ -107,7 +107,7 @@ export function logout({ silent } = { silent: false }) {
   }
 }
 
-export function getAuthHeaders(method = 'get') {
+export function getAuthHeaders() {
   const state = getAuthState();
   if (!state.isAuthenticated) {
     return {};
@@ -115,8 +115,7 @@ export function getAuthHeaders(method = 'get') {
   const headers = {
     Authorization: `${state.tokenType || 'Bearer'} ${state.accessToken}`,
   };
-  const needsCsrf = !['get', 'head', 'options'].includes(String(method || '').toLowerCase());
-  if (needsCsrf) {
+  if (state.csrfToken) {
     headers['X-CSRF-Token'] = state.csrfToken;
   }
   return headers;

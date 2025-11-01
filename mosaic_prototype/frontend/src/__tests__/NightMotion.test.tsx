@@ -9,6 +9,13 @@ import nightMotionReducer from "../store/nightMotionSlice";
 import { getStreamProxyUrl } from "../api";
 
 const notifyMock = jest.fn();
+const fetchMock = jest.fn();
+const createObjectURLMock = jest.fn(() => "blob:nightmotion-stream");
+const revokeObjectURLMock = jest.fn();
+
+const originalFetch = global.fetch;
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
 
 function createStore() {
   return configureStore({
@@ -43,16 +50,58 @@ describe("NightMotion component", () => {
       configurable: true,
       value: jest.fn(),
     });
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      writable: true,
+      value: fetchMock as unknown as typeof fetch,
+    });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: createObjectURLMock,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: revokeObjectURLMock,
+    });
   });
 
   beforeEach(() => {
     notifyMock.mockReset();
+    fetchMock.mockReset();
+    createObjectURLMock.mockClear();
+    revokeObjectURLMock.mockClear();
+    const blob = new Blob(["mock"], { type: "image/jpeg" });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: async () => blob,
+    } as unknown as Response);
     window.localStorage.clear();
   });
 
   afterEach(() => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
+  });
+
+  afterAll(() => {
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      writable: true,
+      value: originalFetch,
+    });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: originalCreateObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: originalRevokeObjectURL,
+    });
   });
 
   it("renders credentials form and start button", () => {
@@ -79,6 +128,17 @@ describe("NightMotion component", () => {
     const password = "secret";
     const streamUrl = "rtsp://camera/live";
 
+    window.localStorage.setItem(
+      "mosaic.auth",
+      JSON.stringify({
+        username,
+        accessToken: "access-token",
+        csrfToken: "csrf-token",
+        tokenType: "Bearer",
+        expiresAt: Date.now() + 60_000,
+      })
+    );
+
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
     await user.type(screen.getByTestId("nightmotion-username"), username);
@@ -102,9 +162,20 @@ describe("NightMotion component", () => {
     await waitFor(() => expect(store.getState().nightMotion.status).toBe("playing"));
     await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/live/i));
 
-    const expectedSrc = getStreamProxyUrl(streamUrl, username, password);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [requestedUrl, requestInit] = fetchMock.mock.calls[0];
+    const expectedRequestUrl = getStreamProxyUrl(streamUrl, username, password);
+    expect(requestedUrl).toBe(expectedRequestUrl);
+    expect(requestInit).toMatchObject({
+      headers: {
+        Authorization: "Bearer access-token",
+        "X-CSRF-Token": "csrf-token",
+      },
+    });
+    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+
     const videoElement = screen.getByTestId("nightmotion-video") as HTMLVideoElement;
-    expect(videoElement.src).toBe(expectedSrc);
+    expect(videoElement.getAttribute("src")).toBe("blob:nightmotion-stream");
   });
 
   it("stops the stream and returns to idle", async () => {
@@ -142,6 +213,7 @@ describe("NightMotion component", () => {
     await waitFor(() => expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/idle/i));
     const videoElement = screen.getByTestId("nightmotion-video") as HTMLVideoElement;
     expect(videoElement.getAttribute("src")).toBeNull();
+    expect(revokeObjectURLMock).toHaveBeenCalled();
   });
 
   it("matches snapshot in idle state", () => {

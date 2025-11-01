@@ -14,16 +14,11 @@ apiClient.interceptors.request.use(
   (config) => {
     const nextConfig = { ...config };
     if (!isAuthEndpoint(nextConfig.url)) {
-      const headers = getAuthHeaders(nextConfig.method);
+      const headers = getAuthHeaders();
       nextConfig.headers = {
         ...nextConfig.headers,
         ...headers,
       };
-    }
-    const method = String(nextConfig.method || '').toLowerCase();
-    const needsJsonHeader = ['post', 'put', 'patch'].includes(method);
-    if (needsJsonHeader && !nextConfig.headers['Content-Type'] && !(nextConfig.data instanceof FormData)) {
-      nextConfig.headers['Content-Type'] = 'application/json';
     }
     return nextConfig;
   },
