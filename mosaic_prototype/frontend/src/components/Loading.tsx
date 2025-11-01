@@ -11,7 +11,7 @@ const baseContainerStyle = {
   padding: "16px 0",
 };
 
-const Loading: React.FC<LoadingProps> = ({ message = "Loading…", inline = false }) => {
+export const Loading: React.FC<LoadingProps> = ({ message = "Loading…", inline = false }) => {
   useEffect(() => {
     ensureStatusAnimations();
   }, []);

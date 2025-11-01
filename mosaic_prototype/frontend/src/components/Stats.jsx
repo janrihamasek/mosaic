@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import Loading from "./Loading";
-import ErrorState from "./ErrorState";
+import { Loading } from "./Loading";
+import { ErrorState } from "./ErrorState";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { loadStats, selectStatsState } from "../store/entriesSlice";
@@ -58,7 +58,7 @@ export default function Stats({ onNotify }) {
   const { snapshot, status, error, date } = useSelector(selectStatsState);
   const { isCompact } = useCompactLayout();
 
-  const handleRefresh = async () => {
+  const refetchStats = async () => {
     try {
       await dispatch(loadStats({ date })).unwrap();
     } catch (err) {
@@ -131,14 +131,30 @@ export default function Stats({ onNotify }) {
 
   const consistency = snapshot?.top_consistent_activities || [];
 
-  const showInitialLoading = status === "loading" && !snapshot;
-  const showRefreshing = status === "loading" && snapshot;
-  const formattedError = error ? formatError(error, "Failed to load stats.") : null;
-
   const sectionGridStyle = {
     ...sectionGridBase,
     gridTemplateColumns: isCompact ? "1fr" : "repeat(2, minmax(0, 1fr))",
   };
+
+  if (status === "loading") {
+    return (
+      <div style={containerStyle}>
+        <Loading message="Loading dashboard stats…" />
+      </div>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <div style={containerStyle}>
+        <ErrorState
+          message={formatError(error, "Failed to load stats.")}
+          onRetry={refetchStats}
+          actionLabel="Retry"
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={containerStyle}>
@@ -151,21 +167,12 @@ export default function Stats({ onNotify }) {
         </div>
         <button
           type="button"
-          onClick={handleRefresh}
-          style={{ ...styles.button, opacity: status === "loading" ? 0.7 : 1 }}
-          disabled={status === "loading"}
+          onClick={refetchStats}
+          style={{ ...styles.button }}
         >
           Refresh
         </button>
       </div>
-
-      {showInitialLoading && <Loading message="Loading dashboard stats…" />}
-
-      {formattedError && status === "failed" && (
-        <ErrorState message={formattedError} onRetry={handleRefresh} actionLabel="Retry" />
-      )}
-
-      {showRefreshing && !showInitialLoading && <Loading message="Refreshing…" inline />}
 
       {!snapshot && status === "succeeded" && (
         <div style={{ color: "#9ba3af", fontStyle: "italic" }}>

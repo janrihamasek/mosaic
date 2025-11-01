@@ -3,7 +3,7 @@ import { styles } from "../styles/common";
 import { ensureStatusAnimations } from "../utils/animations";
 import type { ErrorStateProps } from "../types/props";
 
-const ErrorState: React.FC<ErrorStateProps> = ({
+export const ErrorState: React.FC<ErrorStateProps> = ({
   message = "Something went wrong.",
   onRetry,
   actionLabel = "Try again",
