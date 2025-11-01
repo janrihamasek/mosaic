@@ -2,21 +2,25 @@ import copy
 import os
 import secrets
 import sqlite3
+import subprocess
 import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from functools import wraps
+from itertools import chain
 from pathlib import Path
+from threading import Lock, Thread
 from time import time
 from typing import Dict, Iterator, Optional, Tuple, cast
+from urllib.parse import quote, urlparse, urlunparse
 
 import jwt  # type: ignore[import]
-from flask import Flask, jsonify, request, g
+from flask import Flask, Response, jsonify, request, g, stream_with_context
 from flask_cors import CORS
-from werkzeug.exceptions import HTTPException
 from werkzeug.datastructures import FileStorage
-from werkzeug.utils import secure_filename
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
-from threading import Lock
+from werkzeug.utils import secure_filename
 
 from import_data import import_csv as run_import_csv
 from models import Activity, Entry  # noqa: F401 - ensure models registered
@@ -26,6 +30,7 @@ from security import (
     rate_limit,
     require_api_key,
     validate_activity_create_payload,
+    limit_request,
     validate_activity_update_payload,
     validate_csv_import_payload,
     validate_entry_payload,
@@ -160,6 +165,19 @@ def _is_public_endpoint(endpoint: Optional[str]) -> bool:
     return endpoint in public
 
 
+def jwt_required():
+    def decorator(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            if not getattr(g, "current_user", None):
+                return error_response("unauthorized", "Missing or invalid access token", 401)
+            return fn(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
 def parse_pagination(default_limit: int = 100, max_limit: int = 500) -> Dict[str, int]:
     try:
         limit_raw = request.args.get("limit", default_limit)
@@ -191,6 +209,151 @@ def configure_database_path(path: str):
 configure_database_path(app.config["DB_PATH"])
 
 
+def _normalize_rtsp_url(raw_url: str, username: str, password: str) -> str:
+    parsed = urlparse(raw_url)
+    if parsed.scheme.lower() != "rtsp":
+        raise ValidationError("URL must use rtsp scheme", code="invalid_query")
+    if not parsed.hostname:
+        raise ValidationError("Invalid stream URL", code="invalid_query")
+
+    netloc = parsed.netloc.split("@")[-1]
+    if username:
+        credentials = quote(username, safe="")
+        if password:
+            credentials += f":{quote(password, safe='')}"
+        netloc = f"{credentials}@{netloc}"
+    normalized = parsed._replace(netloc=netloc)
+    return urlunparse(normalized)
+
+
+def _drain_process_stream(pipe, collector: list[str]) -> None:
+    try:
+        for raw in iter(pipe.readline, b""):
+            try:
+                text = raw.decode("utf-8", errors="ignore").strip()
+            except Exception:
+                text = ""
+            if text:
+                collector.append(text)
+                if len(collector) > 100:
+                    del collector[: len(collector) - 100]
+    finally:
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+
+def _raise_stream_error(stderr_lines: list[str], return_code: Optional[int]) -> None:
+    snippet = "\n".join(stderr_lines[-10:]).lower()
+    if "401" in snippet or "unauthorized" in snippet:
+        raise PermissionError("Unauthorized stream access")
+    raise RuntimeError(f"Unable to proxy stream (ffmpeg exited with code {return_code})")
+
+
+def stream_rtsp(url: str, username: str, password: str) -> Iterator[bytes]:
+    normalized_url = _normalize_rtsp_url(url, username, password)
+    command = [
+        "ffmpeg",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-rtsp_transport",
+        "tcp",
+        "-i",
+        normalized_url,
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "-an",
+        "-sn",
+        "-dn",
+        "pipe:1",
+    ]
+
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0,
+    )
+
+    if not process.stdout:
+        raise RuntimeError("Failed to start stream process")
+
+    stderr_lines: list[str] = []
+    stderr_thread: Optional[Thread] = None
+    if process.stderr is not None:
+        stderr_thread = Thread(
+            target=_drain_process_stream,
+            args=(process.stderr, stderr_lines),
+            daemon=True,
+        )
+        stderr_thread.start()
+
+    buffer = bytearray()
+    frame_emitted = False
+    try:
+        while True:
+            chunk = process.stdout.read(4096)
+            if not chunk:
+                if process.poll() is None:
+                    continue
+                if not frame_emitted:
+                    _raise_stream_error(stderr_lines, process.returncode)
+                break
+
+            buffer.extend(chunk)
+            while True:
+                start_idx = buffer.find(b"\xff\xd8")
+                if start_idx == -1:
+                    if len(buffer) > 65536:
+                        buffer.clear()
+                    break
+                if start_idx > 0:
+                    del buffer[:start_idx]
+                end_idx = buffer.find(b"\xff\xd9")
+                if end_idx == -1:
+                    break
+
+                frame = bytes(buffer[: end_idx + 2])
+                del buffer[: end_idx + 2]
+                frame_emitted = True
+
+                headers = (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: "
+                    + str(len(frame)).encode()
+                    + b"\r\n\r\n"
+                )
+                yield headers + frame + b"\r\n"
+    except GeneratorExit:
+        raise
+    finally:
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            else:
+                process.wait(timeout=0.5)
+        except Exception:
+            pass
+        try:
+            process.stdout.close()
+        except Exception:
+            pass
+        if process.stderr:
+            try:
+                process.stderr.close()
+            except Exception:
+                pass
+        if stderr_thread and stderr_thread.is_alive():
+            stderr_thread.join(timeout=0.5)
 def ensure_schema(conn):
     if app.config.get("_SCHEMA_READY"):
         return
@@ -476,6 +639,46 @@ def handle_http_exception(exc: HTTPException):
     if code is None:
         code = "internal_error" if status >= 500 else "bad_request"
     return error_response(code, message, status)
+
+
+@app.get("/api/stream-proxy")
+@jwt_required()
+def stream_proxy():
+    limited = limit_request("stream_proxy", per_minute=2)
+    if limited:
+        return limited
+
+    url = request.args.get("url", type=str)
+    if not url:
+        return error_response("invalid_query", "Missing url parameter", 400)
+
+    username = request.args.get("username", "", type=str) or ""
+    password = request.args.get("password", "", type=str) or ""
+
+    try:
+        generator = stream_rtsp(url, username, password)
+        first_chunk = next(generator)
+    except StopIteration:
+        app.logger.error("NightMotion stream produced no frames")
+        return error_response("internal_error", "Stream nelze navázat", 500)
+    except ValidationError as exc:
+        return error_response(exc.code, exc.message, exc.status, exc.details)
+    except PermissionError:
+        return error_response("unauthorized", "Unauthorized", 401)
+    except RuntimeError as exc:
+        app.logger.exception("NightMotion stream error: %s", exc)
+        return error_response("internal_error", "Stream nelze navázat", 500)
+    except Exception as exc:
+        app.logger.exception("Unexpected stream error: %s", exc)
+        return error_response("internal_error", "Stream nelze navázat", 500)
+
+    stream_iter = chain([first_chunk], generator)
+    response = Response(
+        stream_with_context(stream_iter),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.errorhandler(Exception)

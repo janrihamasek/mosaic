@@ -57,6 +57,12 @@ def rate_limit(endpoint_name: str, limit: int, window_seconds: int):
     return None
 
 
+def limit_request(endpoint_name: str, *, per_minute: int):
+    """Convenience wrapper to limit requests per minute."""
+    per_minute = max(int(per_minute), 1)
+    return rate_limit(endpoint_name, per_minute, 60)
+
+
 def require_api_key():
     """Require API key when MOSAIC_API_KEY is set."""
     api_key: Optional[str] = current_app.config.get("API_KEY")
