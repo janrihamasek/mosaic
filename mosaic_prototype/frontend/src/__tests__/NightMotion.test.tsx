@@ -9,7 +9,6 @@ import nightMotionReducer from "../store/nightMotionSlice";
 import { getStreamProxyUrl } from "../api";
 
 const notifyMock = jest.fn();
-let blobMock: jest.Mock;
 const fetchMock = jest.fn();
 const createObjectURLMock = jest.fn(() => "blob:nightmotion-stream");
 const revokeObjectURLMock = jest.fn();
@@ -17,6 +16,47 @@ const revokeObjectURLMock = jest.fn();
 const originalFetch = global.fetch;
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
+
+const textEncoder = new TextEncoder();
+const sampleFrame = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+
+function buildMJPEGChunks(frames: Uint8Array[]): Uint8Array[] {
+  const chunks: Uint8Array[] = [];
+  frames.forEach((frameBytes) => {
+    const header = textEncoder.encode(
+      `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frameBytes.length}\r\n\r\n`
+    );
+    const footer = textEncoder.encode("\r\n");
+    chunks.push(header);
+    chunks.push(frameBytes);
+    chunks.push(footer);
+  });
+  chunks.push(textEncoder.encode("--frame--\r\n"));
+  return chunks;
+}
+
+function setupStream(frames: Uint8Array[]) {
+  const chunks = buildMJPEGChunks(frames);
+  let index = 0;
+
+  const read = jest.fn(async () => {
+    if (index < chunks.length) {
+      const chunk = chunks[index];
+      index += 1;
+      return { value: chunk, done: false };
+    }
+    return { value: undefined, done: true };
+  });
+
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    body: {
+      getReader: () => ({ read }),
+    },
+  } as unknown as Response);
+
+  return { read };
+}
 
 function createStore() {
   return configureStore({
@@ -65,11 +105,7 @@ describe("NightMotion component", () => {
     fetchMock.mockReset();
     createObjectURLMock.mockClear();
     revokeObjectURLMock.mockClear();
-    blobMock = jest.fn().mockResolvedValue(new Blob(["mock"], { type: "image/jpeg" }));
-    fetchMock.mockResolvedValue({
-      ok: true,
-      blob: blobMock as unknown as () => Promise<Blob>,
-    } as unknown as Response);
+    fetchMock.mockImplementation(() => Promise.reject(new Error("Unexpected fetch call")));
     window.localStorage.clear();
   });
 
@@ -137,17 +173,8 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-password"), password);
     await user.type(screen.getByTestId("nightmotion-stream"), streamUrl);
 
+    setupStream([sampleFrame]);
     const startButton = screen.getByTestId("nightmotion-start");
-
-    let resolveBlob: ((value: Blob) => void) | null = null;
-    const deferredBlob = new Promise<Blob>((resolve) => {
-      resolveBlob = resolve;
-    });
-    const customBlobMock = jest.fn(() => deferredBlob);
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      blob: customBlobMock as unknown as () => Promise<Blob>,
-    } as unknown as Response);
 
     await user.click(startButton);
 
@@ -163,12 +190,6 @@ describe("NightMotion component", () => {
         Authorization: "Bearer access-token",
         "X-CSRF-Token": "csrf-token",
       },
-    });
-
-    expect(customBlobMock).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      resolveBlob?.(new Blob(["mock"], { type: "image/jpeg" }));
-      await Promise.resolve();
     });
 
     await waitFor(() => expect(createObjectURLMock).toHaveBeenCalledTimes(1));
@@ -204,6 +225,7 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-password"), "secret");
     await user.type(screen.getByTestId("nightmotion-stream"), "rtsp://camera/live");
 
+    setupStream([sampleFrame]);
     await user.click(screen.getByTestId("nightmotion-start"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -262,6 +284,8 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-username"), "operator");
     await user.type(screen.getByTestId("nightmotion-password"), "secret");
     await user.type(screen.getByTestId("nightmotion-stream"), "rtsp://camera/live");
+
+    setupStream([sampleFrame]);
     await user.click(screen.getByTestId("nightmotion-start"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));

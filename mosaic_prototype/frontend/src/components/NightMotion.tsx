@@ -30,6 +30,36 @@ interface NightMotionFormValues {
   streamUrl: string;
 }
 
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
+const BOUNDARY_MARKER = "--frame";
+const BOUNDARY_BYTES = TEXT_ENCODER.encode(BOUNDARY_MARKER);
+const HEADER_SEPARATOR_BYTES = TEXT_ENCODER.encode("\r\n\r\n");
+
+function concatUint8Arrays(left: Uint8Array, right: Uint8Array): Uint8Array {
+  if (!left?.length) return right;
+  if (!right?.length) return left;
+  const combined = new Uint8Array(left.length + right.length);
+  combined.set(left, 0);
+  combined.set(right, left.length);
+  return combined;
+}
+
+function indexOfSubarray(source: Uint8Array, search: Uint8Array, fromIndex = 0): number {
+  if (search.length === 0 || source.length === 0 || search.length > source.length) {
+    return -1;
+  }
+  outer: for (let i = fromIndex; i <= source.length - search.length; i += 1) {
+    for (let j = 0; j < search.length; j += 1) {
+      if (source[i + j] !== search[j]) {
+        continue outer;
+      }
+    }
+    return i;
+  }
+  return -1;
+}
+
 const statusColors: Record<NightMotionStatus, string> = {
   idle: "#888888",
   starting: "#d0b000",
@@ -267,6 +297,25 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
       dispatch(setError(null));
       dispatch(startStreamAction());
 
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+      let buffer = new Uint8Array();
+      let hasActivated = false;
+      let encounteredError = false;
+
+      const emitFrame = (frameBytes: Uint8Array) => {
+        if (!frameBytes.length) {
+          return;
+        }
+        const frameBlob = new Blob([frameBytes], { type: "image/jpeg" });
+        const frameUrl = URL.createObjectURL(frameBlob);
+        setStreamObjectUrl(frameUrl);
+        if (!hasActivated) {
+          dispatch(setStatus("active"));
+          dispatch(setError(null));
+          hasActivated = true;
+        }
+      };
+
       try {
         const requestUrl = getStreamProxyUrl(config.streamUrl, config.username, config.password);
         const headers: Record<string, string> = {
@@ -279,30 +328,120 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
           signal: controller.signal,
         });
 
-        if (!response.ok) {
+        if (!response.ok || !response.body) {
           throw new Error(`Stream request failed with status ${response.status}`);
         }
 
-        const blob = await response.blob();
-        if (controller.signal.aborted) {
-          return;
-        }
+        reader = response.body.getReader();
 
-        const objectUrl = URL.createObjectURL(blob);
-        setStreamObjectUrl(objectUrl);
-        dispatch(setStatus("active"));
-        dispatch(setError(null));
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          if (!value) {
+            continue;
+          }
+
+          buffer = concatUint8Arrays(buffer, value);
+
+          // Process as many frames as possible from the buffer.
+          while (true) {
+            const boundaryIndex = indexOfSubarray(buffer, BOUNDARY_BYTES);
+            if (boundaryIndex === -1) {
+              break;
+            }
+
+            if (boundaryIndex > 0) {
+              buffer = buffer.slice(boundaryIndex);
+            }
+
+            if (buffer.length < BOUNDARY_BYTES.length) {
+              break;
+            }
+
+            let offset = BOUNDARY_BYTES.length;
+
+            if (buffer.length < offset + 2) {
+              break;
+            }
+
+            // Handle final boundary
+            if (buffer[offset] === 45 && buffer[offset + 1] === 45) {
+              buffer = buffer.slice(offset + 2);
+              continue;
+            }
+
+            // Skip CRLF after boundary if present
+            if (buffer[offset] === 13 && buffer[offset + 1] === 10) {
+              offset += 2;
+            } else if (buffer[offset] === 10) {
+              offset += 1;
+            }
+
+            const headerEndIndex = indexOfSubarray(buffer, HEADER_SEPARATOR_BYTES, offset);
+            if (headerEndIndex === -1) {
+              break;
+            }
+
+            const headerBytes = buffer.slice(offset, headerEndIndex);
+            const headerText = TEXT_DECODER.decode(headerBytes);
+            const contentLengthMatch = headerText.match(/Content-Length:\s*(\d+)/i);
+            const frameStartIndex = headerEndIndex + HEADER_SEPARATOR_BYTES.length;
+
+            if (contentLengthMatch) {
+              const frameLength = Number(contentLengthMatch[1]);
+              if (!Number.isFinite(frameLength) || frameLength <= 0) {
+                buffer = buffer.slice(frameStartIndex);
+                continue;
+              }
+              if (buffer.length < frameStartIndex + frameLength) {
+                break;
+              }
+              const frameBytes = buffer.slice(frameStartIndex, frameStartIndex + frameLength);
+              buffer = buffer.slice(frameStartIndex + frameLength);
+              if (buffer.length >= 2 && buffer[0] === 13 && buffer[1] === 10) {
+                buffer = buffer.slice(2);
+              }
+              emitFrame(frameBytes);
+              continue;
+            }
+
+            const nextBoundaryIndex = indexOfSubarray(buffer, BOUNDARY_BYTES, frameStartIndex);
+            if (nextBoundaryIndex === -1) {
+              break;
+            }
+            let frameBytes = buffer.slice(frameStartIndex, nextBoundaryIndex);
+            if (frameBytes.length >= 2 && frameBytes[frameBytes.length - 2] === 13 && frameBytes[frameBytes.length - 1] === 10) {
+              frameBytes = frameBytes.slice(0, -2);
+            }
+            buffer = buffer.slice(nextBoundaryIndex);
+            emitFrame(frameBytes);
+          }
         }
-        clearStreamResources();
-        dispatch(setStatus("error"));
-        dispatch(setError("Stream nelze navázat"));
-        notify("Stream nelze navázat", "error");
+      } catch (error) {
+        const isAbort = error instanceof DOMException && error.name === "AbortError";
+        if (!isAbort) {
+          clearStreamResources();
+          dispatch(setStatus("error"));
+          dispatch(setError("Stream nelze navázat"));
+          notify("Stream nelze navázat", "error");
+          encounteredError = true;
+        }
       } finally {
+        if (reader) {
+          try {
+            reader.releaseLock();
+          } catch {
+            // ignore release errors
+          }
+        }
         if (fetchControllerRef.current === controller) {
           fetchControllerRef.current = null;
+        }
+        if (!controller.signal.aborted && !encounteredError) {
+          clearStreamResources();
+          dispatch(stopStream());
         }
       }
     },
