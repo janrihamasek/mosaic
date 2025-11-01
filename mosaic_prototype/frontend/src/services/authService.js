@@ -157,6 +157,16 @@ export function getTokens() {
   return { accessToken, csrfToken, tokenType, expiresAt, username };
 }
 
+export function getAccessToken() {
+  const tokens = getTokens();
+  return tokens?.accessToken || null;
+}
+
+export function getCsrfToken() {
+  const tokens = getTokens();
+  return tokens?.csrfToken || null;
+}
+
 // Support window storage sync (multiple tabs)
 window.addEventListener('storage', (event) => {
   if (event.key === STORAGE_KEY) {

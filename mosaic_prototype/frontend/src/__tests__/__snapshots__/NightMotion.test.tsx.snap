@@ -95,7 +95,8 @@ exports[`NightMotion component matches snapshot in active state 1`] = `
           </button>
           <button
             data-testid="nightmotion-start"
-            style="padding: 0.5rem 0.9rem; background-color: rgb(58, 123, 213); color: rgb(255, 255, 255); border-radius: 0.25rem; cursor: pointer; transition: background 0.3s ease; font-size: 0.95rem; line-height: 1.4; min-width: 9rem; opacity: 1;"
+            disabled=""
+            style="padding: 0.5rem 0.9rem; background-color: rgb(58, 123, 213); color: rgb(255, 255, 255); border-radius: 0.25rem; cursor: not-allowed; transition: background 0.3s ease; font-size: 0.95rem; line-height: 1.4; min-width: 9rem; opacity: 1;"
             type="submit"
           >
             Active
@@ -112,7 +113,7 @@ exports[`NightMotion component matches snapshot in active state 1`] = `
         <div
           aria-live="polite"
           data-testid="nightmotion-status"
-          style="display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; color: rgb(46, 204, 113); transition: opacity 0.3s ease, transform 0.3s ease; opacity: 0; transform: translateY(-6px);"
+          style="display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; color: rgb(46, 204, 113); transition: opacity 0.3s ease, transform 0.3s ease; opacity: 1; transform: translateY(0px);"
         >
           <span
             style="width: 0.75rem; height: 0.75rem; border-radius: 999px; background-color: rgb(46, 204, 113); box-shadow: 0 0 0.4rem #2ecc7155;"
@@ -125,7 +126,7 @@ exports[`NightMotion component matches snapshot in active state 1`] = `
       <img
         alt="Night motion stream"
         data-testid="nightmotion-stream-img"
-        src="http://127.0.0.1:5000/api/stream-proxy?url=rtsp%3A%2F%2Fcamera%2Flive&username=operator&password=secret"
+        src="blob:nightmotion-stream"
         style="width: 100%; max-height: 60vh; background-color: rgb(0, 0, 0); border-radius: 0.5rem; border: 1px solid #333; object-fit: contain; transition: opacity 0.35s ease, transform 0.35s ease; opacity: 1;"
       />
       <div

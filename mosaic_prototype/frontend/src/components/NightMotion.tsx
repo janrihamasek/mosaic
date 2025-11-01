@@ -6,13 +6,13 @@ import { styles } from "../styles/common";
 import { useCompactLayout } from "../utils/useBreakpoints";
 import FormWrapper from "./shared/FormWrapper";
 import { getStreamProxyUrl } from "../api";
-import { getAuthHeaders } from "../services/authService";
+import { getAccessToken, getCsrfToken } from "../services/authService";
 import {
   selectNightMotionState,
   setError,
   setField,
   setStatus,
-  startStream,
+  startStream as startStreamAction,
   stopStream,
   type NightMotionStatus,
 } from "../store/nightMotionSlice";
@@ -76,14 +76,11 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
   const [statusVisible, setStatusVisible] = useState(true);
   const { isCompact } = useCompactLayout();
   const hasHydratedConfig = useRef(false);
-  const [streamSrc, setStreamSrc] = useState<string | null>(null);
+  const [streamSrc, setStreamSrcState] = useState<string | null>(null);
+  const streamObjectUrlRef = useRef<string | null>(null);
+  const fetchControllerRef = useRef<AbortController | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { isSubmitting },
-  } = useForm<NightMotionFormValues>({
+  const { register, handleSubmit, reset } = useForm<NightMotionFormValues>({
     defaultValues: { username, password, streamUrl },
   });
 
@@ -145,14 +142,13 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     [status]
   );
 
-  const startDisabled = status === "starting";
+  const startDisabled = status === "starting" || status === "active";
   const stopDisabled = status === "idle";
   const submitLabel = useMemo(() => {
-    if (isSubmitting) return "Starting…";
     if (status === "starting") return "Starting…";
     if (status === "active") return "Active";
     return "Start";
-  }, [isSubmitting, status]);
+  }, [status]);
 
   const notify = useCallback(
     (message: string, variant: NotifyVariant = "info") => {
@@ -163,17 +159,42 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     [onNotify]
   );
 
+  const abortActiveRequest = useCallback(() => {
+    if (fetchControllerRef.current) {
+      fetchControllerRef.current.abort();
+      fetchControllerRef.current = null;
+    }
+  }, []);
+
+  const setStreamObjectUrl = useCallback(
+    (nextUrl: string | null) => {
+      const currentUrl = streamObjectUrlRef.current;
+      if (currentUrl && currentUrl !== nextUrl && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(currentUrl);
+      }
+      streamObjectUrlRef.current = nextUrl;
+      setStreamSrcState(nextUrl);
+    },
+    []
+  );
+
+  const clearStreamResources = useCallback(() => {
+    setStreamObjectUrl(null);
+  }, [setStreamObjectUrl]);
+
   const handleStop = useCallback(() => {
-    setStreamSrc(null);
+    abortActiveRequest();
+    clearStreamResources();
     dispatch(stopStream());
-  }, [dispatch]);
+  }, [abortActiveRequest, clearStreamResources, dispatch]);
 
   useEffect(
     () => () => {
+      abortActiveRequest();
+      clearStreamResources();
       dispatch(stopStream());
-      setStreamSrc(null);
     },
-    [dispatch]
+    [abortActiveRequest, clearStreamResources, dispatch]
   );
 
   useEffect(() => {
@@ -224,7 +245,77 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     [dispatch, register, status]
   );
 
-  const onSubmit = handleSubmit(async (values) => {
+  const startMotionStream = useCallback(
+    async (config: NightMotionFormValues) => {
+      const accessToken = getAccessToken();
+      const csrfToken = getCsrfToken();
+
+      if (!accessToken || !csrfToken) {
+        clearStreamResources();
+        dispatch(setStatus("error"));
+        dispatch(setError("Stream nelze navázat"));
+        notify("Stream nelze navázat", "error");
+        return;
+      }
+
+      abortActiveRequest();
+      clearStreamResources();
+
+      const controller = new AbortController();
+      fetchControllerRef.current = controller;
+
+      dispatch(setError(null));
+      dispatch(startStreamAction());
+
+      try {
+        const requestUrl = getStreamProxyUrl(config.streamUrl, config.username, config.password);
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${accessToken}`,
+          "X-CSRF-Token": csrfToken,
+        };
+
+        const response = await fetch(requestUrl, {
+          headers,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Stream request failed with status ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        const objectUrl = URL.createObjectURL(blob);
+        setStreamObjectUrl(objectUrl);
+        dispatch(setStatus("active"));
+        dispatch(setError(null));
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        clearStreamResources();
+        dispatch(setStatus("error"));
+        dispatch(setError("Stream nelze navázat"));
+        notify("Stream nelze navázat", "error");
+      } finally {
+        if (fetchControllerRef.current === controller) {
+          fetchControllerRef.current = null;
+        }
+      }
+    },
+    [
+      abortActiveRequest,
+      clearStreamResources,
+      dispatch,
+      notify,
+      setStreamObjectUrl,
+    ]
+  );
+
+  const onSubmit = handleSubmit((values) => {
     const payload: NightMotionFormValues = {
       username: values.username.trim(),
       password: values.password,
@@ -259,36 +350,16 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
     }
     notify("Nastavení uloženo", "success");
 
-    const baseStreamUrl = getStreamProxyUrl(payload.streamUrl, payload.username, payload.password);
-    const computedUrl = new URL(baseStreamUrl);
-    const headers = getAuthHeaders();
-    const authHeader = headers.Authorization || headers.authorization;
-    if (authHeader) {
-      const token = authHeader.replace(/^Bearer\s+/i, "");
-      if (token) {
-        computedUrl.searchParams.set("token", token);
-      }
-    }
-    const csrfToken = headers["X-CSRF-Token"] || headers["x-csrf-token"];
-    if (csrfToken) {
-      computedUrl.searchParams.set("csrf", csrfToken);
-    }
-
-    dispatch(startStream());
-    setStreamSrc(computedUrl.toString());
+    void startMotionStream(payload);
   });
 
-  const handleStreamLoad = useCallback(() => {
-    dispatch(setStatus("active"));
-    dispatch(setError(null));
-  }, [dispatch]);
-
   const handleStreamError = useCallback(() => {
-    setStreamSrc(null);
+    clearStreamResources();
+    abortActiveRequest();
     dispatch(setStatus("error"));
     dispatch(setError("Stream nelze navázat"));
     notify("Stream nelze navázat", "error");
-  }, [dispatch, notify]);
+  }, [abortActiveRequest, clearStreamResources, dispatch, notify]);
 
   return (
     <div style={layoutStyle}>
@@ -296,7 +367,7 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
         <FormWrapper
           title="NightMotion"
           onSubmit={onSubmit}
-          isSubmitting={isSubmitting}
+          isSubmitting={status === "starting"}
           isSubmitDisabled={startDisabled}
           submitLabel={submitLabel}
           onCancel={handleStop}
@@ -374,16 +445,26 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
           )}
         </div>
 
-        {streamSrc ? (
+        {status === "active" && streamSrc && (
           <img
             src={streamSrc}
             alt="Night motion stream"
             style={streamStyle}
             data-testid="nightmotion-stream-img"
-            onLoad={handleStreamLoad}
             onError={handleStreamError}
           />
-        ) : (
+        )}
+        {status === "starting" && (
+          <p style={{ color: "#b0b0b8" }} data-testid="nightmotion-stream-starting">
+            Starting...
+          </p>
+        )}
+        {status === "error" && (
+          <p style={{ color: statusColors.error }} data-testid="nightmotion-stream-error">
+            {error || "Error starting stream"}
+          </p>
+        )}
+        {status === "idle" && (
           <div
             style={{
               ...streamStyle,
