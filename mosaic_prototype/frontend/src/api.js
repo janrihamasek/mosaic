@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import { API_BASE_URL as API_BASE } from './config';
 
 function extractParams(filters = {}) {
   const params = new URLSearchParams();
@@ -86,3 +87,6 @@ export async function importEntriesCsv(file) {
   });
   return response.data;
 }
+
+export const getStreamProxyUrl = (url, username, password) =>
+  `${API_BASE}/api/stream-proxy?url=${encodeURIComponent(url)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;

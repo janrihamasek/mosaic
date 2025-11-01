@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useLocation, useNavigate } from "react-router-dom";
+
 import Today from "./components/Today";
 import ActivityForm from "./components/ActivityForm";
 import ActivityDetail from "./components/ActivityDetail";
@@ -7,6 +9,7 @@ import ActivityTable from "./components/ActivityTable";
 import EntryForm from "./components/EntryForm";
 import EntryTable from "./components/EntryTable";
 import Stats from "./components/Stats";
+import NightMotion from "./components/NightMotion";
 import Notification from "./components/Notification";
 import LogoutButton from "./components/LogoutButton";
 import { styles } from "./styles/common";
@@ -21,10 +24,33 @@ import {
 } from "./store/activitiesSlice";
 
 const DEFAULT_TAB = "Today";
+const TABS = ["Today", "Activities", "Stats", "Entries", "NightMotion"];
+const TAB_LABELS = {
+  Today: "Today",
+  Activities: "Activities",
+  Stats: "Stats",
+  Entries: "Entries",
+  NightMotion: "NightMotion",
+};
 
-export default function Dashboard() {
+function resolveInitialTab(initialTab) {
+  if (initialTab && TABS.includes(initialTab)) {
+    return initialTab;
+  }
+  if (typeof window !== "undefined") {
+    const stored = window.localStorage.getItem("mosaic_active_tab");
+    if (stored && TABS.includes(stored)) {
+      return stored;
+    }
+  }
+  return DEFAULT_TAB;
+}
+
+export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const dispatch = useDispatch();
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem("mosaic_active_tab") || DEFAULT_TAB);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab));
   const [notification, setNotification] = useState({ message: "", type: "info", visible: false });
   const notificationTimerRef = useRef(null);
   const { isCompact } = useCompactLayout();
@@ -78,8 +104,18 @@ export default function Dashboard() {
   }, [dispatch]);
 
   useEffect(() => {
-    localStorage.setItem("mosaic_active_tab", activeTab);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("mosaic_active_tab", activeTab);
+    }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "NightMotion" && location.pathname !== "/night-motion") {
+      navigate("/night-motion");
+    } else if (activeTab !== "NightMotion" && location.pathname === "/night-motion") {
+      navigate("/");
+    }
+  }, [activeTab, location.pathname, navigate]);
 
   const containerStyle = {
     ...styles.container,
@@ -168,9 +204,9 @@ export default function Dashboard() {
       </div>
 
       <div style={tabBarStyle}>
-        {["Today", "Activities", "Stats", "Entries"].map((tab) => (
+        {TABS.map((tab) => (
           <div key={tab} style={tabItemStyle(tab)} onClick={() => setActiveTab(tab)}>
-            {tab}
+            {TAB_LABELS[tab]}
           </div>
         ))}
       </div>
@@ -208,6 +244,12 @@ export default function Dashboard() {
         <div style={sectionWrapperStyle}>
           <EntryForm onNotify={showNotification} />
           <EntryTable onNotify={showNotification} />
+        </div>
+      )}
+
+      {activeTab === "NightMotion" && (
+        <div style={sectionWrapperStyle}>
+          <NightMotion onNotify={showNotification} />
         </div>
       )}
     </div>

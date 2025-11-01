@@ -23,12 +23,17 @@ const FormWrapper: React.FC<FormWrapperProps> = ({
   description,
   footer,
   submitButtonProps,
+  cancelButtonProps,
   ...formProps
 }) => {
   const { isCompact } = useCompactLayout();
   const isBusy = isSubmitting || isLoading;
   const resolvedSubmitButtonProps: ButtonHTMLAttributes<HTMLButtonElement> =
     submitButtonProps ?? ({} as ButtonHTMLAttributes<HTMLButtonElement>);
+  const resolvedCancelButtonProps: ButtonHTMLAttributes<HTMLButtonElement> =
+    cancelButtonProps ?? ({} as ButtonHTMLAttributes<HTMLButtonElement>);
+  const { style: cancelStyle, disabled: cancelDisabled, ...restCancelButtonProps } = resolvedCancelButtonProps;
+  const { style: submitStyle, ...restSubmitButtonProps } = resolvedSubmitButtonProps;
 
   const actionRowStyle = {
     display: "flex",
@@ -80,8 +85,12 @@ const FormWrapper: React.FC<FormWrapperProps> = ({
             style={{
               ...buttonBase,
               backgroundColor: "#3a3b3f",
+              opacity: isBusy || cancelDisabled ? 0.7 : 1,
+              cursor: isBusy || cancelDisabled ? "not-allowed" : styles.button.cursor,
+              ...(cancelStyle ?? {}),
             }}
-            disabled={isBusy}
+            disabled={isBusy || cancelDisabled}
+            {...restCancelButtonProps}
           >
             {cancelLabel}
           </button>
@@ -92,9 +101,10 @@ const FormWrapper: React.FC<FormWrapperProps> = ({
             ...buttonBase,
             opacity: isBusy ? 0.75 : 1,
             cursor: isBusy || isSubmitDisabled ? "not-allowed" : styles.button.cursor,
+            ...(submitStyle ?? {}),
           }}
           disabled={isBusy || isSubmitDisabled}
-          {...resolvedSubmitButtonProps}
+          {...restSubmitButtonProps}
         >
           {submitLabel}
         </button>

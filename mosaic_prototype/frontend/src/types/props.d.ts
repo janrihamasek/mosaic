@@ -40,6 +40,7 @@ export interface FormWrapperProps
   description?: ReactNode;
   footer?: ReactNode;
   submitButtonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
+  cancelButtonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 export interface DataTableColumn {

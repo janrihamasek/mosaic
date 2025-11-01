@@ -27,6 +27,14 @@ export default function App() {
         element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterForm />}
       />
       <Route
+        path="/night-motion"
+        element={
+          <PrivateRoute>
+            <Dashboard initialTab="NightMotion" />
+          </PrivateRoute>
+        }
+      />
+      <Route
         path="/*"
         element={
           <PrivateRoute>

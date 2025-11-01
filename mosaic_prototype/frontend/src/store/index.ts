@@ -7,6 +7,7 @@ import {
 import authReducer, { setAuthState } from "./authSlice";
 import entriesReducer from "./entriesSlice";
 import activitiesReducer from "./activitiesSlice";
+import nightMotionReducer from "./nightMotionSlice";
 import { subscribe as subscribeAuthChanges, getAuthState } from "../services/authService";
 
 export const store = configureStore({
@@ -14,6 +15,7 @@ export const store = configureStore({
     auth: authReducer,
     entries: entriesReducer,
     activities: activitiesReducer,
+    nightMotion: nightMotionReducer,
   },
 });
 
