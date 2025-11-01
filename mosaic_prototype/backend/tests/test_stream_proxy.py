@@ -27,8 +27,8 @@ def test_stream_proxy_authorized_ok(client, monkeypatch):
     token = _create_user_and_token(client)
     captured = {}
 
-    def fake_stream(url, username, password):
-        captured["args"] = (url, username, password)
+    def fake_stream(url):
+        captured["args"] = (url,)
         yield FAKE_FRAME_CHUNK
 
     monkeypatch.setattr("app.stream_rtsp", fake_stream)
@@ -41,7 +41,7 @@ def test_stream_proxy_authorized_ok(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.mimetype == "multipart/x-mixed-replace"
-    assert captured["args"] == ("rtsp://camera.local/live", "user", "secret")
+    assert captured["args"] == ("rtsp://user:secret@camera.local/live",)
 
     iterator = iter(response.response)
     first_chunk = next(iterator)
@@ -130,7 +130,7 @@ def test_stream_proxy_disconnect(monkeypatch):
 
     monkeypatch.setattr("app.subprocess.Popen", fake_popen)
 
-    generator = stream_rtsp("rtsp://camera.local/live", "", "")
+    generator = stream_rtsp("rtsp://camera.local/live")
     first_chunk = next(generator)
     assert b"--frame" in first_chunk
 

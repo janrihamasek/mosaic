@@ -7,12 +7,11 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from itertools import chain
 from pathlib import Path
 from threading import Lock, Thread
 from time import time
 from typing import Dict, Iterator, Optional, Tuple, cast
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 import jwt  # type: ignore[import]
 from flask import Flask, Response, jsonify, request, g, stream_with_context
@@ -209,20 +208,14 @@ def configure_database_path(path: str):
 configure_database_path(app.config["DB_PATH"])
 
 
-def _normalize_rtsp_url(raw_url: str, username: str, password: str) -> str:
+def _normalize_rtsp_url(raw_url: str) -> str:
     parsed = urlparse(raw_url)
     if parsed.scheme.lower() != "rtsp":
         raise ValidationError("URL must use rtsp scheme", code="invalid_query")
     if not parsed.hostname:
         raise ValidationError("Invalid stream URL", code="invalid_query")
 
-    netloc = parsed.netloc.split("@")[-1]
-    if username:
-        credentials = quote(username, safe="")
-        if password:
-            credentials += f":{quote(password, safe='')}"
-        netloc = f"{credentials}@{netloc}"
-    normalized = parsed._replace(netloc=netloc)
+    normalized = parsed._replace()
     return urlunparse(normalized)
 
 
@@ -251,8 +244,8 @@ def _raise_stream_error(stderr_lines: list[str], return_code: Optional[int]) -> 
     raise RuntimeError(f"Unable to proxy stream (ffmpeg exited with code {return_code})")
 
 
-def stream_rtsp(url: str, username: str, password: str) -> Iterator[bytes]:
-    normalized_url = _normalize_rtsp_url(url, username, password)
+def stream_rtsp(url: str) -> Iterator[bytes]:
+    normalized_url = _normalize_rtsp_url(url)
     command = [
         "ffmpeg",
         "-nostdin",
@@ -641,26 +634,31 @@ def handle_http_exception(exc: HTTPException):
     return error_response(code, message, status)
 
 
-@app.get("/api/stream-proxy")
+@app.route("/api/stream-proxy", methods=["GET"])
 @jwt_required()
 def stream_proxy():
     limited = limit_request("stream_proxy", per_minute=2)
     if limited:
         return limited
 
-    url = request.args.get("url", type=str)
-    if not url:
-        return error_response("invalid_query", "Missing url parameter", 400)
+    rtsp_url = request.args.get("url", type=str)
+    if not rtsp_url:
+        return jsonify({"error": "Missing RTSP URL"}), 400
 
-    username = request.args.get("username", "", type=str) or ""
-    password = request.args.get("password", "", type=str) or ""
+    cam_user = request.args.get("username", "", type=str) or ""
+    cam_pass = request.args.get("password", "", type=str) or ""
+    if cam_user and cam_pass and "@" not in rtsp_url:
+        rtsp_url = rtsp_url.replace("rtsp://", f"rtsp://{cam_user}:{cam_pass}@", 1)
+
+    app.logger.info("NightMotion proxying %s", rtsp_url)
 
     try:
-        generator = stream_rtsp(url, username, password)
-        first_chunk = next(generator)
-    except StopIteration:
-        app.logger.error("NightMotion stream produced no frames")
-        return error_response("internal_error", "Stream nelze navázat", 500)
+        response = Response(
+            stream_with_context(stream_rtsp(rtsp_url)),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
     except PermissionError:
@@ -671,14 +669,6 @@ def stream_proxy():
     except Exception as exc:
         app.logger.exception("Unexpected stream error: %s", exc)
         return error_response("internal_error", "Stream nelze navázat", 500)
-
-    stream_iter = chain([first_chunk], generator)
-    response = Response(
-        stream_with_context(stream_iter),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
-    )
-    response.headers["Cache-Control"] = "no-store"
-    return response
 
 
 @app.errorhandler(Exception)
