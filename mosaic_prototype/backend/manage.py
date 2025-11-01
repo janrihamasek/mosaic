@@ -8,9 +8,9 @@ project can run migrations without invoking the Flask CLI directly.
 from pathlib import Path
 
 import click
-from flask_migrate import init as flask_migrate_init
-from flask_migrate import migrate as flask_migrate_migrate
-from flask_migrate import upgrade as flask_migrate_upgrade
+from flask_migrate import init as flask_migrate_init # type: ignore[import]
+from flask_migrate import migrate as flask_migrate_migrate # type: ignore[import]
+from flask_migrate import upgrade as flask_migrate_upgrade # type: ignore[import]
 
 from app import app
 

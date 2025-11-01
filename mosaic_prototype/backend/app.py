@@ -9,7 +9,7 @@ from pathlib import Path
 from time import time
 from typing import Dict, Iterator, Optional, Tuple, cast
 
-import jwt
+import jwt  # type: ignore[import]
 from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
@@ -440,8 +440,11 @@ def _enforce_jwt_authentication():
     except jwt.InvalidTokenError:
         return error_response("unauthorized", "Invalid access token", 401)
 
+    user_id_raw = payload.get("sub")
+    if user_id_raw is None:
+        return error_response("unauthorized", "Invalid access token", 401)
     try:
-        user_id = int(payload.get("sub"))
+        user_id = int(user_id_raw)
     except (TypeError, ValueError):
         return error_response("unauthorized", "Invalid access token", 401)
 
@@ -1063,7 +1066,8 @@ def import_csv_endpoint():
         return limited
 
     file = cast(FileStorage, validate_csv_import_payload(request.files))
-    filename = secure_filename(file.filename)
+    filename_input = file.filename or "import.csv"
+    filename = secure_filename(filename_input)
     suffix = os.path.splitext(filename)[1] or ".csv"
     tmp_path = None
     try:
