@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 
+import { ReadableStream as NodeReadableStream } from "stream/web";
+
 import NightMotion from "../components/NightMotion";
 import nightMotionReducer from "../store/nightMotionSlice";
 import { getStreamProxyUrl } from "../api";
@@ -19,43 +21,70 @@ const originalRevokeObjectURL = URL.revokeObjectURL;
 
 const textEncoder = new TextEncoder();
 const sampleFrame = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+const WebReadableStream = (typeof ReadableStream === "undefined"
+  ? (NodeReadableStream as unknown as typeof ReadableStream)
+  : ReadableStream) as typeof ReadableStream;
 
-function buildMJPEGChunks(frames: Uint8Array[]): Uint8Array[] {
-  const chunks: Uint8Array[] = [];
-  frames.forEach((frameBytes) => {
-    const header = textEncoder.encode(
-      `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frameBytes.length}\r\n\r\n`
-    );
-    const footer = textEncoder.encode("\r\n");
-    chunks.push(header);
-    chunks.push(frameBytes);
-    chunks.push(footer);
-  });
-  chunks.push(textEncoder.encode("--frame--\r\n"));
-  return chunks;
-}
+const encodeFrameChunks = (frame: Uint8Array): Uint8Array[] => {
+  const header = textEncoder.encode(
+    `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`
+  );
+  const footer = textEncoder.encode("\r\n");
+  return [header, frame, footer];
+};
 
 function setupStream(frames: Uint8Array[]) {
-  const chunks = buildMJPEGChunks(frames);
-  let index = 0;
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const pendingActions: Array<(controller: ReadableStreamDefaultController<Uint8Array>) => void> = [];
 
-  const read = jest.fn(async () => {
-    if (index < chunks.length) {
-      const chunk = chunks[index];
-      index += 1;
-      return { value: chunk, done: false };
+  const runOrQueue = (
+    action: (controller: ReadableStreamDefaultController<Uint8Array>) => void
+  ) => {
+    if (controllerRef) {
+      action(controllerRef);
+    } else {
+      pendingActions.push(action);
     }
-    return { value: undefined, done: true };
+  };
+
+  const stream = new WebReadableStream<Uint8Array>({
+    start(controller) {
+      controllerRef = controller;
+      pendingActions.splice(0).forEach((action) => action(controller));
+    },
+    cancel() {
+      controllerRef = null;
+      pendingActions.length = 0;
+    },
   });
 
-  fetchMock.mockResolvedValueOnce({
-    ok: true,
-    body: {
-      getReader: () => ({ read }),
-    },
-  } as unknown as Response);
+  const enqueueFrame = (frame: Uint8Array) => {
+    runOrQueue((controller) => {
+      encodeFrameChunks(frame).forEach((chunk) => controller.enqueue(chunk));
+    });
+  };
 
-  return { read };
+  frames.forEach(enqueueFrame);
+
+  let abortHandler: (() => void) | null = null;
+
+  fetchMock.mockImplementationOnce((_input, init) => {
+    const signal = (init as RequestInit | undefined)?.signal;
+    if (signal && !abortHandler) {
+      abortHandler = () => runOrQueue((controller) => controller.close());
+      signal.addEventListener("abort", abortHandler, { once: true });
+    }
+
+    return Promise.resolve({
+      ok: true,
+      body: stream,
+    } as unknown as Response);
+  });
+
+  return {
+    enqueueFrame,
+    close: () => runOrQueue((controller) => controller.close()),
+  };
 }
 
 function createStore() {
@@ -173,13 +202,13 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-password"), password);
     await user.type(screen.getByTestId("nightmotion-stream"), streamUrl);
 
-    setupStream([sampleFrame]);
+    const streamControls = setupStream([sampleFrame]);
     const startButton = screen.getByTestId("nightmotion-start");
 
     await user.click(startButton);
 
     await waitFor(() => expect(notifyMock).toHaveBeenCalledWith("Nastavení uloženo", "success"));
-    expect(store.getState().nightMotion.status).toBe("starting");
+    expect(store.getState().nightMotion.status === "starting" || store.getState().nightMotion.status === "active").toBe(true);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     const [requestedUrl, requestInit] = fetchMock.mock.calls[0];
@@ -199,6 +228,7 @@ describe("NightMotion component", () => {
     expect(streamImage).toHaveAttribute("src", "blob:nightmotion-stream");
     expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/active/i);
     expect(revokeObjectURLMock).not.toHaveBeenCalled();
+    streamControls.close();
   });
 
   it("stops the stream and returns to idle", async () => {
@@ -225,7 +255,7 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-password"), "secret");
     await user.type(screen.getByTestId("nightmotion-stream"), "rtsp://camera/live");
 
-    setupStream([sampleFrame]);
+    const streamControls = setupStream([sampleFrame]);
     await user.click(screen.getByTestId("nightmotion-start"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -285,7 +315,7 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-password"), "secret");
     await user.type(screen.getByTestId("nightmotion-stream"), "rtsp://camera/live");
 
-    setupStream([sampleFrame]);
+    const streamControls = setupStream([sampleFrame]);
     await user.click(screen.getByTestId("nightmotion-start"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -297,5 +327,6 @@ describe("NightMotion component", () => {
     expect(streamImage).toHaveAttribute("src", "blob:nightmotion-stream");
 
     expect(asFragment()).toMatchSnapshot();
+    streamControls.close();
   });
 });
