@@ -202,7 +202,7 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-password"), password);
     await user.type(screen.getByTestId("nightmotion-stream"), streamUrl);
 
-    const streamControls = setupStream([sampleFrame]);
+    setupStream([sampleFrame]);
     const startButton = screen.getByTestId("nightmotion-start");
 
     await user.click(startButton);
@@ -228,7 +228,6 @@ describe("NightMotion component", () => {
     expect(streamImage).toHaveAttribute("src", "blob:nightmotion-stream");
     expect(screen.getByTestId("nightmotion-status")).toHaveTextContent(/active/i);
     expect(revokeObjectURLMock).not.toHaveBeenCalled();
-    streamControls.close();
   });
 
   it("stops the stream and returns to idle", async () => {
@@ -255,7 +254,7 @@ describe("NightMotion component", () => {
     await user.type(screen.getByTestId("nightmotion-password"), "secret");
     await user.type(screen.getByTestId("nightmotion-stream"), "rtsp://camera/live");
 
-    const streamControls = setupStream([sampleFrame]);
+    setupStream([sampleFrame]);
     await user.click(screen.getByTestId("nightmotion-start"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
