@@ -1,10 +1,10 @@
-import sqlite3
-from pathlib import Path
-
 import pytest
+from sqlalchemy import func, select
 
 from app import app
+from extensions import db
 from import_data import import_csv
+from models import Activity, Entry
 
 
 def _write_csv(tmp_path, name, rows):
@@ -26,24 +26,20 @@ def test_import_csv_skips_duplicate_rows(tmp_path):
         ],
     )
 
-    summary = import_csv(str(csv_path), db_path=app.config["DB_PATH"])
+    summary = import_csv(str(csv_path))
 
     assert summary["created"] == 1
     assert summary["skipped"] == 1
     reasons = {detail.get("reason") for detail in summary["details"] if detail["status"] == "skipped"}
     assert "duplicate_in_file" in reasons
 
-    conn = sqlite3.connect(app.config["DB_PATH"])
-    try:
-        row = conn.execute(
-            "SELECT value, note FROM entries WHERE date = ? AND activity = ?",
-            ("2024-03-01", "Swim"),
-        ).fetchone()
+    with app.app_context():
+        row = db.session.execute(
+            select(Entry.value, Entry.note).where(Entry.date == "2024-03-01", Entry.activity == "Swim")
+        ).first()
         assert row is not None
-        assert pytest.approx(row[0]) == 2.0
-        assert row[1] == ""
-    finally:
-        conn.close()
+        assert pytest.approx(row.value) == 2.0
+        assert row.note == ""
 
 
 @pytest.mark.usefixtures("client")
@@ -57,7 +53,7 @@ def test_import_csv_flags_missing_required_fields(tmp_path):
         ],
     )
 
-    summary = import_csv(str(csv_path), db_path=app.config["DB_PATH"])
+    summary = import_csv(str(csv_path))
 
     assert summary["created"] == 0
     assert summary["skipped"] == 2
@@ -65,37 +61,37 @@ def test_import_csv_flags_missing_required_fields(tmp_path):
     assert any("date is required" in reason for reason in reasons)
     assert any("activity is required" in reason for reason in reasons)
 
-    conn = sqlite3.connect(app.config["DB_PATH"])
-    try:
-        total = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+    with app.app_context():
+        total = db.session.execute(select(func.count()).select_from(Entry)).scalar()
         assert total == 0
-    finally:
-        conn.close()
 
 
 @pytest.mark.usefixtures("client")
 def test_import_csv_updates_existing_and_creates_new(tmp_path):
-    db_path = Path(app.config["DB_PATH"])
-
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute(
-            """
-            INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at)
-            VALUES (?, ?, ?, ?, 1, ?, ?, NULL)
-            """,
-            ("Run", "Health", 10.0, "Jogging", 1, 7),
+    with app.app_context():
+        activity = Activity(
+            name="Run",
+            category="Health",
+            goal=10.0,
+            description="Jogging",
+            active=True,
+            frequency_per_day=1,
+            frequency_per_week=7,
+            deactivated_at=None,
         )
-        conn.execute(
-            """
-            INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("2024-03-01", "Run", "Jogging", 5.0, "Existing note", "Health", 10.0),
+        db.session.add(activity)
+        db.session.flush()
+        entry = Entry(
+            date="2024-03-01",
+            activity="Run",
+            description="Jogging",
+            value=5.0,
+            note="Existing note",
+            activity_category="Health",
+            activity_goal=10.0,
         )
-        conn.commit()
-    finally:
-        conn.close()
+        db.session.add(entry)
+        db.session.commit()
 
     csv_path = _write_csv(
         tmp_path,
@@ -106,29 +102,24 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
         ],
     )
 
-    summary = import_csv(str(csv_path), db_path=str(db_path))
+    summary = import_csv(str(csv_path))
 
     assert summary["created"] == 1
     assert summary["updated"] == 1
     assert summary["skipped"] == 0
 
-    conn = sqlite3.connect(db_path)
-    try:
-        updated_row = conn.execute(
-            "SELECT value, note FROM entries WHERE date = ? AND activity = ?",
-            ("2024-03-01", "Run"),
-        ).fetchone()
+    with app.app_context():
+        updated_row = db.session.execute(
+            select(Entry.value, Entry.note).where(Entry.date == "2024-03-01", Entry.activity == "Run")
+        ).first()
         assert updated_row is not None
-        assert pytest.approx(updated_row[0]) == 8.0
-        assert updated_row[1] == "Updated note"
+        assert pytest.approx(updated_row.value) == 8.0
+        assert updated_row.note == "Updated note"
 
-        created_row = conn.execute(
-            "SELECT date, activity, activity_category, activity_goal FROM entries WHERE activity = ?",
-            ("Reading",),
-        ).fetchone()
+        created_row = db.session.execute(
+            select(Entry.date, Entry.activity_category, Entry.activity_goal).where(Entry.activity == "Reading")
+        ).first()
         assert created_row is not None
-        assert created_row[0] == "2024-03-02"
-        assert created_row[2] == "Leisure"
-        assert pytest.approx(created_row[3]) == 7.0
-    finally:
-        conn.close()
+        assert created_row.date == "2024-03-02"
+        assert created_row.activity_category == "Leisure"
+        assert pytest.approx(created_row.activity_goal) == 7.0

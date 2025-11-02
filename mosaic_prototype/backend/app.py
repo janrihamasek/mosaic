@@ -3,7 +3,6 @@ import csv
 import io
 import os
 import secrets
-import sqlite3
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -12,7 +11,7 @@ from functools import wraps
 from pathlib import Path
 from threading import Lock, Thread
 from time import time
-from typing import Dict, Iterator, Optional, Tuple, cast
+from typing import Dict, Optional, Tuple, cast
 from urllib.parse import urlparse, urlunparse
 
 import jwt  # type: ignore[import]
@@ -41,17 +40,33 @@ from security import (
     validate_register_payload,
 )
 from extensions import db, migrate
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from db_utils import connection as sa_connection, transactional_connection
 
 app = Flask(__name__)
 CORS(app)
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent / "../database/mosaic.db"
-DB_PATH = os.environ.get("MOSAIC_DB_PATH") or DEFAULT_DB_PATH
-app.config["DB_PATH"] = str(DB_PATH)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{Path(app.config['DB_PATH']).resolve()}"
+
+def _resolve_database_uri() -> str:
+    direct_uri = os.environ.get("DATABASE_URL")
+    if direct_uri:
+        return direct_uri
+
+    user = os.environ.get("POSTGRES_USER")
+    password = os.environ.get("POSTGRES_PASSWORD")
+    database = os.environ.get("POSTGRES_DB")
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = os.environ.get("POSTGRES_PORT", "5432")
+
+    if user and password and database:
+        return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+
+    default_uri = "postgresql+psycopg2://postgres:postgres@localhost:5432/mosaic"
+    return default_uri
+
+
+app.config["SQLALCHEMY_DATABASE_URI"] = _resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["_SCHEMA_READY"] = False
-app.config.setdefault("_ENTRY_METADATA_READY", False)
 app.config.setdefault(
     "RATE_LIMITS",
     {
@@ -262,23 +277,14 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
             """,
             (limit, offset),
         )
-        total_entries = conn.execute("SELECT COUNT(1) FROM entries").fetchone()[0]
-        total_activities = conn.execute("SELECT COUNT(1) FROM activities").fetchone()[0]
-        entries = [dict(row) for row in entries_cursor.fetchall()]
-        activities = [dict(row) for row in activities_cursor.fetchall()]
+        total_entries = conn.execute("SELECT COUNT(1) FROM entries").scalar_one()
+        total_activities = conn.execute("SELECT COUNT(1) FROM activities").scalar_one()
+        entries = [dict(row._mapping) for row in entries_cursor.fetchall()]
+        activities = [dict(row._mapping) for row in activities_cursor.fetchall()]
         return entries, activities, int(total_entries), int(total_activities)
     finally:
         conn.close()
 
-
-def configure_database_path(path: str):
-    absolute = Path(path).resolve()
-    app.config["DB_PATH"] = str(absolute)
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{absolute}"
-    app.config["_SCHEMA_READY"] = False
-
-
-configure_database_path(app.config["DB_PATH"])
 
 default_backup_dir = Path(app.root_path) / "backups"
 app.config.setdefault("BACKUP_DIR", str(default_backup_dir))
@@ -424,178 +430,19 @@ def stream_rtsp(url: str) -> Iterator[bytes]:
                 pass
         if stderr_thread and stderr_thread.is_alive():
             stderr_thread.join(timeout=0.5)
-def ensure_schema(conn):
-    if app.config.get("_SCHEMA_READY"):
-        return
-
-    cursor = conn.execute("PRAGMA table_info(activities)")
-    columns_info = cursor.fetchall()
-    column_names = {row[1] for row in columns_info}
-    goal_info = next((row for row in columns_info if row[1] == "goal"), None)
-
-    goal_type = goal_info[2].upper() if goal_info and goal_info[2] else None
-    has_freq_day = "frequency_per_day" in column_names
-    has_freq_week = "frequency_per_week" in column_names
-
-    if goal_type and goal_type != "REAL":
-        category_select = "IFNULL(category, '')" if "category" in column_names else "''"
-        description_select = "description" if "description" in column_names else "NULL"
-        active_select = "IFNULL(active, 1)" if "active" in column_names else "1"
-        freq_day_select = "frequency_per_day" if has_freq_day else "1"
-        freq_week_select = "frequency_per_week" if has_freq_week else "1"
-        deactivated_select = "deactivated_at" if "deactivated_at" in column_names else "NULL"
-        conn.executescript(
-            f"""
-            ALTER TABLE activities RENAME TO activities_old;
-            CREATE TABLE activities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                category TEXT NOT NULL DEFAULT '',
-                goal REAL NOT NULL DEFAULT 0,
-                description TEXT,
-                active INTEGER NOT NULL DEFAULT 1,
-                frequency_per_day INTEGER NOT NULL DEFAULT 1,
-                frequency_per_week INTEGER NOT NULL DEFAULT 1,
-                deactivated_at TEXT
-            );
-            INSERT INTO activities (id, name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at)
-            SELECT id,
-                   name,
-                   {category_select},
-                   CAST(goal AS REAL),
-                   {description_select},
-                   {active_select},
-                   {freq_day_select},
-                   {freq_week_select},
-                   {deactivated_select}
-            FROM activities_old;
-            DROP TABLE activities_old;
-            """
-        )
-        conn.commit()
-        cursor = conn.execute("PRAGMA table_info(activities)")
-        columns_info = cursor.fetchall()
-        column_names = {row[1] for row in columns_info}
-
-    if "category" not in column_names:
-        conn.execute("ALTER TABLE activities ADD COLUMN category TEXT NOT NULL DEFAULT ''")
-        conn.commit()
-        column_names.add("category")
-    if "goal" not in column_names:
-        conn.execute("ALTER TABLE activities ADD COLUMN goal REAL NOT NULL DEFAULT 0")
-        conn.commit()
-    if "frequency_per_day" not in column_names:
-        conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_day INTEGER NOT NULL DEFAULT 1")
-        conn.commit()
-    if "frequency_per_week" not in column_names:
-        conn.execute("ALTER TABLE activities ADD COLUMN frequency_per_week INTEGER NOT NULL DEFAULT 1")
-        conn.commit()
-    if "deactivated_at" not in column_names:
-        conn.execute("ALTER TABLE activities ADD COLUMN deactivated_at TEXT")
-        conn.commit()
-
-    cursor = conn.execute("PRAGMA table_info(entries)")
-    entry_columns_info = cursor.fetchall()
-    entry_columns = {row[1] for row in entry_columns_info}
-    if "activity_category" not in entry_columns:
-        conn.execute("ALTER TABLE entries ADD COLUMN activity_category TEXT NOT NULL DEFAULT ''")
-        conn.commit()
-    if "activity_goal" not in entry_columns:
-        conn.execute("ALTER TABLE entries ADD COLUMN activity_goal REAL NOT NULL DEFAULT 0")
-        conn.commit()
-
-    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-    if not cursor.fetchone():
-        conn.execute(
-            """
-            CREATE TABLE users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            """
-        )
-        conn.commit()
-
-    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='backup_settings'")
-    if not cursor.fetchone():
-        conn.execute(
-            """
-            CREATE TABLE backup_settings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                enabled INTEGER NOT NULL DEFAULT 0,
-                interval_minutes INTEGER NOT NULL DEFAULT 60,
-                last_run TEXT
-            )
-            """
-        )
-        conn.commit()
-
-    # backfill newly added entry metadata when possible
-    if not app.config.get("_ENTRY_METADATA_READY"):
-        conn.execute(
-            """
-            UPDATE entries
-            SET activity_category = (
-                SELECT category FROM activities WHERE activities.name = entries.activity
-            )
-            WHERE (activity_category IS NULL OR activity_category = '')
-              AND EXISTS (
-                  SELECT 1 FROM activities WHERE activities.name = entries.activity
-              )
-            """
-        )
-        conn.execute(
-            """
-            UPDATE entries
-            SET activity_goal = (
-                SELECT goal FROM activities WHERE activities.name = entries.activity
-            )
-            WHERE (activity_goal IS NULL OR activity_goal = 0)
-              AND EXISTS (
-                  SELECT 1 FROM activities WHERE activities.name = entries.activity
-              )
-            """
-        )
-        conn.commit()
-        app.config["_ENTRY_METADATA_READY"] = True
-
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity ON entries(activity)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity_category ON entries(activity_category)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_category ON activities(category)")
-
-    app.config["_SCHEMA_READY"] = True
-
-
 def get_db_connection():
-    db_path = app.config.get("DB_PATH", str(DB_PATH))
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout = 5000")
-    ensure_schema(conn)
-    return conn
+    return sa_connection(db.engine)
 
 
 @contextmanager
-def db_transaction() -> Iterator[sqlite3.Connection]:
-    conn = get_db_connection()
-    try:
-        conn.execute("BEGIN")
+def db_transaction():
+    with transactional_connection(db.engine) as conn:
         yield conn
-    except Exception:
-        conn.rollback()
-        raise
-    else:
-        conn.commit()
-    finally:
-        conn.close()
 
 
 @app.get("/")
 def home():
-    return jsonify({"message": "Backend běží!", "database": DB_PATH})
+    return jsonify({"message": "Backend běží!", "database": app.config.get("SQLALCHEMY_DATABASE_URI")})
 
 
 @app.post("/register")
@@ -617,7 +464,7 @@ def register():
                 "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
                 (username, password_hash, datetime.now(timezone.utc).isoformat()),
             )
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return error_response("conflict", "Username already exists", 409)
 
     return jsonify({"message": "User registered"}), 201
@@ -998,9 +845,9 @@ def get_entries():
         query += " LIMIT ? OFFSET ?"
         params.extend([pagination["limit"], pagination["offset"]])
         entries = conn.execute(query, params).fetchall()
-        return jsonify([dict(row) for row in entries])
-    except sqlite3.OperationalError as e:
-        return error_response("database_error", str(e), 500)
+        return jsonify([dict(row._mapping) for row in entries])
+    except SQLAlchemyError as exc:
+        return error_response("database_error", str(exc), 500)
     finally:
         conn.close()
 
@@ -1062,8 +909,8 @@ def add_entry():
                     (date, activity, description, float_value, note, activity_category, activity_goal),
                 )
                 response = jsonify({"message": "Záznam uložen"}), 201
-    except sqlite3.OperationalError as e:
-        return error_response("database_error", str(e), 500)
+    except SQLAlchemyError as exc:
+        return error_response("database_error", str(exc), 500)
     else:
         invalidate_cache("today")
         invalidate_cache("stats")
@@ -1085,8 +932,8 @@ def delete_entry(entry_id):
         invalidate_cache("today")
         invalidate_cache("stats")
         return jsonify({"message": "Záznam smazán"}), 200
-    except sqlite3.OperationalError as e:
-        return error_response("database_error", str(e), 500)
+    except SQLAlchemyError as exc:
+        return error_response("database_error", str(exc), 500)
 
 
 @app.get("/activities")
@@ -1106,9 +953,9 @@ def get_activities():
                 "SELECT * FROM activities WHERE active = 1 ORDER BY active DESC, category ASC, name ASC LIMIT ? OFFSET ?",
                 params,
             ).fetchall()
-        return jsonify([dict(r) for r in rows])
-    except sqlite3.OperationalError as e:
-        return error_response("database_error", str(e), 500)
+        return jsonify([dict(r._mapping) for r in rows])
+    except SQLAlchemyError as exc:
+        return error_response("database_error", str(exc), 500)
     finally:
         conn.close()
 
@@ -1141,7 +988,7 @@ def add_activity():
         invalidate_cache("today")
         invalidate_cache("stats")
         return jsonify({"message": "Kategorie přidána"}), 201
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return error_response("conflict", "Kategorie s tímto názvem již existuje", 409)
 
 
@@ -1254,14 +1101,9 @@ def get_progress_stats():
 
     conn = get_db_connection()
     try:
-        try:
-            total_goal_row = conn.execute(
-                "SELECT COALESCE(SUM(avg_goal_per_day), 0) AS total_goal FROM activities WHERE active = 1"
-            ).fetchone()
-        except sqlite3.OperationalError:
-            total_goal_row = conn.execute(
-                "SELECT COALESCE(SUM(goal), 0) AS total_goal FROM activities WHERE active = 1"
-            ).fetchone()
+        total_goal_row = conn.execute(
+            "SELECT COALESCE(SUM(goal), 0) AS total_goal FROM activities WHERE active = 1"
+        ).fetchone()
         total_active_goal = float(total_goal_row["total_goal"] or 0.0)
 
         def compute_ratio(total_value: Optional[float]) -> float:
@@ -1444,7 +1286,7 @@ def get_today():
             LIMIT ? OFFSET ?
         """, (date, date, pagination["limit"], pagination["offset"]))
         rows = rows.fetchall()
-        data = [dict(r) for r in rows]
+        data = [dict(r._mapping) for r in rows]
     finally:
         conn.close()
     cache_set("today", cache_key_parts, data, TODAY_CACHE_TTL)
@@ -1527,7 +1369,7 @@ def import_csv_endpoint():
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             file.save(tmp.name)
             tmp_path = tmp.name
-        summary = run_import_csv(tmp_path, app.config["DB_PATH"])
+        summary = run_import_csv(tmp_path)
     except Exception as exc:  # pragma: no cover - defensive
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)

@@ -55,7 +55,7 @@ class BackupSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     enabled = db.Column(db.Boolean, nullable=False, default=False)
     interval_minutes = db.Column(db.Integer, nullable=False, default=60)
-    last_run = db.Column(db.String(32), nullable=True)
+    last_run = db.Column(db.DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - convenience
         status = "enabled" if self.enabled else "disabled"

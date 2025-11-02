@@ -1,6 +1,6 @@
 # Mosaic
 
-Mosaic is a small full-stack prototype for keeping track of daily activities and their qualitative scores. The project consists of a React front-end, a Flask API, and a SQLite database that stores activities and day-to-day entries.
+Mosaic is a small full-stack prototype for keeping track of daily activities and their qualitative scores. The project consists of a React front-end, a Flask API, and a PostgreSQL database that stores activities and day-to-day entries.
 
 ## Features
 - Activity catalogue with activation/deactivation, monthly goal targeting, and detail overview.
@@ -18,37 +18,50 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
 
 ## Architecture
 - **Frontend**: React 18 with Create React App, component-driven UI, shared inline style system in `frontend/src/styles/common.js`.
-- **Backend**: Flask + SQLite with Pydantic validation, standardized error responses, and explicit transactions in `backend/app.py`.
-- **Database**: SQLite schema managed by migrations via Flask-Migrate (`backend/manage.py`) with historical bootstrap scripts in `database/`.
+- **Backend**: Flask + PostgreSQL with Pydantic validation, standardized error responses, and explicit transactions in `backend/app.py`.
+- **Database**: PostgreSQL schema managed by Flask-Migrate (`backend/manage.py`) with generated revisions in `backend/migrations/`.
 
 ## Getting Started
 
 ### Prerequisites
 - Node.js 18+ and npm.
 - Python 3.10+ with `pip`.
+- PostgreSQL 13+ (local installation or container).
 
-### 1. Prepare the database
+### 1. Configure PostgreSQL
+1. Ensure a PostgreSQL 13+ server is running locally (or expose one via Docker Compose/cloud).
+2. Create a dedicated database and user (example):
+   ```bash
+   createuser --interactive --pwprompt mosaic
+   createdb -O mosaic mosaic
+   ```
+3. Copy the backend environment template and adjust credentials as needed:
+   ```bash
+   cd mosaic_prototype/backend
+   cp .env.example .env
+   ```
+   At minimum set `DATABASE_URL` (or the individual `POSTGRES_*` variables); the backend falls back to
+   `postgresql+psycopg2://postgres:postgres@localhost:5432/mosaic` for local development.
+
+With the virtual environment activated (see the next section), run the initial migration to create tables:
 ```bash
-cd database
-python3 init_db.py
+python -m flask db upgrade
 ```
-This script recreates `database/mosaic.db` from `schema.sql`. Optionally seed historical data:
+You can also seed historical data from CSV once the schema exists:
 ```bash
-cd ../backend
-python3 import_data.py  # reads data_for_mosaic - january.csv
+python import_data.py path/to/activities.csv
 ```
 
 ### Database migrations
-The backend ships with a lightweight migration wrapper in `backend/manage.py` built on Flask-Migrate.
+The backend ships with Flask-Migrate helpers in `backend/manage.py`:
 
 ```bash
 cd backend
-python3 manage.py init       # create migrations/ (run once)
 python3 manage.py migrate -m "describe change"  # autogenerate revision
-python3 manage.py upgrade    # apply to the current database
+python3 manage.py upgrade                      # apply to the current database
 ```
 
-The helper commands run inside the Flask app context so they share configuration (`MOSAIC_DB_PATH`, rate limits, etc.). Generated scripts live under `backend/migrations/versions`.
+Generated scripts live under `backend/migrations/versions`.
 
 ### 2. Run the backend
 ```bash
@@ -59,7 +72,7 @@ pip install -r requirements.txt
 python app.py
 ```
 By default the API listens on `http://127.0.0.1:5000`.
-Set `MOSAIC_DB_PATH` to point the Flask app at a different SQLite file (useful for tests/CI).
+Environment variables are loaded from `.env`; override `DATABASE_URL` to point at another PostgreSQL instance when needed.
 To secure the API, set `MOSAIC_API_KEY=<your-secret>` and include `X-API-Key` on requests. Rate limiting (configurable via `app.config["RATE_LIMITS"]`) guards mutating endpoints by default.
 
 #### Authentication workflow

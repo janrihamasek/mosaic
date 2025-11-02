@@ -1,5 +1,4 @@
 import io
-import sqlite3
 import zipfile
 from pathlib import Path
 
@@ -8,6 +7,9 @@ import pytest
 import app as app_module
 from app import app
 from backup_manager import BackupManager
+from extensions import db
+from models import BackupSettings
+from sqlalchemy import select
 
 
 @pytest.fixture()
@@ -83,16 +85,10 @@ def test_backup_toggle_persistence(client, auth_headers, backup_env):
     assert status["interval_minutes"] == 15
 
     # Reload settings directly from database to ensure persistence
-    conn = sqlite3.connect(app.config["DB_PATH"])
-    try:
-        row = conn.execute(
-            "SELECT enabled, interval_minutes FROM backup_settings ORDER BY id ASC LIMIT 1"
-        ).fetchone()
-        assert row is not None
-        assert row[0] == 1
-        assert row[1] == 15
-    finally:
-        conn.close()
+    with app.app_context():
+        settings = db.session.execute(select(BackupSettings)).scalar_one()
+        assert settings.enabled is True
+        assert settings.interval_minutes == 15
 
     disable_resp = client.post("/backup/toggle", json={"enabled": False}, headers=auth_headers)
     assert disable_resp.status_code == 200

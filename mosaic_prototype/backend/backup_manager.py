@@ -1,11 +1,13 @@
 import csv
 import json
-import sqlite3
 import threading
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+
+from db_utils import connection as sa_connection, transactional_connection
+from extensions import db
 
 
 class BackupManager:
@@ -13,7 +15,6 @@ class BackupManager:
 
     def __init__(self, app):
         self.app = app
-        self.db_path = Path(app.config["DB_PATH"])
         backup_dir_config = app.config.get("BACKUP_DIR")
         if backup_dir_config:
             self.backup_dir = Path(backup_dir_config)
@@ -80,13 +81,23 @@ class BackupManager:
         return backups
 
     def get_status(self) -> Dict[str, object]:
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT enabled, interval_minutes, last_run FROM backup_settings ORDER BY id ASC LIMIT 1"
-            ).fetchone()
+        with self.app.app_context():
+            conn = sa_connection(db.engine)
+            try:
+                row = conn.execute(
+                    "SELECT enabled, interval_minutes, last_run FROM backup_settings ORDER BY id ASC LIMIT 1"
+                ).fetchone()
+            finally:
+                conn.close()
+
         enabled = bool(row["enabled"]) if row else False
         interval = int(row["interval_minutes"]) if row else 60
-        last_run = row["last_run"] if row else None
+        last_run_value = row["last_run"] if row else None
+        if isinstance(last_run_value, datetime):
+            last_run = last_run_value.isoformat()
+        else:
+            last_run = last_run_value
+
         return {
             "enabled": enabled,
             "interval_minutes": interval,
@@ -98,25 +109,27 @@ class BackupManager:
         if interval_minutes is not None:
             interval_minutes = max(int(interval_minutes), 5)
 
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT id, enabled, interval_minutes FROM backup_settings ORDER BY id ASC LIMIT 1"
-            ).fetchone()
-            if not row:
-                conn.execute(
-                    "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
-                    (int(enabled) if enabled is not None else 0, interval_minutes or 60),
-                )
-                conn.commit()
-                return self.get_status()
+        with self.app.app_context():
+            with transactional_connection(db.engine) as conn:
+                row = conn.execute(
+                    "SELECT id, enabled, interval_minutes FROM backup_settings ORDER BY id ASC LIMIT 1"
+                ).fetchone()
+                if not row:
+                    conn.execute(
+                        "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
+                        (
+                            bool(enabled) if enabled is not None else False,
+                            interval_minutes or 60,
+                        ),
+                    )
+                    return self.get_status()
 
-            new_enabled = bool(row["enabled"]) if enabled is None else bool(enabled)
-            new_interval = interval_minutes or int(row["interval_minutes"])
-            conn.execute(
-                "UPDATE backup_settings SET enabled = ?, interval_minutes = ? WHERE id = ?",
-                (1 if new_enabled else 0, new_interval, row["id"]),
-            )
-            conn.commit()
+                new_enabled = bool(row["enabled"]) if enabled is None else bool(enabled)
+                new_interval = interval_minutes or int(row["interval_minutes"])
+                conn.execute(
+                    "UPDATE backup_settings SET enabled = ?, interval_minutes = ? WHERE id = ?",
+                    (new_enabled, new_interval, row["id"]),
+                )
 
         return self.get_status()
 
@@ -130,21 +143,24 @@ class BackupManager:
 
     # ------------------------------------------------------------------ internal helpers
     def _ensure_settings_row(self) -> None:
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS backup_settings (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    enabled INTEGER NOT NULL DEFAULT 0,
-                    interval_minutes INTEGER NOT NULL DEFAULT 60,
-                    last_run TEXT
+        with self.app.app_context():
+            with transactional_connection(db.engine) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS backup_settings (
+                        id SERIAL PRIMARY KEY,
+                        enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                        interval_minutes INTEGER NOT NULL DEFAULT 60,
+                        last_run TIMESTAMPTZ
+                    )
+                    """
                 )
-                """
-            )
-            row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").fetchone()
-            if not row:
-                conn.execute("INSERT INTO backup_settings (enabled, interval_minutes) VALUES (0, 60)")
-                conn.commit()
+                row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").fetchone()
+                if not row:
+                    conn.execute(
+                        "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
+                        (False, 60),
+                    )
 
     def _ensure_scheduler(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -174,15 +190,19 @@ class BackupManager:
                 self._stop_event.wait(max(5, min(remaining, 60)))
 
     def _fetch_database_payload(self) -> Dict[str, List[Dict[str, object]]]:
-        with self._get_connection() as conn:
-            entries = [
-                dict(row)
-                for row in conn.execute("SELECT * FROM entries ORDER BY date ASC, id ASC").fetchall()
-            ]
-            activities = [
-                dict(row)
-                for row in conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
-            ]
+        with self.app.app_context():
+            conn = sa_connection(db.engine)
+            try:
+                entries = [
+                    dict(row._mapping)
+                    for row in conn.execute("SELECT * FROM entries ORDER BY date ASC, id ASC").fetchall()
+                ]
+                activities = [
+                    dict(row._mapping)
+                    for row in conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
+                ]
+            finally:
+                conn.close()
         return {"entries": entries, "activities": activities}
 
     def _write_csv_dump(
@@ -227,17 +247,12 @@ class BackupManager:
                 )
 
     def _update_last_run(self, timestamp: datetime) -> None:
-        with self._get_connection() as conn:
-            conn.execute(
-                "UPDATE backup_settings SET last_run = ?, enabled = enabled",
-                (timestamp.isoformat(),),
-            )
-            conn.commit()
-
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        with self.app.app_context():
+            with transactional_connection(db.engine) as conn:
+                conn.execute(
+                    "UPDATE backup_settings SET last_run = ?, enabled = enabled",
+                    (timestamp,),
+                )
 
     @staticmethod
     def _parse_iso(value: Optional[str]) -> Optional[datetime]:

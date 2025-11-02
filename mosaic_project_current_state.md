@@ -8,7 +8,7 @@ Mosaic is a full-stack activity tracking platform that helps individuals log dai
 ### Technology Stack
 - **Frontend:** React 18 with modern hooks, React Router v6, Redux Toolkit for state management, Axios for HTTP, react-hook-form for form orchestration, and a custom dark-mode design system defined in `styles/common.js`.
 - **Backend:** Flask 3 application organised in `app.py`, supported by Flask-CORS, Flask-SQLAlchemy, Flask-Migrate, PyJWT for authentication, and Pydantic for request validation.
-- **Database:** SQLite (`database/mosaic.db`) accessed via SQLAlchemy models. The project includes schema bootstrap scripts (`database/schema.sql`, `init_db.py`) and indices tuned for reporting queries.
+- **Database:** PostgreSQL accessed via SQLAlchemy models. Schema evolution is handled through Flask-Migrate migrations; legacy SQLite bootstrap scripts remain only for historical reference.
 - **Tooling & Infrastructure:** Jest is not yet configured, but backend tests run via Pytest with coverage reporting. GitHub Actions workflows (`.github/workflows/*.yml`) run backend unit tests, provide coverage artifacts, and build the frontend bundle. The frontend build relies on Create React App, with TypeScript configured in `allowJs` mode and `noEmit` to keep the workspace lint-only.
 
 ### Development History and Direction
@@ -48,7 +48,7 @@ mosaic_prototype/
 │   │   └── utils/          # Animation helpers, utilities
 │   ├── public/             # CRA static assets
 │   └── package.json        # Frontend dependencies and scripts
-├── database/               # SQLite schema + initialised DB
+├── backend/migrations/     # Alembic migrations (Flask-Migrate)
 ├── docs/                   # API documentation, changelog entries
 └── mosaic_project_current_state.md
 ```
@@ -57,7 +57,7 @@ mosaic_prototype/
 - **React ⇄ Flask:** The frontend uses `apiClient.js` (Axios) to call Flask endpoints. The request interceptor injects `Authorization` and CSRF headers via `authService`. Responses feed Redux thunks; errors funnel through a global event (`mosaic-api-error`) consumed by the dashboard to display toasts.
 - **Redux as integration layer:** Redux thunks (e.g., `loadEntries`, `createActivity`) coordinate async calls and trigger secondary effects such as cache invalidations (by refetch). Components subscribe via selectors to minimise re-rendering.
 - **Persistent state:** Auth tokens and expiry metadata live in localStorage through `authService`. Redux initialises slices by hydrating persistent auth and filter preferences (e.g., `entries.filters`).
-- **Database access:** Flask routes use SQLAlchemy for migrations-plus-ORM access and raw `sqlite3` for bulk reads with manual caching. Transactions are handled by `db_transaction()` context managers to ensure atomicity.
+- **Database access:** Flask routes use SQLAlchemy with PostgreSQL via lightweight wrappers in `db_utils.py`. The helper preserves the existing positional-parameter SQL while routing through the SQLAlchemy engine; `db_transaction()` manages commit/rollback boundaries.
 
 ### Redux Store Structure
 - **`authSlice`**: Tracks authentication status, tokens, and async lifecycle states (`login`, `register`, `logout`). Thunks wrap `authService` calls and propagate friendly error messages.
@@ -76,10 +76,10 @@ mosaic_prototype/
 
 ### Database Schema
 - **`activities`**: `id`, `name`, `category`, `goal`, `description`, `active`, `frequency_per_day`, `frequency_per_week`, `deactivated_at`. Indices on `category`.
-- **`entries`**: `id`, `date`, `activity`, `description`, `value`, `note`, denormalised `activity_category` and `activity_goal` plus a unique `(date, activity)` constraint. Indices across `date`, `activity`, and `activity_category`.
+- **`entries`**: `id`, `date`, `activity`, `description`, `value`, `note`, denormalised `activity_category` and `activity_goal`. Indices across `date`, `activity`, and `activity_category`.
 - **`users`**: `id`, `username`, `password_hash`, `created_at`.
 
-Schema management: `ensure_schema` in `app.py` inspects `PRAGMA table_info` to add missing columns and migrates data for new fields. Flask-Migrate is initialised for future migrations.
+Schema management: database changes are captured via Flask-Migrate/Alembic migrations in `backend/migrations`; runtime schema patching logic has been removed in favour of explicit upgrades.
 
 ### API Surface
 - **Authentication:** `POST /register`, `POST /login` yield JWT + CSRF tokens. Tokens include per-session CSRF embedded in payload; CSRF enforcement occurs on all unsafe methods.
