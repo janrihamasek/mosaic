@@ -2,8 +2,11 @@ import csv
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
-from typing import Iterator, Optional
+from typing import Dict, Iterator, Optional, Set, Tuple
+
+from pydantic import ValidationError
+
+from schemas import CSVImportRow
 
 # Cesta k databázi (shodná s app.py)
 DB_PATH = os.path.join(os.path.dirname(__file__), "../database/mosaic.db")
@@ -163,48 +166,62 @@ def import_csv(csv_path, db_path: Optional[str] = None):
     created = 0
     updated = 0
     skipped = 0
+    details: list[Dict[str, object]] = []
+    seen_pairs: Set[Tuple[str, str]] = set()
     with db_transaction(db_path) as conn:
         with open(csv_path, newline='', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
-            for row in reader:
-                raw_date = row.get("date")
-                activity = row.get("activity")
-                value_raw = row.get("value", 0)
-                try:
-                    value = float(value_raw)
-                except (TypeError, ValueError):
-                    print(f"⚠️ Neplatná hodnota value '{value_raw}' – řádek přeskočen")
-                    skipped += 1
-                    continue
-                note = (row.get("note", "") or "").strip()
-                desc = (row.get("description", "") or "").strip()
-                category = (row.get("category", "") or "").strip()
-                goal_raw = (row.get("goal", "0") or "0").strip()
-                try:
-                    goal = float(goal_raw or "0")
-                except (TypeError, ValueError):
-                    print(f"⚠️ Neplatná hodnota goal '{goal_raw}' – řádek přeskočen")
-                    skipped += 1
-                    continue
-                activity = (activity or "").strip()
+            if reader.fieldnames is None:
+                raise ValueError("CSV file is missing a header row")
 
-                if not raw_date or not activity:
-                    print(f"⚠️ Přeskočeno – chybí date nebo activity: {row}")
-                    skipped += 1
+            for index, row in enumerate(reader, start=2):
+                if not row or not any((value or "").strip() for value in row.values()):
+                    # Ignore completely empty lines without affecting counts.
                     continue
 
-                date = raw_date.strip()
                 try:
-                    if "/" in date:
-                        date = datetime.strptime(date, "%d/%m/%Y").strftime("%Y-%m-%d")
-                    else:
-                        datetime.strptime(date, "%Y-%m-%d")
-                except ValueError:
-                    print(f"⚠️ Neplatné datum: {raw_date}")
+                    parsed = CSVImportRow.model_validate(row)
+                except ValidationError as exc:
+                    message = exc.errors()[0].get("msg", "Invalid row")
+                    print(f"⚠️ Přeskočeno – nevalidní řádek {index}: {message}")
                     skipped += 1
+                    details.append(
+                        {
+                            "row": index,
+                            "status": "skipped",
+                            "reason": message,
+                            "raw": row,
+                        }
+                    )
                     continue
 
-                ensure_activity_exists(conn, activity, category, desc, goal)
+                date = parsed.date
+                activity = parsed.activity
+                key = (date, activity.lower())
+                if key in seen_pairs:
+                    print(f"⚠️ Přeskočeno – duplicitní řádek {index}: {date} | {activity}")
+                    skipped += 1
+                    details.append(
+                        {
+                            "row": index,
+                            "date": date,
+                            "activity": activity,
+                            "status": "skipped",
+                            "reason": "duplicate_in_file",
+                        }
+                    )
+                    continue
+                seen_pairs.add(key)
+
+                ensure_activity_exists(
+                    conn,
+                    activity,
+                    parsed.category,
+                    parsed.description,
+                    parsed.goal,
+                    parsed.frequency_per_day,
+                    parsed.frequency_per_week,
+                )
 
                 cur = conn.execute(
                     """
@@ -216,7 +233,7 @@ def import_csv(csv_path, db_path: Optional[str] = None):
                         activity_goal = ?
                     WHERE date = ? AND activity = ?
                     """,
-                    (value, note, desc, category, goal, date, activity)
+                    (parsed.value, parsed.note, parsed.description, parsed.category, parsed.goal, date, activity)
                 )
                 if cur.rowcount == 0:
                     conn.execute(
@@ -224,14 +241,30 @@ def import_csv(csv_path, db_path: Optional[str] = None):
                         INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (date, activity, desc, value, note, category, goal)
+                        (date, activity, parsed.description, parsed.value, parsed.note, parsed.category, parsed.goal)
                     )
-                    print(f"🆕 Nový záznam: {date} | {activity} | {value} | {note}")
+                    print(f"🆕 Nový záznam: {date} | {activity} | {parsed.value} | {parsed.note}")
                     created += 1
+                    details.append(
+                        {
+                            "row": index,
+                            "date": date,
+                            "activity": activity,
+                            "status": "created",
+                        }
+                    )
                 else:
                     print(f"🔄 Aktualizováno: {date} | {activity}")
                     updated += 1
-    summary = {"created": created, "updated": updated, "skipped": skipped}
+                    details.append(
+                        {
+                            "row": index,
+                            "date": date,
+                            "activity": activity,
+                            "status": "updated",
+                        }
+                    )
+    summary = {"created": created, "updated": updated, "skipped": skipped, "details": details}
     print(f"🎯 Import dokončen. Vytvořeno: {created}, aktualizováno: {updated}, přeskočeno: {skipped}")
     return summary
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from werkzeug.datastructures import FileStorage
 
 
@@ -216,6 +216,107 @@ class CSVImportPayload(BaseModel):
         if not getattr(value, "filename", None):
             raise ValueError("Missing CSV file")
         return value
+
+
+class CSVImportRow(BaseModel):
+    date: str
+    activity: str
+    value: float = 0.0
+    note: str = ""
+    description: str = ""
+    category: str = ""
+    goal: float = 0.0
+    frequency_per_day: Optional[int] = None
+    frequency_per_week: Optional[int] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def normalize_date(cls, value):
+        if value is None:
+            raise ValueError("date is required")
+        date_str = str(value).strip()
+        if not date_str:
+            raise ValueError("date is required")
+        try:
+            if "/" in date_str:
+                parsed = datetime.strptime(date_str, "%d/%m/%Y")
+            else:
+                parsed = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("date must be in YYYY-MM-DD format")
+        return parsed.strftime("%Y-%m-%d")
+
+    @field_validator("activity", mode="before")
+    @classmethod
+    def normalize_activity(cls, value):
+        if value is None:
+            raise ValueError("activity is required")
+        activity = str(value).strip()
+        if not activity:
+            raise ValueError("activity is required")
+        if len(activity) > 120:
+            raise ValueError("activity must be at most 120 characters")
+        return activity
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def parse_value(cls, value):
+        if value in (None, ""):
+            return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise ValueError("value must be a number")
+
+    @field_validator("goal", mode="before")
+    @classmethod
+    def parse_goal(cls, value):
+        if value in (None, ""):
+            return 0.0
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError("goal must be a number")
+        if number < 0:
+            raise ValueError("goal must be non-negative")
+        return number
+
+    @field_validator("note", "description", "category", mode="before")
+    @classmethod
+    def normalize_text(cls, value):
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("note")
+    @classmethod
+    def ensure_note_length(cls, value: str) -> str:
+        if len(value) > 100:
+            raise ValueError("note must be at most 100 characters")
+        return value
+
+    @field_validator("frequency_per_day", "frequency_per_week", mode="before")
+    @classmethod
+    def parse_frequency(cls, value, info: ValidationInfo):
+        if value in (None, ""):
+            return None
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{info.field_name} must be an integer")
+        if number < 0:
+            raise ValueError(f"{info.field_name} must be non-negative")
+        return number
+
+    @model_validator(mode="after")
+    def set_frequency_defaults(self):
+        if self.frequency_per_day is None:
+            self.frequency_per_day = 1
+        if self.frequency_per_week is None:
+            self.frequency_per_week = 1
+        return self
 
 
 class FinalizeDayPayload(BaseModel):
