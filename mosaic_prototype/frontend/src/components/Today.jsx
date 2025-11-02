@@ -28,7 +28,7 @@ export default function Today({ onNotify }) {
   const dirtyCount = Object.keys(dirty || {}).length;
   const dirtyRef = useRef(dirty || {});
   const debounceRef = useRef(null);
-  const SAVE_DEBOUNCE_MS = 5000;
+  const NOTE_SAVE_DELAY_MS = 5000;
 
   useEffect(() => {
     dirtyRef.current = dirty || {};
@@ -79,34 +79,78 @@ export default function Today({ onNotify }) {
     }
   }, [autoSaving, dispatch, onNotify]);
 
-  const scheduleAutoSave = useCallback(() => {
+  const scheduleNoteAutoSave = useCallback(() => {
     if (autoSaving) return;
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
     debounceRef.current = setTimeout(() => {
       flushDirtyRows();
-    }, SAVE_DEBOUNCE_MS);
+    }, NOTE_SAVE_DELAY_MS);
   }, [autoSaving, flushDirtyRows]);
 
   const handleValueChange = (row, newValue) => {
+    const numericValue = Number(newValue) || 0;
+    if (numericValue === (Number(row.value) || 0)) {
+      return;
+    }
+    dirtyRef.current = {
+      ...dirtyRef.current,
+      [row.name]: {
+        ...row,
+        value: numericValue,
+      },
+    };
     dispatch(
       updateTodayRow({
         name: row.name,
-        changes: { value: Number(newValue) || 0 },
+        changes: { value: numericValue },
       })
     );
-    scheduleAutoSave();
+    void flushDirtyRows();
   };
 
   const handleNoteChange = (row, newNote) => {
+    const limitedNote = newNote.slice(0, 100);
+    dirtyRef.current = {
+      ...dirtyRef.current,
+      [row.name]: {
+        ...row,
+        note: limitedNote,
+      },
+    };
     dispatch(
       updateTodayRow({
         name: row.name,
-        changes: { note: newNote.slice(0, 100) },
+        changes: { note: limitedNote },
       })
     );
-    scheduleAutoSave();
+    scheduleNoteAutoSave();
+  };
+
+  const handleNoteKeyDown = (row, event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const trimmedNote = event.currentTarget.value.slice(0, 100);
+    const pendingRow = dirtyRef.current?.[row.name];
+    const latestNote = pendingRow ? pendingRow.note : row.note;
+    if (!pendingRow && trimmedNote === latestNote) {
+      return;
+    }
+    dirtyRef.current = {
+      ...dirtyRef.current,
+      [row.name]: {
+        ...row,
+        note: trimmedNote,
+      },
+    };
+    dispatch(
+      updateTodayRow({
+        name: row.name,
+        changes: { note: trimmedNote },
+      })
+    );
+    void flushDirtyRows();
   };
 
   const todayString = useMemo(() => toLocalDateString(new Date()), []);
@@ -241,8 +285,11 @@ export default function Today({ onNotify }) {
                     onChange={(e) => {
                       handleNoteChange(r, e.target.value);
                     }}
+                    onKeyDown={(e) => {
+                      handleNoteKeyDown(r, e);
+                    }}
                     style={{ ...styles.input, ...styles.inputMobile }}
-                    placeholder="Note (max 100 chars)"
+                    placeholder="Note (max 100 chars). For save Note press Enter"
                     disabled={autoSaving}
                   />
                 </label>
@@ -299,8 +346,11 @@ export default function Today({ onNotify }) {
                   onChange={(e) => {
                     handleNoteChange(r, e.target.value);
                   }}
+                  onKeyDown={(e) => {
+                    handleNoteKeyDown(r, e);
+                  }}
                   style={{ ...styles.input, width: "100%" }}
-                  placeholder="Note (max 100 chars)"
+                  placeholder="Note (max 100 chars). For save Note press Enter"
                   disabled={autoSaving}
                 />
               </td>
