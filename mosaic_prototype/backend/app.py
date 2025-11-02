@@ -11,7 +11,7 @@ from functools import wraps
 from pathlib import Path
 from threading import Lock, Thread
 from time import time
-from typing import Dict, Optional, Tuple, cast
+from typing import Dict, Iterator, Optional, Tuple, cast
 from urllib.parse import urlparse, urlunparse
 
 import jwt  # type: ignore[import]
@@ -279,8 +279,8 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
         )
         total_entries = conn.execute("SELECT COUNT(1) FROM entries").scalar_one()
         total_activities = conn.execute("SELECT COUNT(1) FROM activities").scalar_one()
-        entries = [dict(row._mapping) for row in entries_cursor.fetchall()]
-        activities = [dict(row._mapping) for row in activities_cursor.fetchall()]
+        entries = [dict(row) for row in entries_cursor.fetchall()]
+        activities = [dict(row) for row in activities_cursor.fetchall()]
         return entries, activities, int(total_entries), int(total_activities)
     finally:
         conn.close()
@@ -844,8 +844,9 @@ def get_entries():
         pagination = parse_pagination()
         query += " LIMIT ? OFFSET ?"
         params.extend([pagination["limit"], pagination["offset"]])
-        entries = conn.execute(query, params).fetchall()
-        return jsonify([dict(row._mapping) for row in entries])
+        result = conn.execute(query, params)
+        entries = [dict(row) for row in result.fetchall()]
+        return jsonify(entries)
     except SQLAlchemyError as exc:
         return error_response("database_error", str(exc), 500)
     finally:
@@ -868,11 +869,10 @@ def add_entry():
 
     try:
         with db_transaction() as conn:
-            cur = conn.execute(
+            activity_row = conn.execute(
                 "SELECT category, goal, description FROM activities WHERE name = ?",
                 (activity,),
-            )
-            activity_row = cur.fetchone()
+            ).fetchone()
             description = activity_row["description"] if activity_row else ""
             activity_category = activity_row["category"] if activity_row else ""
             activity_goal = activity_row["goal"] if activity_row else 0
@@ -950,10 +950,16 @@ def get_activities():
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM activities WHERE active = 1 ORDER BY active DESC, category ASC, name ASC LIMIT ? OFFSET ?",
+                "SELECT * FROM activities WHERE active = TRUE ORDER BY active DESC, category ASC, name ASC LIMIT ? OFFSET ?",
                 params,
             ).fetchall()
-        return jsonify([dict(r._mapping) for r in rows])
+        payload = []
+        for row in rows:
+            item = dict(row)
+            if "active" in item:
+                item["active"] = 1 if bool(item["active"]) else 0
+            payload.append(item)
+        return jsonify(payload)
     except SQLAlchemyError as exc:
         return error_response("database_error", str(exc), 500)
     finally:
@@ -980,16 +986,22 @@ def add_activity():
         with db_transaction() as conn:
             conn.execute(
                 """
-                INSERT INTO activities (name, category, goal, description, frequency_per_day, frequency_per_week, deactivated_at)
-                VALUES (?, ?, ?, ?, ?, ?, NULL)
+                INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at)
+                VALUES (?, ?, ?, ?, TRUE, ?, ?, NULL)
                 """,
                 (name, category, goal, description, frequency_per_day, frequency_per_week)
             )
         invalidate_cache("today")
         invalidate_cache("stats")
         return jsonify({"message": "Kategorie přidána"}), 201
-    except IntegrityError:
-        return error_response("conflict", "Kategorie s tímto názvem již existuje", 409)
+    except IntegrityError as exc:
+        app.logger.exception("Failed to add activity", exc_info=exc)
+        return error_response(
+            "conflict",
+            "Kategorie s tímto názvem již existuje",
+            409,
+            details={"reason": str(getattr(exc.orig, "diag", "")) or str(exc.orig) if getattr(exc, "orig", None) else str(exc)},
+        )
 
 
 @app.put("/activities/<int:activity_id>")
@@ -1054,7 +1066,7 @@ def deactivate_activity(activity_id):
 
     with db_transaction() as conn:
         cur = conn.execute(
-            "UPDATE activities SET active = 0, deactivated_at = ? WHERE id = ?",
+            "UPDATE activities SET active = FALSE, deactivated_at = ? WHERE id = ?",
             (deactivation_date, activity_id),
         )
         if cur.rowcount == 0:
@@ -1071,8 +1083,8 @@ def activate_activity(activity_id):
     if limited:
         return limited
 
-    with db_transaction() as conn:
-        cur = conn.execute("UPDATE activities SET active = 1, deactivated_at = NULL WHERE id = ?", (activity_id,))
+        with db_transaction() as conn:
+            cur = conn.execute("UPDATE activities SET active = TRUE, deactivated_at = NULL WHERE id = ?", (activity_id,))
         if cur.rowcount == 0:
             return error_response("not_found", "Aktivita nenalezena", 404)
     invalidate_cache("today")
@@ -1102,7 +1114,7 @@ def get_progress_stats():
     conn = get_db_connection()
     try:
         total_goal_row = conn.execute(
-            "SELECT COALESCE(SUM(goal), 0) AS total_goal FROM activities WHERE active = 1"
+            "SELECT COALESCE(SUM(goal), 0) AS total_goal FROM activities WHERE active = TRUE"
         ).fetchone()
         total_active_goal = float(total_goal_row["total_goal"] or 0.0)
 
@@ -1154,7 +1166,7 @@ def get_progress_stats():
             FROM entries
             WHERE date BETWEEN ? AND ?
             GROUP BY category
-            ORDER BY entry_count DESC, category COLLATE NOCASE ASC
+            ORDER BY entry_count DESC, LOWER(COALESCE(NULLIF(activity_category, ''), 'Other')) ASC
         """,
             (window_30_start, today_str),
         ).fetchall()
@@ -1222,7 +1234,7 @@ def get_progress_stats():
             FROM entries
             WHERE date BETWEEN ? AND ?
             GROUP BY activity
-            ORDER BY active_days DESC, name COLLATE NOCASE ASC
+            ORDER BY active_days DESC, LOWER(activity) ASC
             LIMIT 3
         """,
             (window_30_start, today_str),
@@ -1280,13 +1292,18 @@ def get_today():
             FROM activities a
             LEFT JOIN entries e
               ON e.activity = a.name AND e.date = ?
-            WHERE a.active = 1
+            WHERE a.active = TRUE
                OR (a.deactivated_at IS NOT NULL AND ? < a.deactivated_at)
             ORDER BY a.name ASC
             LIMIT ? OFFSET ?
         """, (date, date, pagination["limit"], pagination["offset"]))
         rows = rows.fetchall()
-        data = [dict(r._mapping) for r in rows]
+        data = []
+        for r in rows:
+            item = dict(r)
+            if "active" in item:
+                item["active"] = 1 if bool(item["active"]) else 0
+            data.append(item)
     finally:
         conn.close()
     cache_set("today", cache_key_parts, data, TODAY_CACHE_TTL)
@@ -1304,7 +1321,7 @@ def delete_activity(activity_id):
         row = conn.execute("SELECT active FROM activities WHERE id = ?", (activity_id,)).fetchone()
         if not row:
             return error_response("not_found", "Aktivita nenalezena", 404)
-        if row["active"] == 1:
+        if bool(row["active"]):
             return error_response("invalid_state", "Aktivitu nelze smazat, nejprve ji deaktivujte", 400)
 
         conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
@@ -1329,7 +1346,7 @@ def finalize_day():
             """
             SELECT name, description, category, goal
             FROM activities
-            WHERE active = 1
+            WHERE active = TRUE
                OR (deactivated_at IS NOT NULL AND ? < deactivated_at)
             """,
             (date,),

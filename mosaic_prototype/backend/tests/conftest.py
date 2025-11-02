@@ -4,6 +4,7 @@ import pytest
 
 from app import app
 from extensions import db
+from sqlalchemy import text
 from security import rate_limiter
 
 
@@ -25,11 +26,15 @@ def client():
 
     try:
         with app.app_context():
+            db.session.remove()
             db.engine.dispose()
             connection = db.engine.connect()
             connection.close()
-            db.drop_all()
+            db.session.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            db.session.execute(text("CREATE SCHEMA public"))
+            db.session.commit()
             db.create_all()
+            db.session.commit()
     except Exception as exc:  # pragma: no cover - skip if database unavailable
         pytest.skip(f"PostgreSQL database not available: {exc}")
 
@@ -40,3 +45,7 @@ def client():
 
     with app.app_context():
         db.session.remove()
+        db.session.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        db.session.execute(text("CREATE SCHEMA public"))
+        db.session.commit()
+        db.engine.dispose()

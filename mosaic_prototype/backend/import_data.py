@@ -1,6 +1,8 @@
 import csv
 from typing import Dict, Set, Tuple
 
+from flask import has_app_context
+
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -87,7 +89,7 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity) -> str:
     return "updated"
 
 
-def import_csv(csv_path: str, *, commit: bool = True) -> Dict[str, object]:
+def _import_csv_impl(csv_path: str, *, commit: bool = True) -> Dict[str, object]:
     created = 0
     updated = 0
     skipped = 0
@@ -138,6 +140,8 @@ def import_csv(csv_path: str, *, commit: bool = True) -> Dict[str, object]:
 
                 activity = _ensure_activity(parsed)
                 status = _upsert_entry(parsed, activity)
+                if status == "created":
+                    _upsert_entry(parsed, activity)
 
                 if status == "created":
                     created += 1
@@ -159,8 +163,17 @@ def import_csv(csv_path: str, *, commit: bool = True) -> Dict[str, object]:
         session.rollback()
         raise
 
-    summary = {"created": created, "updated": updated, "skipped": skipped, "details": details}
-    return summary
+    return {"created": created, "updated": updated, "skipped": skipped, "details": details}
+
+
+def import_csv(csv_path: str, *, commit: bool = True) -> Dict[str, object]:
+    if has_app_context():
+        return _import_csv_impl(csv_path, commit=commit)
+
+    from app import app  # type: ignore circular import
+
+    with app.app_context():
+        return _import_csv_impl(csv_path, commit=commit)
 
 
 __all__ = ["import_csv"]
