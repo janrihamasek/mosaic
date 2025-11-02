@@ -92,6 +92,20 @@ def ensure_schema(conn):
         )
         conn.commit()
 
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='backup_settings'")
+    if not cursor.fetchone():
+        conn.execute(
+            """
+            CREATE TABLE backup_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                interval_minutes INTEGER NOT NULL DEFAULT 60,
+                last_run TEXT
+            )
+            """
+        )
+        conn.commit()
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity ON entries(activity)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_activity_category ON entries(activity_category)")

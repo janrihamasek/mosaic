@@ -149,5 +149,30 @@ export async function downloadJsonExport(options = {}) {
   return { blob: response.data, filename };
 }
 
+// --- BACKUPS ---
+export async function fetchBackupStatus() {
+  const response = await apiClient.get('/backup/status');
+  return response.data;
+}
+
+export async function runBackup() {
+  const response = await apiClient.post('/backup/run');
+  return response.data;
+}
+
+export async function toggleBackupSettings(payload = {}) {
+  const response = await apiClient.post('/backup/toggle', payload);
+  return response.data;
+}
+
+export async function downloadBackupFile(filename) {
+  const response = await apiClient.get(`/backup/download/${encodeURIComponent(filename)}`, {
+    responseType: 'blob',
+  });
+  const fallback = filename || 'mosaic-backup.zip';
+  const resolvedName = extractFilename(response.headers?.['content-disposition'], fallback);
+  return { blob: response.data, filename: resolvedName };
+}
+
 export const getStreamProxyUrl = (url, username, password) =>
   `${API_BASE}/api/stream-proxy?url=${encodeURIComponent(url)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;

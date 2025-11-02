@@ -1,0 +1,249 @@
+import csv
+import json
+import sqlite3
+import threading
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional
+
+
+class BackupManager:
+    """Lightweight backup scheduler that creates JSON/CSV dumps of the Mosaic database."""
+
+    def __init__(self, app):
+        self.app = app
+        self.db_path = Path(app.config["DB_PATH"])
+        backup_dir_config = app.config.get("BACKUP_DIR")
+        if backup_dir_config:
+            self.backup_dir = Path(backup_dir_config)
+        else:
+            self.backup_dir = Path(app.root_path) / "backups"
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._ensure_settings_row()
+        self._ensure_scheduler()
+
+    # ------------------------------------------------------------------ public API
+    def create_backup(self, *, initiated_by: str = "manual") -> Dict[str, object]:
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            timestamp = now.strftime("%Y%m%d-%H%M%S")
+            payload = self._fetch_database_payload()
+
+            json_path = self.backup_dir / f"backup-{timestamp}.json"
+            csv_path = self.backup_dir / f"backup-{timestamp}.csv"
+            zip_path = self.backup_dir / f"backup-{timestamp}.zip"
+
+            with json_path.open("w", encoding="utf-8") as fh:
+                json.dump(
+                    {
+                        "generated_at": now.isoformat(),
+                        "initiated_by": initiated_by,
+                        "entries": payload["entries"],
+                        "activities": payload["activities"],
+                    },
+                    fh,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            self._write_csv_dump(csv_path, payload["entries"], payload["activities"])
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.write(json_path, arcname=json_path.name)
+                archive.write(csv_path, arcname=csv_path.name)
+
+            self._update_last_run(now)
+
+            return {
+                "timestamp": timestamp,
+                "json": json_path.name,
+                "csv": csv_path.name,
+                "zip": zip_path.name,
+                "generated_at": now.isoformat(),
+            }
+
+    def list_backups(self) -> List[Dict[str, object]]:
+        backups: List[Dict[str, object]] = []
+        for path in sorted(self.backup_dir.glob("backup-*.zip"), reverse=True):
+            stats = path.stat()
+            backups.append(
+                {
+                    "filename": path.name,
+                    "size_bytes": stats.st_size,
+                    "created_at": datetime.fromtimestamp(stats.st_mtime, timezone.utc).isoformat(),
+                }
+            )
+        return backups
+
+    def get_status(self) -> Dict[str, object]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT enabled, interval_minutes, last_run FROM backup_settings ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+        enabled = bool(row["enabled"]) if row else False
+        interval = int(row["interval_minutes"]) if row else 60
+        last_run = row["last_run"] if row else None
+        return {
+            "enabled": enabled,
+            "interval_minutes": interval,
+            "last_run": last_run,
+            "backups": self.list_backups(),
+        }
+
+    def toggle(self, enabled: Optional[bool] = None, interval_minutes: Optional[int] = None) -> Dict[str, object]:
+        if interval_minutes is not None:
+            interval_minutes = max(int(interval_minutes), 5)
+
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, enabled, interval_minutes FROM backup_settings ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+            if not row:
+                conn.execute(
+                    "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
+                    (int(enabled) if enabled is not None else 0, interval_minutes or 60),
+                )
+                conn.commit()
+                return self.get_status()
+
+            new_enabled = bool(row["enabled"]) if enabled is None else bool(enabled)
+            new_interval = interval_minutes or int(row["interval_minutes"])
+            conn.execute(
+                "UPDATE backup_settings SET enabled = ?, interval_minutes = ? WHERE id = ?",
+                (1 if new_enabled else 0, new_interval, row["id"]),
+            )
+            conn.commit()
+
+        return self.get_status()
+
+    def get_backup_path(self, filename: str) -> Path:
+        if "/" in filename or "\\" in filename or not filename.startswith("backup-"):
+            raise ValueError("Invalid backup filename")
+        path = self.backup_dir / filename
+        if not path.exists():
+            raise FileNotFoundError(f"Backup {filename} not found")
+        return path
+
+    # ------------------------------------------------------------------ internal helpers
+    def _ensure_settings_row(self) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS backup_settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    interval_minutes INTEGER NOT NULL DEFAULT 60,
+                    last_run TEXT
+                )
+                """
+            )
+            row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").fetchone()
+            if not row:
+                conn.execute("INSERT INTO backup_settings (enabled, interval_minutes) VALUES (0, 60)")
+                conn.commit()
+
+    def _ensure_scheduler(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._scheduler_loop, name="backup-scheduler", daemon=True)
+        self._thread.start()
+
+    def _scheduler_loop(self) -> None:
+        while not self._stop_event.is_set():
+            status = self.get_status()
+            if not status["enabled"]:
+                self._stop_event.wait(30)
+                continue
+
+            interval = max(int(status["interval_minutes"]), 5)
+            last_run = self._parse_iso(status.get("last_run"))
+            now = datetime.now(timezone.utc)
+
+            if last_run is None or (now - last_run).total_seconds() >= interval * 60:
+                try:
+                    self.create_backup(initiated_by="scheduler")
+                except Exception as exc:  # pragma: no cover - logged by Flask later
+                    self.app.logger.exception("Backup scheduler failed: %s", exc)
+                self._stop_event.wait(5)
+            else:
+                remaining = (interval * 60) - (now - last_run).total_seconds()
+                self._stop_event.wait(max(5, min(remaining, 60)))
+
+    def _fetch_database_payload(self) -> Dict[str, List[Dict[str, object]]]:
+        with self._get_connection() as conn:
+            entries = [
+                dict(row)
+                for row in conn.execute("SELECT * FROM entries ORDER BY date ASC, id ASC").fetchall()
+            ]
+            activities = [
+                dict(row)
+                for row in conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
+            ]
+        return {"entries": entries, "activities": activities}
+
+    def _write_csv_dump(
+        self,
+        csv_path: Path,
+        entries: List[Dict[str, object]],
+        activities: List[Dict[str, object]],
+    ) -> None:
+        with csv_path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["dataset", "id", "date", "activity", "value", "note", "category", "goal"])
+            for row in entries:
+                writer.writerow(
+                    [
+                        "entries",
+                        row.get("id"),
+                        row.get("date"),
+                        row.get("activity"),
+                        row.get("value"),
+                        row.get("note"),
+                        row.get("activity_category"),
+                        row.get("activity_goal"),
+                    ]
+                )
+            writer.writerow([])
+            writer.writerow(
+                ["dataset", "id", "name", "category", "goal", "description", "active", "frequency_per_day", "frequency_per_week"]
+            )
+            for row in activities:
+                writer.writerow(
+                    [
+                        "activities",
+                        row.get("id"),
+                        row.get("name"),
+                        row.get("category"),
+                        row.get("goal"),
+                        row.get("description"),
+                        row.get("active"),
+                        row.get("frequency_per_day"),
+                        row.get("frequency_per_week"),
+                    ]
+                )
+
+    def _update_last_run(self, timestamp: datetime) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE backup_settings SET last_run = ?, enabled = enabled",
+                (timestamp.isoformat(),),
+            )
+            conn.commit()
+
+    def _get_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @staticmethod
+    def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None

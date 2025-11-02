@@ -16,13 +16,14 @@ from typing import Dict, Iterator, Optional, Tuple, cast
 from urllib.parse import urlparse, urlunparse
 
 import jwt  # type: ignore[import]
-from flask import Flask, Response, jsonify, request, g, stream_with_context
+from flask import Flask, Response, jsonify, request, g, stream_with_context, send_file
 from flask_cors import CORS
 from werkzeug.datastructures import FileStorage
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+from backup_manager import BackupManager
 from import_data import import_csv as run_import_csv
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from security import (
@@ -279,6 +280,10 @@ def configure_database_path(path: str):
 
 configure_database_path(app.config["DB_PATH"])
 
+default_backup_dir = Path(app.root_path) / "backups"
+app.config.setdefault("BACKUP_DIR", str(default_backup_dir))
+
+backup_manager = BackupManager(app)
 
 def _normalize_rtsp_url(raw_url: str) -> str:
     parsed = urlparse(raw_url)
@@ -508,6 +513,20 @@ def ensure_schema(conn):
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.commit()
+
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='backup_settings'")
+    if not cursor.fetchone():
+        conn.execute(
+            """
+            CREATE TABLE backup_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                interval_minutes INTEGER NOT NULL DEFAULT 60,
+                last_run TEXT
             )
             """
         )
@@ -747,6 +766,66 @@ def stream_proxy():
 def handle_unexpected_exception(exc: Exception):
     app.logger.exception("Unhandled exception", exc_info=exc)
     return error_response("internal_error", "An unexpected error occurred", 500)
+
+
+@app.get("/backup/status")
+@jwt_required()
+def backup_status():
+    try:
+        status = backup_manager.get_status()
+    except Exception as exc:
+        app.logger.exception("Failed to fetch backup status", exc_info=exc)
+        return error_response("backup_error", "Unable to fetch backup status", 500)
+    return jsonify(status)
+
+
+@app.post("/backup/run")
+@jwt_required()
+def backup_run():
+    try:
+        result = backup_manager.create_backup(initiated_by="api")
+    except Exception as exc:
+        app.logger.exception("Manual backup run failed", exc_info=exc)
+        return error_response("backup_error", "Failed to create backup", 500)
+    return jsonify({"message": "Backup completed", "backup": result})
+
+
+@app.post("/backup/toggle")
+@jwt_required()
+def backup_toggle():
+    payload = request.get_json(silent=True) or {}
+    enabled = payload.get("enabled")
+    interval = payload.get("interval_minutes")
+
+    if enabled is not None and not isinstance(enabled, bool):
+        return error_response("invalid_input", "enabled must be a boolean", 400)
+    if interval is not None:
+        try:
+            interval = int(interval)
+        except (TypeError, ValueError):
+            return error_response("invalid_input", "interval_minutes must be an integer", 400)
+        if interval < 5:
+            return error_response("invalid_input", "interval_minutes must be at least 5", 400)
+
+    try:
+        status = backup_manager.toggle(enabled=enabled, interval_minutes=interval)
+    except Exception as exc:
+        app.logger.exception("Failed to update backup settings", exc_info=exc)
+        return error_response("backup_error", "Unable to update backup settings", 500)
+    return jsonify({"message": "Backup settings updated", "status": status})
+
+
+@app.get("/backup/download/<path:filename>")
+@jwt_required()
+def backup_download(filename: str):
+    try:
+        path = backup_manager.get_backup_path(filename)
+    except ValueError:
+        return error_response("invalid_input", "Invalid backup filename", 400)
+    except FileNotFoundError:
+        return error_response("not_found", "Backup not found", 404)
+
+    return send_file(path, as_attachment=True, download_name=path.name)
 
 
 @app.get("/export/json")

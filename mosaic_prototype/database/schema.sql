@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS backup_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    interval_minutes INTEGER NOT NULL DEFAULT 60,
+    last_run TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
 CREATE INDEX IF NOT EXISTS idx_entries_activity ON entries(activity);
 CREATE INDEX IF NOT EXISTS idx_entries_activity_category ON entries(activity_category);

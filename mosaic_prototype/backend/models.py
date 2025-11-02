@@ -47,3 +47,16 @@ class User(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - convenience
         return f"<User {self.username}>"
+
+
+class BackupSettings(db.Model):
+    __tablename__ = "backup_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    enabled = db.Column(db.Boolean, nullable=False, default=False)
+    interval_minutes = db.Column(db.Integer, nullable=False, default=60)
+    last_run = db.Column(db.String(32), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - convenience
+        status = "enabled" if self.enabled else "disabled"
+        return f"<BackupSettings {status} interval={self.interval_minutes} last_run={self.last_run}>"

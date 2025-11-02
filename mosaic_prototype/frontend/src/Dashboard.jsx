@@ -8,6 +8,7 @@ import ActivityDetail from "./components/ActivityDetail";
 import ActivityTable from "./components/ActivityTable";
 import EntryForm from "./components/EntryForm";
 import EntryTable from "./components/EntryTable";
+import BackupPanel from "./components/BackupPanel";
 import Stats from "./components/Stats";
 import NightMotion from "./components/NightMotion";
 import Notification from "./components/Notification";
@@ -243,6 +244,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       {activeTab === "Entries" && (
         <div style={sectionWrapperStyle}>
           <EntryForm onNotify={showNotification} />
+          <BackupPanel onNotify={showNotification} />
           <EntryTable onNotify={showNotification} />
         </div>
       )}
