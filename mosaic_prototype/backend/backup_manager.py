@@ -4,7 +4,7 @@ import threading
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from db_utils import connection as sa_connection, transactional_connection
 from extensions import db
@@ -81,18 +81,30 @@ class BackupManager:
         return backups
 
     def get_status(self) -> Dict[str, object]:
+        row: Optional[Dict[str, object]] = None
+
         with self.app.app_context():
             conn = sa_connection(db.engine)
             try:
-                row = conn.execute(
+                result = conn.execute(
                     "SELECT enabled, interval_minutes, last_run FROM backup_settings ORDER BY id ASC LIMIT 1"
-                ).fetchone()
+                )
+                fetched = result.mappings().fetchone()
+                if fetched:
+                    row = dict(fetched)
             finally:
                 conn.close()
 
-        enabled = bool(row["enabled"]) if row else False
-        interval = int(row["interval_minutes"]) if row else 60
-        last_run_value = row["last_run"] if row else None
+        enabled_raw: Any = row["enabled"] if row else False
+        interval_raw: Any = row["interval_minutes"] if row else 60
+        last_run_value: Any = row["last_run"] if row else None
+
+        enabled = bool(enabled_raw)
+        if isinstance(interval_raw, (int, float, str)):
+            interval = int(interval_raw)
+        else:
+            interval = 60
+
         if isinstance(last_run_value, datetime):
             last_run = last_run_value.isoformat()
         else:
@@ -111,10 +123,11 @@ class BackupManager:
 
         with self.app.app_context():
             with transactional_connection(db.engine) as conn:
-                row = conn.execute(
+                result = conn.execute(
                     "SELECT id, enabled, interval_minutes FROM backup_settings ORDER BY id ASC LIMIT 1"
-                ).fetchone()
-                if not row:
+                )
+                row_mapping = result.mappings().fetchone()
+                if not row_mapping:
                     conn.execute(
                         "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
                         (
@@ -124,8 +137,22 @@ class BackupManager:
                     )
                     return self.get_status()
 
-                new_enabled = bool(row["enabled"]) if enabled is None else bool(enabled)
-                new_interval = interval_minutes or int(row["interval_minutes"])
+                row = dict(row_mapping)
+                existing_enabled_raw: Any = row.get("enabled", False)
+                existing_interval_raw: Any = row.get("interval_minutes", 60)
+
+                new_enabled = bool(existing_enabled_raw) if enabled is None else bool(enabled)
+
+                candidate_interval = interval_minutes
+                if candidate_interval is None:
+                    if isinstance(existing_interval_raw, (int, float, str)):
+                        candidate_interval = int(existing_interval_raw)
+                    else:
+                        candidate_interval = 60
+                else:
+                    candidate_interval = int(candidate_interval)
+                new_interval = candidate_interval
+
                 conn.execute(
                     "UPDATE backup_settings SET enabled = ?, interval_minutes = ? WHERE id = ?",
                     (new_enabled, new_interval, row["id"]),
@@ -155,8 +182,8 @@ class BackupManager:
                     )
                     """
                 )
-                row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").fetchone()
-                if not row:
+                has_row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").scalar()
+                if not has_row:
                     conn.execute(
                         "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
                         (False, 60),
@@ -175,8 +202,14 @@ class BackupManager:
                 self._stop_event.wait(30)
                 continue
 
-            interval = max(int(status["interval_minutes"]), 5)
-            last_run = self._parse_iso(status.get("last_run"))
+            raw_interval = status.get("interval_minutes", 60)
+            try:
+                interval_value = int(raw_interval)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                interval_value = 60
+            interval = max(interval_value, 5)
+            raw_last_run = status.get("last_run")
+            last_run = self._parse_iso(raw_last_run if isinstance(raw_last_run, str) else None)
             now = datetime.now(timezone.utc)
 
             if last_run is None or (now - last_run).total_seconds() >= interval * 60:
@@ -193,14 +226,10 @@ class BackupManager:
         with self.app.app_context():
             conn = sa_connection(db.engine)
             try:
-                entries = [
-                    dict(row._mapping)
-                    for row in conn.execute("SELECT * FROM entries ORDER BY date ASC, id ASC").fetchall()
-                ]
-                activities = [
-                    dict(row._mapping)
-                    for row in conn.execute("SELECT * FROM activities ORDER BY name ASC").fetchall()
-                ]
+                entries_result = conn.execute("SELECT * FROM entries ORDER BY date ASC, id ASC")
+                entries = [dict(row) for row in entries_result.mappings().fetchall()]
+                activities_result = conn.execute("SELECT * FROM activities ORDER BY name ASC")
+                activities = [dict(row) for row in activities_result.mappings().fetchall()]
             finally:
                 conn.close()
         return {"entries": entries, "activities": activities}
