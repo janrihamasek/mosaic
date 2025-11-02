@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
@@ -6,6 +6,7 @@ import { deleteEntry, loadEntries, selectEntriesList, selectEntriesState } from 
 import Loading from "./Loading";
 import ErrorState from "./ErrorState";
 import DataTable from "./shared/DataTable";
+import { downloadCsvExport, downloadJsonExport } from "../api";
 
 export default function EntryTable({ onNotify }) {
   const dispatch = useDispatch();
@@ -13,6 +14,7 @@ export default function EntryTable({ onNotify }) {
   const { deletingId, status, error } = useSelector(selectEntriesState);
   const loading = status === "loading";
   const refreshing = loading && entries.length > 0;
+  const [exportingFormat, setExportingFormat] = useState(null);
 
   const handleDelete = useCallback(
     async (id) => {
@@ -27,12 +29,52 @@ export default function EntryTable({ onNotify }) {
     [deletingId, dispatch, onNotify]
   );
 
+  const handleExport = useCallback(
+    async (format) => {
+      if (exportingFormat) return;
+      setExportingFormat(format);
+      const exportFn = format === "json" ? downloadJsonExport : downloadCsvExport;
+      try {
+        const result = await exportFn();
+        const { blob, filename } = result;
+        if (typeof window === "undefined" || !blob) {
+          throw new Error("Export is not supported in this environment");
+        }
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = filename || `mosaic-export.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+        onNotify?.(`Exported ${format.toUpperCase()} file`, "success");
+      } catch (err) {
+        onNotify?.(`Failed to export data: ${formatError(err)}`, "error");
+      } finally {
+        setExportingFormat(null);
+      }
+    },
+    [exportingFormat, onNotify]
+  );
+
   const actionCellStyle = useMemo(
     () => ({
       display: "flex",
       gap: "0.5rem",
       justifyContent: "flex-end",
       flexWrap: "wrap",
+    }),
+    []
+  );
+
+  const exportActionsStyle = useMemo(
+    () => ({
+      display: "flex",
+      gap: "0.75rem",
+      justifyContent: "flex-end",
+      flexWrap: "wrap",
+      marginBottom: "0.5rem",
     }),
     []
   );
@@ -122,10 +164,34 @@ export default function EntryTable({ onNotify }) {
   }
 
   const isInitialLoading = loading && entries.length === 0;
+  const isExporting = exportingFormat !== null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       {refreshing && <Loading message="Refreshing entries…" inline />}
+      <div style={exportActionsStyle}>
+        <button
+          onClick={() => handleExport("csv")}
+          style={{
+            ...styles.button,
+            opacity: exportingFormat === "csv" ? 0.7 : 1,
+          }}
+          disabled={isExporting}
+        >
+          {exportingFormat === "csv" ? "Exporting CSV…" : "Export CSV"}
+        </button>
+        <button
+          onClick={() => handleExport("json")}
+          style={{
+            ...styles.button,
+            backgroundColor: "#2f9e44",
+            opacity: exportingFormat === "json" ? 0.7 : 1,
+          }}
+          disabled={isExporting}
+        >
+          {exportingFormat === "json" ? "Exporting JSON…" : "Export JSON"}
+        </button>
+      </div>
       <DataTable
         columns={columns}
         data={tableData}

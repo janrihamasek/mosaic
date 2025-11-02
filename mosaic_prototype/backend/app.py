@@ -1,4 +1,6 @@
 import copy
+import csv
+import io
 import os
 import secrets
 import sqlite3
@@ -196,6 +198,76 @@ def parse_pagination(default_limit: int = 100, max_limit: int = 500) -> Dict[str
 
     limit = min(limit, max_limit)
     return {"limit": limit, "offset": offset}
+
+
+def _build_export_filename(extension: str) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"mosaic-export-{timestamp}.{extension}"
+
+
+def _set_export_headers(
+    response: Response,
+    extension: str,
+    *,
+    limit: int,
+    offset: int,
+    total_entries: int,
+    total_activities: int,
+) -> Response:
+    response.headers["Content-Disposition"] = f'attachment; filename="{_build_export_filename(extension)}"'
+    response.headers["X-Limit"] = str(limit)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Total-Entries"] = str(total_entries)
+    response.headers["X-Total-Activities"] = str(total_activities)
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+
+def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict], int, int]:
+    conn = get_db_connection()
+    try:
+        entries_cursor = conn.execute(
+            """
+            SELECT
+                e.id AS entry_id,
+                e.date,
+                e.activity,
+                e.description AS entry_description,
+                e.value,
+                e.note,
+                e.activity_category,
+                e.activity_goal
+            FROM entries e
+            ORDER BY e.date ASC, e.id ASC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        activities_cursor = conn.execute(
+            """
+            SELECT
+                a.id AS activity_id,
+                a.name,
+                a.category,
+                a.goal,
+                a.description AS activity_description,
+                a.active,
+                a.frequency_per_day,
+                a.frequency_per_week,
+                a.deactivated_at
+            FROM activities a
+            ORDER BY a.name ASC, a.id ASC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        total_entries = conn.execute("SELECT COUNT(1) FROM entries").fetchone()[0]
+        total_activities = conn.execute("SELECT COUNT(1) FROM activities").fetchone()[0]
+        entries = [dict(row) for row in entries_cursor.fetchall()]
+        activities = [dict(row) for row in activities_cursor.fetchall()]
+        return entries, activities, int(total_entries), int(total_activities)
+    finally:
+        conn.close()
 
 
 def configure_database_path(path: str):
@@ -675,6 +747,115 @@ def stream_proxy():
 def handle_unexpected_exception(exc: Exception):
     app.logger.exception("Unhandled exception", exc_info=exc)
     return error_response("internal_error", "An unexpected error occurred", 500)
+
+
+@app.get("/export/json")
+@jwt_required()
+def export_json():
+    pagination = parse_pagination(default_limit=500, max_limit=2000)
+    limit = pagination["limit"]
+    offset = pagination["offset"]
+    entries, activities, total_entries, total_activities = _fetch_export_data(limit, offset)
+
+    payload = {
+        "entries": entries,
+        "activities": activities,
+        "meta": {
+            "entries": {"limit": limit, "offset": offset, "total": total_entries},
+            "activities": {"limit": limit, "offset": offset, "total": total_activities},
+        },
+    }
+    response = jsonify(payload)
+    return _set_export_headers(
+        response,
+        "json",
+        limit=limit,
+        offset=offset,
+        total_entries=total_entries,
+        total_activities=total_activities,
+    )
+
+
+@app.get("/export/csv")
+@jwt_required()
+def export_csv():
+    pagination = parse_pagination(default_limit=500, max_limit=2000)
+    limit = pagination["limit"]
+    offset = pagination["offset"]
+    entries, activities, total_entries, total_activities = _fetch_export_data(limit, offset)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow(
+        [
+            "dataset",
+            "entry_id",
+            "date",
+            "activity",
+            "entry_description",
+            "value",
+            "note",
+            "activity_category",
+            "activity_goal",
+        ]
+    )
+    for entry in entries:
+        writer.writerow(
+            [
+                "entries",
+                entry.get("entry_id"),
+                entry.get("date"),
+                entry.get("activity"),
+                entry.get("entry_description"),
+                entry.get("value"),
+                entry.get("note"),
+                entry.get("activity_category"),
+                entry.get("activity_goal"),
+            ]
+        )
+
+    writer.writerow([])
+    writer.writerow(
+        [
+            "dataset",
+            "activity_id",
+            "name",
+            "category",
+            "goal",
+            "activity_description",
+            "active",
+            "frequency_per_day",
+            "frequency_per_week",
+            "deactivated_at",
+        ]
+    )
+    for activity in activities:
+        writer.writerow(
+            [
+                "activities",
+                activity.get("activity_id"),
+                activity.get("name"),
+                activity.get("category"),
+                activity.get("goal"),
+                activity.get("activity_description"),
+                activity.get("active"),
+                activity.get("frequency_per_day"),
+                activity.get("frequency_per_week"),
+                activity.get("deactivated_at"),
+            ]
+        )
+
+    csv_data = output.getvalue()
+    response = Response(csv_data, mimetype="text/csv")
+    return _set_export_headers(
+        response,
+        "csv",
+        limit=limit,
+        offset=offset,
+        total_entries=total_entries,
+        total_activities=total_activities,
+    )
 
 
 @app.get("/entries")

@@ -10,6 +10,40 @@ function extractParams(filters = {}) {
   return params;
 }
 
+function extractFilename(disposition = '', fallback) {
+  if (!disposition) return fallback;
+  const parts = disposition.split(';').map((part) => part.trim());
+
+  const utfPart = parts.find((part) => part.toLowerCase().startsWith('filename*='));
+  if (utfPart) {
+    const value = utfPart.slice(9).trim();
+    if (value) {
+      const raw = value.replace(/^utf-8''/i, '');
+      try {
+        const decoded = decodeURIComponent(raw);
+        if (decoded) return decoded.replace(/^"(.*)"$/, '$1');
+      } catch (_err) {
+        if (raw) return raw.replace(/^"(.*)"$/, '$1');
+      }
+    }
+  }
+
+  const asciiPart = parts.find((part) => part.toLowerCase().startsWith('filename='));
+  if (asciiPart) {
+    let value = asciiPart.slice(asciiPart.indexOf('=') + 1).trim();
+    value = value.replace(/^"(.*)"$/, '$1');
+    if (value) return value;
+  }
+  return fallback;
+}
+
+function toExportParams(options = {}) {
+  const params = {};
+  if (typeof options.limit === 'number') params.limit = options.limit;
+  if (typeof options.offset === 'number') params.offset = options.offset;
+  return params;
+}
+
 // --- ENTRIES ---
 export async function fetchEntries(filters = {}) {
   const params = Object.fromEntries(extractParams(filters));
@@ -86,6 +120,33 @@ export async function importEntriesCsv(file) {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
+}
+
+// --- EXPORTS ---
+export async function downloadCsvExport(options = {}) {
+  const params = toExportParams(options);
+  const response = await apiClient.get('/export/csv', {
+    params,
+    responseType: 'blob',
+  });
+  const filename = extractFilename(
+    response.headers?.['content-disposition'],
+    'mosaic-export.csv'
+  );
+  return { blob: response.data, filename };
+}
+
+export async function downloadJsonExport(options = {}) {
+  const params = toExportParams(options);
+  const response = await apiClient.get('/export/json', {
+    params,
+    responseType: 'blob',
+  });
+  const filename = extractFilename(
+    response.headers?.['content-disposition'],
+    'mosaic-export.json'
+  );
+  return { blob: response.data, filename };
 }
 
 export const getStreamProxyUrl = (url, username, password) =>
