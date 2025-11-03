@@ -42,7 +42,9 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
    - Frontend (serving the dev backend by default): http://localhost:3000
    - Dev API: http://localhost:5000
    - Prod API: http://localhost:5001
-   - PostgreSQL (for GUI clients like DBeaver): host `localhost`, port `5433`, user `mosaic`, password `mosaic_password`, DB `mosaic_dev` or `mosaic_prod`.
+   - Staging API (optional): http://localhost:5002
+   - Staging frontend (optional): http://localhost:3001
+   - PostgreSQL (for GUI clients like DBeaver): host `localhost`, port `5433`, user `mosaic`, password `mosaic_password`, DB `mosaic_dev`, `mosaic_prod`, or `mosaic_staging`.
 6. To point the frontend at the prod API, rebuild with prod args:
    ```bash
    FRONTEND_API_URL=http://localhost:5001 \
