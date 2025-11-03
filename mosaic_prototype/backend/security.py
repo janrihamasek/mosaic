@@ -69,6 +69,9 @@ def require_api_key():
     if not api_key:
         return None
 
+    if request.method == "OPTIONS":
+        return None
+
     public_endpoints = current_app.config.get("PUBLIC_ENDPOINTS", {"home"})
     if request.endpoint in public_endpoints:
         return None

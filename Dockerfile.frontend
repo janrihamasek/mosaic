@@ -1,0 +1,33 @@
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+COPY mosaic_prototype/frontend/package*.json ./
+RUN npm install
+
+COPY mosaic_prototype/frontend ./
+
+ARG REACT_APP_API_URL=http://localhost:5000
+ARG REACT_APP_API_KEY=
+ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+ENV REACT_APP_API_BASE_URL=${REACT_APP_API_URL}
+ENV REACT_APP_API_KEY=${REACT_APP_API_KEY}
+
+RUN npm run build
+
+
+FROM node:18-alpine AS runner
+
+WORKDIR /app
+
+RUN npm install -g serve
+
+COPY --from=build /app/build ./build
+
+EXPOSE 3000
+
+ENV PORT=3000
+
+HEALTHCHECK CMD wget -q --spider http://localhost:3000/ || exit 1
+
+CMD ["serve", "-s", "build", "-l", "3000"]

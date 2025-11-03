@@ -1,0 +1,89 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: mosaic_postgres
+    environment:
+      POSTGRES_USER: mosaic
+      POSTGRES_PASSWORD: mosaic_password
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./mosaic_prototype/database/init-mosaic.sql:/docker-entrypoint-initdb.d/init-mosaic.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mosaic -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  mosaic_backend_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env.dev
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mosaic_prototype/backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  mosaic_backend_prod:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env.prod
+    ports:
+      - "5001:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  mosaic_frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        REACT_APP_API_URL: ${FRONTEND_API_URL:-http://localhost:5000}
+        REACT_APP_API_KEY: ${FRONTEND_API_KEY:-dev-api-key}
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: ${FRONTEND_API_URL:-http://localhost:5000}
+      REACT_APP_API_BASE_URL: ${FRONTEND_API_URL:-http://localhost:5000}
+      REACT_APP_API_KEY: ${FRONTEND_API_KEY:-dev-api-key}
+    depends_on:
+      mosaic_backend_dev:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

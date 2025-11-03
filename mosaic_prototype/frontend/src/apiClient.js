@@ -2,8 +2,11 @@ import axios from 'axios';
 import { API_BASE_URL } from './config';
 import { getAuthHeaders, logout, refreshToken, getFriendlyMessage } from './services/authService';
 
+const API_KEY = process.env.REACT_APP_API_KEY;
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  headers: API_KEY ? { 'X-API-Key': API_KEY } : undefined,
 });
 
 function isAuthEndpoint(url = '') {
@@ -12,7 +15,15 @@ function isAuthEndpoint(url = '') {
 
 apiClient.interceptors.request.use(
   (config) => {
-    const nextConfig = { ...config };
+    const nextConfig = {
+      ...config,
+      headers: {
+        ...(config.headers || {}),
+      },
+    };
+    if (API_KEY) {
+      nextConfig.headers['X-API-Key'] = API_KEY;
+    }
     if (!isAuthEndpoint(nextConfig.url)) {
       const headers = getAuthHeaders();
       nextConfig.headers = {

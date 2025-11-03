@@ -1,0 +1,217 @@
+127.0.0.1 - - [02/Nov/2025 19:45:49] "OPTIONS /login HTTP/1.1" 200 -
+[2025-11-02 19:45:49,236] ERROR in app: Unhandled exception
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.UndefinedTable: relation "users" does not exist
+LINE 1: SELECT id, password_hash FROM users WHERE username = 'jan'
+                                      ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/app.py", line 485, in login
+    row = conn.execute(
+          ^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/db_utils.py", line 77, in execute
+    result = self._connection.execute(text(statement), bound_params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedTable) relation "users" does not exist
+LINE 1: SELECT id, password_hash FROM users WHERE username = 'jan'
+                                      ^
+
+[SQL: SELECT id, password_hash FROM users WHERE username = %(p0)s]
+[parameters: {'p0': 'jan'}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+127.0.0.1 - - [02/Nov/2025 19:45:49] "POST /login HTTP/1.1" 500 -
+[2025-11-02 19:45:53,756] ERROR in app: Unhandled exception
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.UndefinedTable: relation "users" does not exist
+LINE 1: SELECT id, password_hash FROM users WHERE username = 'jan'
+                                      ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/app.py", line 485, in login
+    row = conn.execute(
+          ^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/db_utils.py", line 77, in execute
+    result = self._connection.execute(text(statement), bound_params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedTable) relation "users" does not exist
+LINE 1: SELECT id, password_hash FROM users WHERE username = 'jan'
+                                      ^
+
+[SQL: SELECT id, password_hash FROM users WHERE username = %(p0)s]
+[parameters: {'p0': 'jan'}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+127.0.0.1 - - [02/Nov/2025 19:45:53] "POST /login HTTP/1.1" 500 -
+127.0.0.1 - - [02/Nov/2025 19:46:28] "OPTIONS /register HTTP/1.1" 200 -
+[2025-11-02 19:46:28,519] ERROR in app: Unhandled exception
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.UndefinedTable: relation "users" does not exist
+LINE 1: INSERT INTO users (username, password_hash, created_at) VALU...
+                    ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/app.py", line 463, in register
+    conn.execute(
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/db_utils.py", line 77, in execute
+    result = self._connection.execute(text(statement), bound_params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedTable) relation "users" does not exist
+LINE 1: INSERT INTO users (username, password_hash, created_at) VALU...
+                    ^
+
+[SQL: INSERT INTO users (username, password_hash, created_at) VALUES (%(p0)s, %(p1)s, %(p2)s)]
+[parameters: {'p0': 'jan', 'p1': 'scrypt:32768:8:1$A8XXGrcHtWqdYKiO$c36d634e3bbc0345a7398e7f25bab70b1efe86e3f891c8fadd90603d3861e7575026fb948b7f2c4372a5301c32bdc4624c43266034a22c4de5315ee898bd9347', 'p2': '2025-11-02T18:46:28.518187+00:00'}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+127.0.0.1 - - [02/Nov/2025 19:46:28] "POST /register HTTP/1.1" 500 -
+127.0.0.1 - - [02/Nov/2025 19:46:35] "OPTIONS /register HTTP/1.1" 200 -
+[2025-11-02 19:46:35,331] ERROR in app: Unhandled exception
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.UndefinedTable: relation "users" does not exist
+LINE 1: INSERT INTO users (username, password_hash, created_at) VALU...
+                    ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/flask/app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/app.py", line 463, in register
+    conn.execute(
+  File "/home/jan/Dokumenty/code/mosaic/mosaic_prototype/backend/db_utils.py", line 77, in execute
+    result = self._connection.execute(text(statement), bound_params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/jan/Dokumenty/code/mosaic/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedTable) relation "users" does not exist
+LINE 1: INSERT INTO users (username, password_hash, created_at) VALU...
+                    ^
+
+[SQL: INSERT INTO users (username, password_hash, created_at) VALUES (%(p0)s, %(p1)s, %(p2)s)]
+[parameters: {'p0': 'jan', 'p1': 'scrypt:32768:8:1$7mzunBvqf8c7ZK6k$f3cb83b4f0b762aefc1b79d8040d6c57f5e6f95f770093aca7984bcdb6ab871f91850fbf983abf90687cd4775ad32439b87f3322f015eb15cb0c4e0f3bd6b25c', 'p2': '2025-11-02T18:46:35.330957+00:00'}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+127.0.0.1 - - [02/Nov/2025 19:46:35] "POST /register HTTP/1.1" 500 -

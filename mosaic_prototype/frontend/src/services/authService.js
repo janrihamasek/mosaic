@@ -4,6 +4,11 @@ import { API_BASE_URL } from '../config';
 const STORAGE_KEY = 'mosaic.auth';
 const authClient = axios.create({ baseURL: API_BASE_URL });
 const listeners = new Set();
+const API_KEY = process.env.REACT_APP_API_KEY;
+
+if (API_KEY) {
+  authClient.defaults.headers.common['X-API-Key'] = API_KEY;
+}
 
 const ERROR_MESSAGES = {
   invalid_credentials: 'Neplatné přihlašovací údaje',
@@ -110,13 +115,18 @@ export function logout({ silent } = { silent: false }) {
 export function getAuthHeaders() {
   const state = getAuthState();
   if (!state.isAuthenticated) {
-    return {};
+    return API_KEY
+      ? { 'X-API-Key': API_KEY }
+      : {};
   }
   const headers = {
     Authorization: `${state.tokenType || 'Bearer'} ${state.accessToken}`,
   };
   if (state.csrfToken) {
     headers['X-CSRF-Token'] = state.csrfToken;
+  }
+  if (API_KEY) {
+    headers['X-API-Key'] = API_KEY;
   }
   return headers;
 }
