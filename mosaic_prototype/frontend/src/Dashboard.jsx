@@ -23,6 +23,7 @@ import {
   selectActivity,
   selectSelectedActivityId,
 } from "./store/activitiesSlice";
+import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
 
 const DEFAULT_TAB = "Today";
 const TABS = ["Today", "Activities", "Stats", "Entries", "NightMotion"];
@@ -133,6 +134,26 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     marginBottom: "1.5rem",
   };
 
+  const titleWrapperStyle = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.3rem",
+  };
+
+  const backendBadgeStyle = {
+    alignSelf: isCompact ? "flex-start" : "flex-start",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    color: "#1e3a8a",
+    backgroundColor: "#e0e7ff",
+    borderRadius: "999px",
+    padding: "0.25rem 0.65rem",
+    letterSpacing: "0.015em",
+  };
+
   const toastContainerStyle = {
     ...styles.toastContainer,
     ...(isCompact
@@ -190,17 +211,22 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       </div>
 
       <div style={headerStyle}>
-        <h1
-          style={{ cursor: "pointer", margin: 0 }}
-          onClick={() => setActiveTab(DEFAULT_TAB)}
-          role="button"
-          tabIndex={0}
-          onKeyPress={(e) => {
-            if (e.key === "Enter" || e.key === " ") setActiveTab(DEFAULT_TAB);
-          }}
-        >
-          🧩 Mosaic
-        </h1>
+        <div style={titleWrapperStyle}>
+          <h1
+            style={{ cursor: "pointer", margin: 0 }}
+            onClick={() => setActiveTab(DEFAULT_TAB)}
+            role="button"
+            tabIndex={0}
+            onKeyPress={(e) => {
+              if (e.key === "Enter" || e.key === " ") setActiveTab(DEFAULT_TAB);
+            }}
+          >
+            🧩 Mosaic
+          </h1>
+          <span style={backendBadgeStyle} title={`Aktuální API: ${API_BASE_URL}`}>
+            🔌 {API_BACKEND_LABEL}
+          </span>
+        </div>
         <LogoutButton />
       </div>
 

@@ -68,12 +68,14 @@ services:
       args:
         REACT_APP_API_URL: ${FRONTEND_API_URL:-http://localhost:5000}
         REACT_APP_API_KEY: ${FRONTEND_API_KEY:-dev-api-key}
+        REACT_APP_BACKEND_LABEL: ${FRONTEND_BACKEND_LABEL:-Development API}
     ports:
       - "3000:3000"
     environment:
       REACT_APP_API_URL: ${FRONTEND_API_URL:-http://localhost:5000}
       REACT_APP_API_BASE_URL: ${FRONTEND_API_URL:-http://localhost:5000}
       REACT_APP_API_KEY: ${FRONTEND_API_KEY:-dev-api-key}
+      REACT_APP_BACKEND_LABEL: ${FRONTEND_BACKEND_LABEL:-Development API}
     depends_on:
       mosaic_backend_dev:
         condition: service_started

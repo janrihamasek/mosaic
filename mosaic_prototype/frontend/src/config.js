@@ -13,3 +13,10 @@ export function getBaseUrl() {
 }
 
 export const API_BASE_URL = getBaseUrl();
+export const API_BACKEND_LABEL =
+  (process.env.REACT_APP_BACKEND_LABEL && process.env.REACT_APP_BACKEND_LABEL.trim()) ||
+  (API_BASE_URL.includes("localhost:5001") || API_BASE_URL.includes("127.0.0.1:5001")
+    ? "Production API"
+    : API_BASE_URL.includes("localhost") || API_BASE_URL.includes("127.0.0.1")
+      ? "Development API"
+      : API_BASE_URL);
