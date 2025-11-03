@@ -6,19 +6,19 @@
 Mosaic is a full-stack activity tracking platform that helps individuals log daily rituals, measure streaks, and analyze progress toward personal goals. Users capture activities with qualitative notes, review day-level summaries, and monitor long-term performance. The platform emphasises low-friction data entry, rich validation, and near-real-time feedback through aggregated statistics.
 
 ### Technology Stack
-- **Frontend:** React 18 with modern hooks, React Router v6, Redux Toolkit for state management, Axios for HTTP, react-hook-form for form orchestration, and a custom dark-mode design system defined in `styles/common.js`.
+- **Frontend:** React 18 with modern hooks, React Router v6, Redux Toolkit for state management, Axios for HTTP, react-hook-form for form orchestration, and a custom dark-mode design system defined in `styles/common.js`. Jest is configured with TextEncoder/TextDecoder polyfills so NightMotion tests run under Node 18 in CI.
 - **Backend:** Flask 3 application organised in `app.py`, supported by Flask-CORS, Flask-SQLAlchemy, Flask-Migrate, PyJWT for authentication, and Pydantic for request validation.
 - **Database:** PostgreSQL accessed via SQLAlchemy models. Schema evolution is handled through Flask-Migrate migrations; legacy SQLite bootstrap scripts remain only for historical reference.
-- **Tooling & Infrastructure:** Jest is not yet configured, but backend tests run via Pytest with coverage reporting. GitHub Actions workflows (`.github/workflows/*.yml`) run backend unit tests, provide coverage artifacts, and build the frontend bundle. The frontend build relies on Create React App, with TypeScript configured in `allowJs` mode and `noEmit` to keep the workspace lint-only.
+- **Tooling & Infrastructure:** GitHub Actions workflows (`.github/workflows/*.yml`) execute backend pytest suites, run the frontend Jest suite, and build the React bundle. A Docker stack (`Dockerfile.backend`, `Dockerfile.frontend`, `docker-compose.yml`) provisions development and production Flask instances next to a shared PostgreSQL container with persistent volumes so daily production usage and ongoing development can run in parallel.
 
 ### Development History and Direction
-Recent development (see `docs/changelog/2025-10-29_backend_frontend_summary.md`) delivered:
-- A Pydantic-backed validation layer replacing ad-hoc JSON checks.
-- Transactional guards for all mutating endpoints with consistent error envelopes.
-- Full JWT + CSRF authentication, frontend token storage, and CSRF-aware Axios interceptors.
-- Unified dashboard statistics pipeline (`/stats/progress`) consolidating 30-day metrics with cache-aware invalidation.
-- React forms migrated to react-hook-form for richer validation.
-- New reusable loading and error states plus centralized toast notifications.
+Recent development (see `docs/changelog/2025-11-02_postgres_docker_backup.md`) delivered:
+- Frontend CI hardening with TextEncoder/TextDecoder polyfills and refreshed NightMotion tests.
+- Autosave improvements on the Today screen (instant value persist, debounced notes).
+- Authenticated CSV/JSON export endpoints plus stricter CSV import validation backed by Pydantic.
+- Automatic and manual backup manager with persistent user preferences and downloadable archives.
+- Migration from SQLite to PostgreSQL, introducing SQLAlchemy transaction helpers and Flask-Migrate workflow.
+- Containerised dev/prod stacks via Docker Compose, enabling side-by-side instances backed by isolated PostgreSQL databases.
 
 The current trajectory focuses on resilience, consistency across form UX, cache-aware analytics, and preparing for broader integrations (CSV import pipelines, future wearable device hooks).
 
@@ -151,8 +151,8 @@ Schema management: database changes are captured via Flask-Migrate/Alembic migra
 - **Advanced Analytics:** Present stats focus on goal ratios; product roadmap mentions richer analytics and wearable integrations but no code yet.
 
 ### Planned/Proposed Directions
-- Stabilise API contracts and add migration tooling before scaling beyond SQLite (e.g., to PostgreSQL).
-- Extend CI to include frontend lint/test suites and deploy previews.
+- Harden observability around backups/exports (structured logs, alert hooks, automated restore drills).
+- Extend CI to include frontend lint/test suites, dockerised smoke tests, and deploy previews.
 - Implement server-side pagination for tables within UI (currently limited to backend defaults).
 - Explore WebSocket or SSE for live-tracking scenarios once multi-device sync becomes necessary.
 
@@ -166,13 +166,13 @@ Schema management: database changes are captured via Flask-Migrate/Alembic migra
 
 ### Weaknesses
 - **Limited Frontend Test Coverage:** Reliance on manual testing increases regression risk, especially with the growing component surface.
-- **SQLite Concurrency Constraints:** The single-file database works for prototypes but will bottleneck under higher concurrency without migration planning.
+- **Operational Observability:** Backups, exports, and background jobs lack consolidated monitoring/alerting, making it hard to spot failures across dev/prod containers.
 - **Analytics Accessibility Gaps:** The new stats widgets lack dedicated accessible descriptions and keyboard interactions for charts, leaving screen-reader support incomplete.
 - **Documentation Duplication:** API docs live in Markdown, but there is no generated schema or OpenAPI spec to keep backend and frontend fully synchronised.
 
 ### Recommendations
 1. **Testing Investment:** Introduce Jest + React Testing Library to cover form validation, global error handling, and Redux thunks. Pair with Cypress (or Playwright) smoke tests for mission-critical flows.
-2. **Database Evolution:** Prepare a migration plan (Flask-Migrate scripts, staging environment) for moving to PostgreSQL as data volume grows. Define archival strategies for `entries`.
+2. **Operational Playbooks:** Add health dashboards or lightweight log aggregation for backup/export jobs, and script routine verifications (restore tests, checksum validation).
 3. **Analytics Expansion:** Layer accessibility metadata onto the new widgets, explore predictive/compare-to-target metrics, and consider chart libraries for maintainable rendering and tooltips.
 4. **Mobile & Accessibility Enhancements:** Introduce responsive breakpoints, keyboard shortcuts, and screen reader audits to broaden usability.
 5. **DevEx Improvements:** Add linting (ESLint, Prettier) and TypeScript migration roadmap to improve developer ergonomics and catch issues earlier.
@@ -180,4 +180,4 @@ Schema management: database changes are captured via Flask-Migrate/Alembic migra
 
 ---
 
-This document summarises Mosaic’s current capabilities and technical posture. The project is production-ready for small teams, with strong backend validation and coherent frontend UX. Addressing the outlined gaps—particularly automated frontend testing, database scalability, and richer analytics—will position Mosaic for broader adoption and future integrations.
+This document summarises Mosaic’s current capabilities and technical posture. The project is production-ready for small teams, with strong backend validation and coherent frontend UX. Addressing the outlined gaps—particularly automated frontend testing, operational observability, and richer analytics—will position Mosaic for broader adoption and future integrations.

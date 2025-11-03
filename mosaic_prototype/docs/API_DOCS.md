@@ -5,7 +5,10 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 ---
 
 ## Base URL
-`http://127.0.0.1:5000`
+- Development backend: `http://localhost:5000`
+- Production backend (Compose): `http://localhost:5001`
+
+Set `REACT_APP_API_BASE_URL`/`REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend) to target other environments.
 
 ---
 
@@ -43,7 +46,7 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   ```json
   {
     "message": "Backend běží!",
-    "database": "path/to/database/mosaic.db"
+    "database": "postgresql+psycopg2://mosaic:***@postgres:5432/mosaic_dev"
   }
   ```
 
@@ -331,6 +334,103 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
 
 ---
 
+### **Backups**
+#### **Status**
+- **Endpoint**: `GET /backup/status`
+- **Description**: Returns current backup settings and latest run metadata.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "enabled": true,
+    "interval_minutes": 60,
+    "last_run": "2025-11-02T21:40:40.154123+00:00",
+    "available_backups": [
+      {
+        "filename": "backup_2025-11-02T214040.zip",
+        "created_at": "2025-11-02T21:40:40.154123+00:00",
+        "size_bytes": 51234
+      }
+    ]
+  }
+  ```
+
+#### **Run Backup**
+- **Endpoint**: `POST /backup/run`
+- **Description**: Trigger a manual backup run. Returns metadata for the generated archive.
+- **Response** (`200 OK`):
+  ```json
+  {
+    "message": "Backup completed",
+    "backup": {
+      "filename": "backup_2025-11-02T221000.zip",
+      "created_at": "2025-11-02T22:10:00.512431+00:00",
+      "size_bytes": 54321
+    }
+  }
+  ```
+
+#### **Toggle Automatic Backups**
+- **Endpoint**: `POST /backup/toggle`
+- **Description**: Enable/disable scheduled backups and/or update the interval.
+- **Request Body**:
+  ```json
+  {
+    "enabled": true,
+    "interval_minutes": 90
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "message": "Backup settings updated",
+    "status": {
+      "enabled": true,
+      "interval_minutes": 90,
+      "last_run": "2025-11-02T21:40:40.154123+00:00"
+    }
+  }
+  ```
+- **Validation**:
+  - `enabled` must be a boolean (optional).
+  - `interval_minutes` must be an integer ≥ 5 (optional).
+
+#### **Download Backup**
+- **Endpoint**: `GET /backup/download/<filename>`
+- **Description**: Download a previously generated backup archive (ZIP).
+- **Response**:
+  - `200 OK`: Returns binary ZIP content with a `Content-Disposition` attachment header.
+  - `400 Bad Request`: Invalid filename.
+  - `404 Not Found`: Backup not found.
+
+---
+
+### **Data Export**
+#### **JSON Export**
+- **Endpoint**: `GET /export/json`
+- **Description**: Returns activities and entries in a single JSON payload.
+- **Query Parameters**: Supports `limit` and `offset` (defaults: 500, max limit: 2000).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "entries": [...],
+    "activities": [...],
+    "meta": {
+      "entries": {"limit": 500, "offset": 0, "total": 1234},
+      "activities": {"limit": 500, "offset": 0, "total": 42}
+    }
+  }
+  ```
+- **Notes**: Response uses `application/json` with `Content-Disposition: attachment`.
+
+#### **CSV Export**
+- **Endpoint**: `GET /export/csv`
+- **Description**: Streams a CSV file with two datasets: entries and activities.
+- **Query Parameters**: Same pagination options as the JSON export.
+- **Response**:
+  - `200 OK`: `text/csv` attachment. CSV contains a header row per dataset and blank line separators.
+
+---
+
 ### **CSV Import**
 - **Endpoint**: `POST /import_csv`
 - **Description**: Import activity entries from a CSV file.
@@ -347,8 +447,8 @@ This document describes the REST API endpoints for the **Mosaic** project, a ful
   }
   ```
 - **Notes**:
-- The CSV must contain headers compatible with the import utility (`date,activity,value,note,description,category,goal`).
-- The derived goal per day is recalculated for each imported activity in the same way as for the REST endpoints.
+  - The CSV must contain headers compatible with the import utility (`date,activity,value,note,description,category,goal`).
+  - The derived goal per day is recalculated for each imported activity in the same way as for the REST endpoints.
 
 ---
 
