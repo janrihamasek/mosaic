@@ -5,15 +5,19 @@ import os
 import secrets
 import subprocess
 import tempfile
+import logging
+import sys
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from threading import Lock, Thread
-from time import time
+from time import perf_counter, time
 from typing import Dict, Iterator, Optional, Tuple, cast
 from urllib.parse import urlparse, urlunparse
 
+import structlog
 import jwt  # type: ignore[import]
 from flask import Flask, Response, jsonify, request, g, stream_with_context, send_file
 from flask_cors import CORS
@@ -42,6 +46,30 @@ from security import (
 from extensions import db, migrate
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from db_utils import connection as sa_connection, transactional_connection
+
+
+def configure_logging() -> None:
+    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
+    structlog.configure(
+        context_class=dict,
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", key="timestamp"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+    )
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    logging.getLogger("flask.app").setLevel(logging.WARNING)
+
+
+configure_logging()
+
+logger = structlog.get_logger("mosaic.backend")
 
 app = Flask(__name__)
 CORS(app)
@@ -87,7 +115,7 @@ app.config.setdefault("PUBLIC_ENDPOINTS", {"home"})
 app.config.setdefault("JWT_SECRET", os.environ.get("MOSAIC_JWT_SECRET") or "change-me")
 app.config.setdefault("JWT_ALGORITHM", "HS256")
 app.config.setdefault("JWT_EXP_MINUTES", int(os.environ.get("MOSAIC_JWT_EXP_MINUTES", "60")))
-app.config["PUBLIC_ENDPOINTS"].update({"login", "register"})
+app.config["PUBLIC_ENDPOINTS"].update({"login", "register", "metrics"})
 
 db.init_app(app)
 migrate.init_app(app, db)
@@ -113,9 +141,85 @@ _cache_lock = Lock()
 TODAY_CACHE_TTL = 60
 STATS_CACHE_TTL = 300
 
+_metrics_lock = Lock()
+_metrics_state = {
+    "requests_total": 0,
+    "errors_total": 0,
+    "total_latency_ms": 0.0,
+    "status_counts": defaultdict(int),
+}
+
+
+def _update_metrics(status_code: int, duration_ms: float, *, is_error: bool = False) -> None:
+    with _metrics_lock:
+        _metrics_state["requests_total"] += 1
+        _metrics_state["total_latency_ms"] += duration_ms
+        _metrics_state["status_counts"][status_code] += 1
+        if is_error or status_code >= 500:
+            _metrics_state["errors_total"] += 1
+
+
+def _get_metrics_snapshot() -> Dict[str, object]:
+    with _metrics_lock:
+        requests_total = _metrics_state["requests_total"]
+        avg_latency = (
+            _metrics_state["total_latency_ms"] / requests_total if requests_total else 0.0
+        )
+        status_counts = {
+            str(code): count for code, count in _metrics_state["status_counts"].items()
+        }
+        return {
+            "requests_total": requests_total,
+            "errors_total": _metrics_state["errors_total"],
+            "avg_latency_ms": round(avg_latency, 2),
+            "status_counts": status_counts,
+        }
+
 
 def _cache_build_key(prefix: str, key_parts: Tuple) -> str:
     return prefix + "::" + "::".join(str(part) for part in key_parts)
+
+
+@app.before_request
+def _start_request_timer() -> None:
+    g.request_start_time = perf_counter()
+    g.request_id = secrets.token_hex(8)
+    route = request.endpoint or request.path
+    structlog.contextvars.bind_contextvars(
+        request_id=g.request_id,
+        route=route,
+        path=request.path,
+        method=request.method,
+    )
+
+
+@app.after_request
+def _log_request(response: Response) -> Response:
+    start = getattr(g, "request_start_time", None)
+    duration_ms = (perf_counter() - start) * 1000 if start else 0.0
+    current_user = getattr(g, "current_user", None)
+    user_id = current_user.get("id") if isinstance(current_user, dict) else None
+    if user_id is not None:
+        structlog.contextvars.bind_contextvars(user_id=user_id)
+
+    status_code = response.status_code
+    logger.bind(
+        status_code=status_code,
+        duration_ms=round(duration_ms, 2),
+    ).info("request.completed")
+    _update_metrics(status_code, duration_ms)
+    g.metrics_recorded = True
+    return response
+
+
+@app.teardown_request
+def _clear_request_context(exc: Optional[BaseException]) -> None:
+    if exc is not None and not getattr(g, "metrics_recorded", False):
+        start = getattr(g, "request_start_time", None)
+        duration_ms = (perf_counter() - start) * 1000 if start else 0.0
+        status_code = getattr(exc, "code", 500) if hasattr(exc, "code") else 500
+        _update_metrics(status_code, duration_ms, is_error=True)
+    structlog.contextvars.clear_contextvars()
 
 
 def cache_get(prefix: str, key_parts: Tuple) -> Optional[object]:
@@ -445,6 +549,12 @@ def home():
     return jsonify({"message": "Backend běží!", "database": app.config.get("SQLALCHEMY_DATABASE_URI")})
 
 
+@app.get("/metrics")
+def metrics():
+    snapshot = _get_metrics_snapshot()
+    return jsonify(snapshot)
+
+
 @app.post("/register")
 def register():
     limits = app.config["RATE_LIMITS"]["register"]
@@ -559,6 +669,11 @@ def _enforce_jwt_authentication():
 
 @app.errorhandler(ValidationError)
 def handle_validation(error: ValidationError):
+    logger.bind(status_code=error.status, error_code=error.code).warning(
+        "request.validation_error",
+        details=error.details,
+        message=error.message,
+    )
     return error_response(error.code, error.message, error.status, error.details)
 
 
@@ -569,6 +684,13 @@ def handle_http_exception(exc: HTTPException):
     code = ERROR_CODE_BY_STATUS.get(status)
     if code is None:
         code = "internal_error" if status >= 500 else "bad_request"
+    log_method = logger.error if status >= 500 else logger.warning
+    log_method(
+        "request.http_exception",
+        status_code=status,
+        error_code=code,
+        description=message,
+    )
     return error_response(code, message, status)
 
 
@@ -588,7 +710,7 @@ def stream_proxy():
     if cam_user and cam_pass and "@" not in rtsp_url:
         rtsp_url = rtsp_url.replace("rtsp://", f"rtsp://{cam_user}:{cam_pass}@", 1)
 
-    app.logger.info("NightMotion proxying %s", rtsp_url)
+    logger.bind(stream="nightmotion", rtsp_url=rtsp_url).info("nightmotion.proxy_start")
 
     try:
         response = Response(
@@ -602,16 +724,16 @@ def stream_proxy():
     except PermissionError:
         return error_response("unauthorized", "Unauthorized", 401)
     except RuntimeError as exc:
-        app.logger.exception("NightMotion stream error: %s", exc)
+        logger.bind(stream="nightmotion").exception("nightmotion.stream_error", error=str(exc))
         return error_response("internal_error", "Stream nelze navázat", 500)
     except Exception as exc:
-        app.logger.exception("Unexpected stream error: %s", exc)
+        logger.bind(stream="nightmotion").exception("nightmotion.stream_error_unexpected", error=str(exc))
         return error_response("internal_error", "Stream nelze navázat", 500)
 
 
 @app.errorhandler(Exception)
 def handle_unexpected_exception(exc: Exception):
-    app.logger.exception("Unhandled exception", exc_info=exc)
+    logger.bind(status_code=500).exception("request.unhandled_exception", error=str(exc))
     return error_response("internal_error", "An unexpected error occurred", 500)
 
 
@@ -621,7 +743,7 @@ def backup_status():
     try:
         status = backup_manager.get_status()
     except Exception as exc:
-        app.logger.exception("Failed to fetch backup status", exc_info=exc)
+        logger.bind(status_code=500).exception("backup.status_error", error=str(exc))
         return error_response("backup_error", "Unable to fetch backup status", 500)
     return jsonify(status)
 
@@ -632,7 +754,7 @@ def backup_run():
     try:
         result = backup_manager.create_backup(initiated_by="api")
     except Exception as exc:
-        app.logger.exception("Manual backup run failed", exc_info=exc)
+        logger.bind(status_code=500).exception("backup.run_error", error=str(exc))
         return error_response("backup_error", "Failed to create backup", 500)
     return jsonify({"message": "Backup completed", "backup": result})
 
@@ -657,7 +779,7 @@ def backup_toggle():
     try:
         status = backup_manager.toggle(enabled=enabled, interval_minutes=interval)
     except Exception as exc:
-        app.logger.exception("Failed to update backup settings", exc_info=exc)
+        logger.bind(status_code=500).exception("backup.toggle_error", error=str(exc))
         return error_response("backup_error", "Unable to update backup settings", 500)
     return jsonify({"message": "Backup settings updated", "status": status})
 
@@ -995,7 +1117,7 @@ def add_activity():
         invalidate_cache("stats")
         return jsonify({"message": "Kategorie přidána"}), 201
     except IntegrityError as exc:
-        app.logger.exception("Failed to add activity", exc_info=exc)
+        logger.exception("activities.insert_conflict", error=str(exc))
         return error_response(
             "conflict",
             "Kategorie s tímto názvem již existuje",

@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import structlog
+
 from db_utils import connection as sa_connection, transactional_connection
 from extensions import db
 
@@ -15,6 +17,7 @@ class BackupManager:
 
     def __init__(self, app):
         self.app = app
+        self.logger = structlog.get_logger("mosaic.backup")
         backup_dir_config = app.config.get("BACKUP_DIR")
         if backup_dir_config:
             self.backup_dir = Path(backup_dir_config)
@@ -216,7 +219,7 @@ class BackupManager:
                 try:
                     self.create_backup(initiated_by="scheduler")
                 except Exception as exc:  # pragma: no cover - logged by Flask later
-                    self.app.logger.exception("Backup scheduler failed: %s", exc)
+                    self.logger.exception("backup.scheduler_failed", error=str(exc))
                 self._stop_event.wait(5)
             else:
                 remaining = (interval * 60) - (now - last_run).total_seconds()
