@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Loading } from "./Loading";
 import { ErrorState } from "./ErrorState";
@@ -52,6 +52,21 @@ const toNumber = (value, fallback = 0) => {
 };
 
 const formatPercent = (value) => `${toNumber(value).toFixed(1)}%`;
+const normaliseIndex = (index, length) => {
+  if (!length) return 0;
+  const mod = index % length;
+  return mod >= 0 ? mod : mod + length;
+};
+
+const navButtonStyle = {
+  backgroundColor: "#1f2024",
+  border: "1px solid #38393e",
+  color: "#e6e6e6",
+  borderRadius: "0.4rem",
+  padding: "0.35rem 0.7rem",
+  cursor: "pointer",
+  transition: "opacity 160ms ease-in-out",
+};
 
 export default function Stats({ onNotify }) {
   const dispatch = useDispatch();
@@ -129,7 +144,26 @@ export default function Stats({ onNotify }) {
   const positiveWidth = totalPolarity ? (positiveCount / totalPolarity) * 100 : 0;
   const negativeWidth = totalPolarity ? (negativeCount / totalPolarity) * 100 : 0;
 
-  const consistency = snapshot?.top_consistent_activities || [];
+  const avgByCategory = snapshot?.avg_goal_fulfillment_by_category || [];
+  const [avgCategoryIndex, setAvgCategoryIndex] = useState(0);
+  useEffect(() => {
+    setAvgCategoryIndex(0);
+  }, [avgByCategory.length]);
+  const avgCategoryLength = avgByCategory.length;
+  const activeAvgCategory =
+    avgCategoryLength > 0 ? avgByCategory[normaliseIndex(avgCategoryIndex, avgCategoryLength)] : null;
+
+  const consistencyByCategory = snapshot?.top_consistent_activities_by_category || [];
+  const [consistencyIndex, setConsistencyIndex] = useState(0);
+  useEffect(() => {
+    setConsistencyIndex(0);
+  }, [consistencyByCategory.length]);
+  const consistencyLength = consistencyByCategory.length;
+  const activeConsistencyBucket =
+    consistencyLength > 0
+      ? consistencyByCategory[normaliseIndex(consistencyIndex, consistencyLength)]
+      : null;
+  const canCycleConsistency = consistencyLength > 1;
 
   const sectionGridStyle = {
     ...sectionGridBase,
@@ -431,29 +465,206 @@ export default function Stats({ onNotify }) {
               }}
             >
               <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
-                Top Consistent Activities
+                Category Averages (excludes today)
               </span>
-              {consistency.length === 0 && (
-                <span style={{ color: "#9ba3af", fontStyle: "italic" }}>No standout activities yet.</span>
+              {!activeAvgCategory && (
+                <span style={{ color: "#9ba3af", fontStyle: "italic" }}>
+                  Not enough entries to compute per-category averages.
+                </span>
               )}
-              {consistency.map((item) => (
-                <div key={item.name} style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
-                    <span>{item.name}</span>
-                    <span>{formatPercent(item.consistency_percent)}</span>
+              {activeAvgCategory && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <span style={{ fontSize: "1rem", fontWeight: 600 }}>{activeAvgCategory.category}</span>
+                    <div style={{ display: "flex", gap: "0.35rem" }}>
+                      <button
+                        type="button"
+                        onClick={() => setAvgCategoryIndex((prev) => prev - 1)}
+                        style={{
+                          ...navButtonStyle,
+                          opacity: avgCategoryLength > 1 ? 1 : 0.5,
+                          cursor: avgCategoryLength > 1 ? "pointer" : "default",
+                        }}
+                        disabled={avgCategoryLength <= 1}
+                        aria-label="Previous category average"
+                      >
+                        ◀
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAvgCategoryIndex((prev) => prev + 1)}
+                        style={{
+                          ...navButtonStyle,
+                          opacity: avgCategoryLength > 1 ? 1 : 0.5,
+                          cursor: avgCategoryLength > 1 ? "pointer" : "default",
+                        }}
+                        disabled={avgCategoryLength <= 1}
+                        aria-label="Next category average"
+                      >
+                        ▶
+                      </button>
+                    </div>
                   </div>
-                  <div style={meterContainer}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "0.75rem",
+                    }}
+                  >
                     <div
                       style={{
-                        ...meterFillBase,
-                        width: `${Math.min(100, Math.max(0, toNumber(item.consistency_percent)))}%`,
-                        backgroundColor: "#3a7bd5",
+                        backgroundColor: "#1f2024",
+                        borderRadius: "0.4rem",
+                        padding: "0.75rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.35rem",
                       }}
-                    />
+                    >
+                      <span style={{ color: "#9ba3af", fontSize: "0.8rem" }}>Last 7 days</span>
+                      <strong style={{ fontSize: "1.2rem" }}>
+                        {formatPercent(activeAvgCategory.last_7_days)}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        backgroundColor: "#1f2024",
+                        borderRadius: "0.4rem",
+                        padding: "0.75rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.35rem",
+                      }}
+                    >
+                      <span style={{ color: "#9ba3af", fontSize: "0.8rem" }}>Last 30 days</span>
+                      <strong style={{ fontSize: "1.2rem" }}>
+                        {formatPercent(activeAvgCategory.last_30_days)}
+                      </strong>
+                    </div>
                   </div>
+                  <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
+                    Swiping through categories reveals how each area trends over time without counting today's
+                    progress.
+                  </span>
                 </div>
-              ))}
+              )}
+              {avgCategoryLength > 1 && (
+                <span style={{ color: "#60646f", fontSize: "0.75rem" }}>
+                  {normaliseIndex(avgCategoryIndex, avgCategoryLength) + 1} / {avgCategoryLength}
+                </span>
+              )}
             </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.9rem",
+              padding: "1.1rem",
+              borderRadius: "0.5rem",
+              backgroundColor: "#232428",
+              border: "1px solid #303136",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "0.75rem",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
+                Top Consistent Activities by Category
+              </span>
+              {consistencyLength > 1 && (
+                <div style={{ display: "flex", gap: "0.35rem" }}>
+                  <button
+                    type="button"
+                    onClick={() => setConsistencyIndex((prev) => prev - 1)}
+                    style={{
+                      ...navButtonStyle,
+                      opacity: canCycleConsistency ? 1 : 0.5,
+                      cursor: canCycleConsistency ? "pointer" : "default",
+                    }}
+                    disabled={!canCycleConsistency}
+                    aria-label="Previous category for consistent activities"
+                  >
+                    ◀
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConsistencyIndex((prev) => prev + 1)}
+                    style={{
+                      ...navButtonStyle,
+                      opacity: canCycleConsistency ? 1 : 0.5,
+                      cursor: canCycleConsistency ? "pointer" : "default",
+                    }}
+                    disabled={!canCycleConsistency}
+                    aria-label="Next category for consistent activities"
+                  >
+                    ▶
+                  </button>
+                </div>
+              )}
+            </div>
+            {!activeConsistencyBucket && (
+              <span style={{ color: "#9ba3af", fontStyle: "italic" }}>
+                Add more entries to surface consistency champions.
+              </span>
+            )}
+            {activeConsistencyBucket && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "baseline",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <strong style={{ fontSize: "1.1rem" }}>{activeConsistencyBucket.category}</strong>
+                  {consistencyLength > 1 && (
+                    <span style={{ color: "#60646f", fontSize: "0.75rem" }}>
+                      {normaliseIndex(consistencyIndex, consistencyLength) + 1} / {consistencyLength}
+                    </span>
+                  )}
+                </div>
+                {activeConsistencyBucket.activities.length === 0 && (
+                  <span style={{ color: "#9ba3af", fontStyle: "italic" }}>
+                    No activities logged for this category yet.
+                  </span>
+                )}
+                {activeConsistencyBucket.activities.map((item) => (
+                  <div key={item.name} style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+                      <span>{item.name}</span>
+                      <span>{formatPercent(item.consistency_percent)}</span>
+                    </div>
+                    <div style={meterContainer}>
+                      <div
+                        style={{
+                          ...meterFillBase,
+                          width: `${Math.min(100, Math.max(0, toNumber(item.consistency_percent)))}%`,
+                          backgroundColor: "#3a7bd5",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

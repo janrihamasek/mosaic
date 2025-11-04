@@ -26,12 +26,52 @@ export interface Entry {
   note?: string;
 }
 
+export interface ActivityDistributionBucket {
+  category: string;
+  count: number;
+  percent: number;
+}
+
+export interface AverageGoalFulfilment {
+  last_7_days: number;
+  last_30_days: number;
+}
+
+export interface CategoryAverageGoalFulfilment extends AverageGoalFulfilment {
+  category: string;
+}
+
+export interface ActiveDaysRatio {
+  active_days: number;
+  total_days: number;
+  percent: number;
+}
+
+export interface PositiveNegativeSummary {
+  positive: number;
+  negative: number;
+  ratio: number;
+}
+
+export interface ConsistentActivity {
+  name: string;
+  consistency_percent: number;
+}
+
+export interface ConsistentActivitiesByCategory {
+  category: string;
+  activities: ConsistentActivity[];
+}
+
 export interface StatsSnapshot {
-  completion: number;
-  streak: number;
-  fulfilment: number;
-  polarity: Record<string, number>;
-  consistency: number;
+  goal_completion_today: number;
+  streak_length: number;
+  activity_distribution: ActivityDistributionBucket[];
+  avg_goal_fulfillment: AverageGoalFulfilment;
+  avg_goal_fulfillment_by_category: CategoryAverageGoalFulfilment[];
+  active_days_ratio: ActiveDaysRatio;
+  positive_vs_negative: PositiveNegativeSummary;
+  top_consistent_activities_by_category: ConsistentActivitiesByCategory[];
 }
 
 export {};

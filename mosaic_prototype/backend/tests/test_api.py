@@ -526,7 +526,8 @@ def test_stats_progress_payload_structure(client, auth_headers):
         "avg_goal_fulfillment",
         "active_days_ratio",
         "positive_vs_negative",
-        "top_consistent_activities",
+        "avg_goal_fulfillment_by_category",
+        "top_consistent_activities_by_category",
     }
     assert expected_keys.issubset(payload.keys())
 
@@ -579,17 +580,31 @@ def test_stats_progress_payload_structure(client, auth_headers):
     assert isinstance(polarity["ratio"], (int, float))
     assert polarity["ratio"] >= 0.0
 
-    consistent = payload["top_consistent_activities"]
+    avg_by_category = payload["avg_goal_fulfillment_by_category"]
+    assert isinstance(avg_by_category, list)
+    for item in avg_by_category:
+        assert {"category", "last_7_days", "last_30_days"} == set(item.keys())
+        assert isinstance(item["category"], str)
+        for key in ("last_7_days", "last_30_days"):
+            assert isinstance(item[key], (int, float))
+            assert 0.0 <= item[key] <= 100.0
+            assert pytest.approx(item[key], rel=0, abs=0.05) == round(item[key], 1)
+
+    consistent = payload["top_consistent_activities_by_category"]
     assert isinstance(consistent, list)
-    assert len(consistent) <= 3
-    for entry in consistent:
-        assert {"name", "consistency_percent"} == set(entry.keys())
-        assert isinstance(entry["name"], str)
-        assert isinstance(entry["consistency_percent"], (int, float))
-        assert 0.0 <= entry["consistency_percent"] <= 100.0
-        assert pytest.approx(entry["consistency_percent"], rel=0, abs=0.05) == round(
-            entry["consistency_percent"], 1
-        )
+    for bucket in consistent:
+        assert {"category", "activities"} == set(bucket.keys())
+        assert isinstance(bucket["category"], str)
+        assert isinstance(bucket["activities"], list)
+        assert len(bucket["activities"]) <= 3
+        for entry in bucket["activities"]:
+            assert {"name", "consistency_percent"} == set(entry.keys())
+            assert isinstance(entry["name"], str)
+            assert isinstance(entry["consistency_percent"], (int, float))
+            assert 0.0 <= entry["consistency_percent"] <= 100.0
+            assert pytest.approx(entry["consistency_percent"], rel=0, abs=0.05) == round(
+                entry["consistency_percent"], 1
+            )
 
 
 def test_stats_progress_invalid_date(client, auth_headers):

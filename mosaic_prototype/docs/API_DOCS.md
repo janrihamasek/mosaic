@@ -309,27 +309,44 @@ Set `REACT_APP_API_BASE_URL`/`REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`P
       "last_7_days": 92.1,
       "last_30_days": 84.7
     },
+    "avg_goal_fulfillment_by_category": [
+      {"category": "Health", "last_7_days": 95.4, "last_30_days": 88.0},
+      {"category": "Work", "last_7_days": 88.3, "last_30_days": 75.0}
+    ],
     "active_days_ratio": {
-      "active_days": 22,
+      "active_days": 21,
       "total_days": 30,
-      "percent": 73.3
+      "percent": 70.0
     },
     "positive_vs_negative": {
-      "positive": 48,
-      "negative": 12,
-      "ratio": 4.0
+      "positive": 52,
+      "negative": 8,
+      "ratio": 6.5
     },
-    "top_consistent_activities": [
-      {"name": "Walking", "consistency_percent": 98.0},
-      {"name": "Reading", "consistency_percent": 91.5},
-      {"name": "Meditation", "consistency_percent": 89.2}
+    "top_consistent_activities_by_category": [
+      {
+        "category": "Health",
+        "activities": [
+          {"name": "Walking", "consistency_percent": 98.0},
+          {"name": "Stretching", "consistency_percent": 76.7}
+        ]
+      },
+      {
+        "category": "Work",
+        "activities": [
+          {"name": "Deep work", "consistency_percent": 83.3},
+          {"name": "Reading", "consistency_percent": 70.0}
+        ]
+      }
     ]
   }
   ```
 - **Notes**:
   - Percentages are rounded to one decimal place.
   - Daily goal completion is computed against the sum of `avg_goal_per_day` for all currently active activities (capped at 100%).
-  - `streak_length` counts consecutive days starting from the day before `date` in which the above ratio stays at or above 0.5.
+  - `streak_length` counts consecutive days starting from the day before `date` where the overall ratio stays at or above 0.5.
+  - Category averages exclude the current day; global averages still include it.
+  - `positive_vs_negative` splits entries into `value > 0` (positive) and `value = 0` (negative), with the ratio dividing by at least one via `max(negative, 1)`.
   - Results are cached per-date for five minutes and invalidated automatically after any entry or activity mutation.
 
 ---

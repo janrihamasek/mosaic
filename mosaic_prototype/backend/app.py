@@ -1235,10 +1235,24 @@ def get_progress_stats():
 
     conn = get_db_connection()
     try:
-        total_goal_row = conn.execute(
-            "SELECT COALESCE(SUM(goal), 0) AS total_goal FROM activities WHERE active = TRUE"
-        ).fetchone()
-        total_active_goal = float(total_goal_row["total_goal"] or 0.0)
+        activity_goal_rows = conn.execute(
+            """
+            SELECT
+                COALESCE(NULLIF(category, ''), 'Other') AS category,
+                COALESCE(SUM(goal), 0) AS total_goal
+            FROM activities
+            WHERE active = TRUE
+            GROUP BY category
+        """
+        ).fetchall()
+
+        total_active_goal = 0.0
+        category_goal_totals: Dict[str, float] = {}
+        for row in activity_goal_rows:
+            category_name = row["category"] or "Other"
+            goal_value = max(float(row["total_goal"] or 0.0), 0.0)
+            category_goal_totals[category_name] = goal_value
+            total_active_goal += goal_value
 
         def compute_ratio(total_value: Optional[float]) -> float:
             if total_active_goal <= 0:
@@ -1265,16 +1279,43 @@ def get_progress_stats():
             ratio = compute_ratio(row["total_value"])
             daily_completion[row["date"]] = ratio
 
+        category_daily_rows = conn.execute(
+            """
+            SELECT
+                date,
+                COALESCE(NULLIF(activity_category, ''), 'Other') AS category,
+                COALESCE(SUM(value), 0) AS total_value,
+                COALESCE(SUM(activity_goal), 0) AS total_goal
+            FROM entries
+            WHERE date BETWEEN ? AND ?
+            GROUP BY date, category
+        """,
+            (window_30_start, today_str),
+        ).fetchall()
+
+        categories_seen = set(category_goal_totals.keys())
+        category_daily_completion: Dict[str, Dict[str, float]] = defaultdict(dict)
+        for row in category_daily_rows:
+            category = row["category"] or "Other"
+            categories_seen.add(category)
+            denominator = category_goal_totals.get(category, 0.0)
+            if denominator <= 0:
+                denominator = max(float(row["total_goal"] or 0.0), 0.0)
+            total_value = max(float(row["total_value"] or 0.0), 0.0)
+            if denominator <= 0:
+                ratio = 0.0
+            else:
+                ratio = min(total_value / denominator, 1.0)
+            category_daily_completion[category][row["date"]] = ratio
+
         streak_length = 0
-        if total_active_goal > 0:
-            cursor = target_date - timedelta(days=1)
-            for _ in range(30):
-                key = cursor.strftime("%Y-%m-%d")
-                ratio = daily_completion.get(key)
-                if ratio is None or ratio < 0.5:
-                    break
+        active_day_threshold = 0.5
+        for offset in range(1, 31):
+            key = (target_date - timedelta(days=offset)).strftime("%Y-%m-%d")
+            if daily_completion.get(key, 0.0) >= active_day_threshold:
                 streak_length += 1
-                cursor -= timedelta(days=1)
+            else:
+                break
 
         goal_ratio_today = daily_completion.get(today_str, 0.0)
         goal_completion_today = round(min(goal_ratio_today * 100, 100.0), 1)
@@ -1287,7 +1328,7 @@ def get_progress_stats():
                 COUNT(*) AS entry_count
             FROM entries
             WHERE date BETWEEN ? AND ?
-            GROUP BY category
+            GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other')
             ORDER BY entry_count DESC, LOWER(COALESCE(NULLIF(activity_category, ''), 'Other')) ASC
         """,
             (window_30_start, today_str),
@@ -1298,9 +1339,11 @@ def get_progress_stats():
         for row in distribution_rows:
             count = int(row["entry_count"] or 0)
             percent = round((count / total_entries) * 100, 1) if total_entries else 0.0
+            category_name = row["category"] or "Other"
+            categories_seen.add(category_name)
             activity_distribution.append(
                 {
-                    "category": row["category"] or "Other",
+                    "category": category_name,
                     "count": count,
                     "percent": percent,
                 }
@@ -1318,7 +1361,11 @@ def get_progress_stats():
             "last_30_days": average_completion(30),
         }
 
-        active_days = len(daily_rows)
+        active_days = 0
+        for offset in range(1, 31):
+            key = (target_date - timedelta(days=offset)).strftime("%Y-%m-%d")
+            if daily_completion.get(key, 0.0) >= active_day_threshold:
+                active_days += 1
         active_days_ratio = {
             "active_days": active_days,
             "total_days": 30,
@@ -1328,8 +1375,8 @@ def get_progress_stats():
         pos_neg_row = conn.execute(
             """
             SELECT
-                SUM(CASE WHEN COALESCE(value, 0) >= COALESCE(activity_goal, 0) THEN 1 ELSE 0 END) AS positive_count,
-                SUM(CASE WHEN COALESCE(value, 0) < COALESCE(activity_goal, 0) THEN 1 ELSE 0 END) AS negative_count
+                SUM(CASE WHEN COALESCE(value, 0) > 0 THEN 1 ELSE 0 END) AS positive_count,
+                SUM(CASE WHEN COALESCE(value, 0) = 0 THEN 1 ELSE 0 END) AS negative_count
             FROM entries
             WHERE date BETWEEN ? AND ?
         """,
@@ -1338,10 +1385,7 @@ def get_progress_stats():
 
         positive_count = int(pos_neg_row["positive_count"] or 0)
         negative_count = int(pos_neg_row["negative_count"] or 0)
-        if negative_count > 0:
-            ratio_value = round(positive_count / negative_count, 1)
-        else:
-            ratio_value = round(float(positive_count), 1) if positive_count else 0.0
+        ratio_value = round(positive_count / max(negative_count, 1), 1)
         positive_vs_negative = {
             "positive": positive_count,
             "negative": negative_count,
@@ -1351,25 +1395,56 @@ def get_progress_stats():
         consistent_rows = conn.execute(
             """
             SELECT
+                COALESCE(NULLIF(activity_category, ''), 'Other') AS category,
                 activity AS name,
                 COUNT(DISTINCT date) AS active_days
             FROM entries
             WHERE date BETWEEN ? AND ?
-            GROUP BY activity
-            ORDER BY active_days DESC, LOWER(activity) ASC
-            LIMIT 3
+            GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other'), activity
+            ORDER BY LOWER(COALESCE(NULLIF(activity_category, ''), 'Other')) ASC, active_days DESC, LOWER(activity) ASC
         """,
             (window_30_start, today_str),
         ).fetchall()
 
-        top_consistent_activities = []
+        consistent_by_category: Dict[str, list[dict]] = defaultdict(list)
         for row in consistent_rows:
             days_present = int(row["active_days"] or 0)
             percent = round((days_present / 30) * 100, 1) if days_present else 0.0
-            top_consistent_activities.append(
+            category_name = row["category"] or "Other"
+            categories_seen.add(category_name)
+            consistent_by_category[category_name].append(
                 {
                     "name": row["name"],
                     "consistency_percent": percent,
+                }
+            )
+
+        top_consistent_activities_by_category = []
+        for category_name in sorted(consistent_by_category.keys(), key=lambda value: value.lower()):
+            activities = consistent_by_category[category_name][:3]
+            top_consistent_activities_by_category.append(
+                {
+                    "category": category_name,
+                    "activities": activities,
+                }
+            )
+
+        avg_goal_fulfillment_by_category = []
+        for category_name in sorted(categories_seen, key=lambda value: value.lower()):
+            category_ratios = category_daily_completion.get(category_name, {})
+            last_7_total = 0.0
+            last_30_total = 0.0
+            for offset in range(1, 8):
+                key = (target_date - timedelta(days=offset)).strftime("%Y-%m-%d")
+                last_7_total += category_ratios.get(key, 0.0)
+            for offset in range(1, 31):
+                key = (target_date - timedelta(days=offset)).strftime("%Y-%m-%d")
+                last_30_total += category_ratios.get(key, 0.0)
+            avg_goal_fulfillment_by_category.append(
+                {
+                    "category": category_name,
+                    "last_7_days": round((last_7_total / 7) * 100, 1),
+                    "last_30_days": round((last_30_total / 30) * 100, 1),
                 }
             )
 
@@ -1380,7 +1455,8 @@ def get_progress_stats():
             "avg_goal_fulfillment": avg_goal_fulfillment,
             "active_days_ratio": active_days_ratio,
             "positive_vs_negative": positive_vs_negative,
-            "top_consistent_activities": top_consistent_activities,
+            "avg_goal_fulfillment_by_category": avg_goal_fulfillment_by_category,
+            "top_consistent_activities_by_category": top_consistent_activities_by_category,
         }
         cache_set("stats", cache_key_parts, payload, STATS_CACHE_TTL)
         return jsonify(payload)
