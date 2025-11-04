@@ -1,0 +1,28 @@
+{
+  "project_title": "Mosaic Roadmap Q4 2025",
+  "fields": ["Title", "Area", "Estimate", "Priority", "Status"],
+  "items": [
+    { "Title": "Define metric calculations (METRICS.md)", "Area": "Analytics", "Estimate": 2000, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Document metric logic and examples", "Area": "Docs", "Estimate": 800, "Priority": "Low", "Status": "Planned" },
+    { "Title": "Import data from wearables (Google Fit, Oura)", "Area": "Backend", "Estimate": 7000, "Priority": "High", "Status": "Planned" },
+    { "Title": "Tapo motion detection and DB recording", "Area": "Backend", "Estimate": 3000, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "User management (profile, preferences)", "Area": "Backend", "Estimate": 3000, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Activity logging (user, system)", "Area": "Infra", "Estimate": 1800, "Priority": "Low", "Status": "Planned" },
+    { "Title": "Display username and profile menu", "Area": "Frontend", "Estimate": 800, "Priority": "Low", "Status": "Planned" },
+    { "Title": "Negative records (habits such as smoking, coffee)", "Area": "Backend", "Estimate": 6000, "Priority": "High", "Status": "Planned" },
+    { "Title": "Mood tracking and vision notes", "Area": "Frontend", "Estimate": 3500, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "UI refresh and reset behavior", "Area": "Frontend", "Estimate": 1100, "Priority": "Low", "Status": "Planned" },
+    { "Title": "Tooltips and help popovers", "Area": "Frontend", "Estimate": 1200, "Priority": "Low", "Status": "Planned" },
+    { "Title": "OpenAPI / Swagger documentation", "Area": "Docs", "Estimate": 2000, "Priority": "Low", "Status": "Planned" },
+    { "Title": "Developer guide and ER diagram", "Area": "Docs", "Estimate": 1800, "Priority": "Low", "Status": "Planned" },
+    { "Title": "Structlog logging and error metrics", "Area": "Infra", "Estimate": 3500, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Backup and restore tests in CI", "Area": "Infra", "Estimate": 2500, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Responsive layout and PWA support", "Area": "Frontend", "Estimate": 3000, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Goal reminders and notifications", "Area": "Frontend", "Estimate": 2000, "Priority": "Low", "Status": "Planned" },
+    { "Title": "AI-based insights and trend analysis", "Area": "Analytics", "Estimate": 3500, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Frontend Jest / React Testing Library tests", "Area": "Frontend", "Estimate": 3000, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Cypress end-to-end tests", "Area": "Frontend", "Estimate": 3500, "Priority": "Medium", "Status": "Planned" },
+    { "Title": "Pytest extensions for stream and backup", "Area": "Backend", "Estimate": 2000, "Priority": "Low", "Status": "Planned" },
+    { "Title": "Linting and TypeScript roadmap", "Area": "Frontend", "Estimate": 800, "Priority": "Low", "Status": "Planned" }
+  ]
+}
