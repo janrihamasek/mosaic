@@ -9,6 +9,7 @@ import ActivityTable from "./components/ActivityTable";
 import EntryForm from "./components/EntryForm";
 import EntryTable from "./components/EntryTable";
 import BackupPanel from "./components/BackupPanel";
+import ImportExportPanel from "./components/ImportExportPanel";
 import Stats from "./components/Stats";
 import NightMotion from "./components/NightMotion";
 import Notification from "./components/Notification";
@@ -271,6 +272,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         <div style={sectionWrapperStyle}>
           <EntryForm onNotify={showNotification} />
           <BackupPanel onNotify={showNotification} />
+          <ImportExportPanel onNotify={showNotification} />
           <EntryTable onNotify={showNotification} />
         </div>
       )}

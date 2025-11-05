@@ -129,8 +129,6 @@ export default function Stats({ onNotify }) {
     return { points, path, width, height };
   }, [snapshot]);
 
-  const goalCompletion = toNumber(snapshot?.goal_completion_today);
-  const streakLength = toNumber(snapshot?.streak_length, 0);
   const activeRatio = snapshot?.active_days_ratio || {};
   const activeDays = toNumber(activeRatio.active_days, 0);
   const totalDays = toNumber(activeRatio.total_days, 0) || 30;
@@ -168,6 +166,10 @@ export default function Stats({ onNotify }) {
   const sectionGridStyle = {
     ...sectionGridBase,
     gridTemplateColumns: isCompact ? "1fr" : "repeat(2, minmax(0, 1fr))",
+  };
+  const singleColumnSectionStyle = {
+    ...sectionGridBase,
+    gridTemplateColumns: "minmax(0, 1fr)",
   };
 
   if (status === "loading") {
@@ -216,48 +218,7 @@ export default function Stats({ onNotify }) {
 
       {snapshot && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          <div style={sectionGridStyle}>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.75rem",
-                padding: "1rem",
-                borderRadius: "0.5rem",
-                backgroundColor: "#232428",
-                border: "1px solid #303136",
-              }}
-            >
-              <span style={{ color: "#9ba3af", fontSize: "0.9rem", textTransform: "uppercase" }}>
-                Goal Completion Today
-              </span>
-              <div style={{ fontSize: "2.1rem", fontWeight: 600 }}>{formatPercent(goalCompletion)}</div>
-              <div style={meterContainer} aria-hidden="true">
-                <div
-                  style={{
-                    ...meterFillBase,
-                    width: `${Math.min(goalCompletion, 100)}%`,
-                    background:
-                      goalCompletion >= 80 ? "linear-gradient(90deg,#3a7bd5,#43cea2)" : "#8b1e3f",
-                  }}
-                />
-              </div>
-              <span
-                style={{
-                  alignSelf: "flex-start",
-                  backgroundColor: "#3a7bd533",
-                  border: "1px solid #3a7bd5",
-                  borderRadius: "999px",
-                  padding: "0.25rem 0.75rem",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  color: "#c4d9ff",
-                }}
-              >
-                Streak: {streakLength} day{streakLength === 1 ? "" : "s"}
-              </span>
-            </div>
-
+          <div style={singleColumnSectionStyle}>
             <div
               style={{
                 display: "flex",

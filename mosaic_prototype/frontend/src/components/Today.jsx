@@ -10,6 +10,7 @@ import {
   updateTodayRow,
   saveDirtyTodayRows,
   finalizeToday,
+  selectStatsState,
 } from "../store/entriesSlice";
 import Loading from "./Loading";
 import ErrorState from "./ErrorState";
@@ -23,6 +24,7 @@ const toLocalDateString = (dateObj) => {
 export default function Today({ onNotify }) {
   const dispatch = useDispatch();
   const { date, rows, status, dirty, savingStatus, error: todayError } = useSelector(selectTodayState);
+  const statsState = useSelector(selectStatsState);
   const loading = status === "loading";
   const autoSaving = savingStatus === "loading";
   const dirtyCount = Object.keys(dirty || {}).length;
@@ -199,16 +201,28 @@ export default function Today({ onNotify }) {
     );
   }, [rows]);
 
-  const rawPercent =
+  const statsGoal = Number(statsState?.snapshot?.goal_completion_today);
+  const hasStatsGoal = Number.isFinite(statsGoal);
+  const fallbackGoalPercent =
     progressStats.totalGoal > 0 ? (progressStats.totalValue / progressStats.totalGoal) * 100 : 0;
-  const cappedPercent = progressStats.totalGoal > 0 ? Math.min(rawPercent, 100) : 0;
-  const percentLabel =
-    progressStats.totalGoal > 0 ? `${Math.round(rawPercent)}%` : "N/A";
+  const resolvedGoalPercent = hasStatsGoal ? statsGoal : fallbackGoalPercent;
+  const clampedGoalPercent = Number.isFinite(resolvedGoalPercent)
+    ? Math.max(0, Math.min(100, resolvedGoalPercent))
+    : 0;
+  const goalPercentLabel = Number.isFinite(resolvedGoalPercent)
+    ? `${resolvedGoalPercent.toFixed(1)}%`
+    : progressStats.totalGoal > 0
+    ? `${fallbackGoalPercent.toFixed(1)}%`
+    : "N/A";
   const ratioLabel =
     progressStats.totalGoal > 0
       ? `${progressStats.totalValue.toFixed(1)} / ${progressStats.totalGoal.toFixed(1)}`
-      : "";
-  const progressColor = rawPercent >= 50 ? styles.highlightRow.backgroundColor : "#8b1e3f";
+      : null;
+  const goalProgressColor = clampedGoalPercent >= 50 ? "#2f9e44" : "#8b1e3f";
+  const streakLength = Number.isFinite(statsState?.snapshot?.streak_length)
+    ? statsState.snapshot.streak_length
+    : null;
+  const statsLoading = statsState?.status === "loading" && !statsState?.snapshot;
   const { isCompact, isDesktop } = useCompactLayout();
 
   const navigationButtonStyle = {
@@ -442,34 +456,63 @@ export default function Today({ onNotify }) {
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: "0.5rem",
-            padding: isCompact ? "0.75rem" : 0,
-            backgroundColor: isCompact ? "#202125" : "transparent",
-            borderRadius: isCompact ? "0.5rem" : 0,
+            gap: "0.75rem",
+            padding: isCompact ? "0.9rem" : "1rem",
+            backgroundColor: "#232428",
+            borderRadius: "0.5rem",
+            border: "1px solid #303136",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "#9ba3af" }}>
-            <span>Today progress</span>
-            <span>
-              {percentLabel}
-              {ratioLabel && <span style={{ marginLeft: "0.375rem" }}>({ratioLabel})</span>}
-            </span>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.8125rem",
+              color: "#9ba3af",
+              textTransform: "uppercase",
+            }}
+          >
+            <span>Goal Completion Today</span>
+            {statsLoading && <span style={{ ...styles.textMuted, fontSize: "0.75rem" }}>Loading…</span>}
           </div>
+          <div style={{ fontSize: "2rem", fontWeight: 600 }}>{goalPercentLabel}</div>
           <div style={{ height: 8, backgroundColor: "#333", borderRadius: 4, overflow: "hidden" }}>
             <div
               style={{
-                width: `${cappedPercent}%`,
-                backgroundColor: progressColor,
+                width: `${clampedGoalPercent}%`,
+                backgroundColor: goalProgressColor,
                 height: "100%",
                 transition: "width 0.3s ease",
               }}
-              aria-label="Today progress"
+              aria-label="Goal completion today"
               role="progressbar"
               aria-valuemin={0}
-              aria-valuemax={progressStats.totalGoal > 0 ? progressStats.totalGoal : undefined}
-              aria-valuenow={progressStats.totalGoal > 0 ? progressStats.totalValue : undefined}
+              aria-valuemax={100}
+              aria-valuenow={Number.isFinite(resolvedGoalPercent) ? Math.round(clampedGoalPercent) : undefined}
             />
           </div>
+          {ratioLabel && (
+            <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
+              Logged {ratioLabel} of today&apos;s target
+            </span>
+          )}
+          {typeof streakLength === "number" && (
+            <span
+              style={{
+                alignSelf: "flex-start",
+                backgroundColor: "#3a7bd533",
+                border: "1px solid #3a7bd5",
+                borderRadius: "999px",
+                padding: "0.25rem 0.75rem",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                color: "#c4d9ff",
+              }}
+            >
+              Streak: {streakLength} day{streakLength === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", justifyContent: isDesktop ? "flex-end" : "flex-start" }}>
           {autoSaving && <div style={styles.loadingText}>💾 Auto-saving...</div>}

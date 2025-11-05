@@ -41,7 +41,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
     frequencyPerWeek !== initialState.frequency_per_week ||
     description !== initialState.description;
 
-  const handleClose = async () => {
+  const handleSave = async () => {
     if (isSaving) return;
     if (!hasChanges) {
       dismiss();
@@ -59,16 +59,18 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
         throw new Error("Frequency per week must be between 1 and 7");
       }
 
-      await dispatch(updateActivityDetails({
-        id: activity.id,
-        payload: {
-          category: category.trim(),
-          frequency_per_day: perDay,
-          frequency_per_week: perWeek,
-          goal: avgGoalPerDay,
-          description: description.trim(),
-        },
-      })).unwrap();
+      await dispatch(
+        updateActivityDetails({
+          id: activity.id,
+          payload: {
+            category: category.trim(),
+            frequency_per_day: perDay,
+            frequency_per_week: perWeek,
+            goal: avgGoalPerDay,
+            description: description.trim(),
+          },
+        })
+      ).unwrap();
       onNotify?.("Activity updated", "success");
       dismiss();
     } catch (err) {
@@ -86,19 +88,35 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
   return (
     <ModalForm
       isOpen
-      onClose={handleClose}
+      onClose={handleDiscard}
       title={`${activity.name} - overview`}
-      closeLabel={hasChanges ? (isSaving ? "Saving..." : "Save") : "Close"}
+      closeLabel={hasChanges ? "Not Save" : "Close"}
       isDismissDisabled={isSaving}
       footerContent={
         hasChanges ? (
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
             <button
-              style={{ ...styles.button, backgroundColor: "#b0b0b0" }}
+              type="button"
+              style={{ ...styles.button, backgroundColor: "#3a3b3f" }}
               onClick={handleDiscard}
               disabled={isSaving}
             >
               Not Save
+            </button>
+            <button
+              type="button"
+              style={{ ...styles.button, backgroundColor: "#2f9e44" }}
+              onClick={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? "Saving..." : "Save"}
             </button>
           </div>
         ) : null

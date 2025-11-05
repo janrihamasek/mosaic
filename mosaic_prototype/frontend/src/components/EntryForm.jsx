@@ -2,7 +2,6 @@ import { useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useForm } from "react-hook-form";
 import { styles } from "../styles/common";
-import CsvImportButton from "./CsvImportButton";
 import { selectAllActivities } from "../store/activitiesSlice";
 import { loadEntries, selectEntriesFilters, selectEntriesList } from "../store/entriesSlice";
 import { formatError } from "../utils/errors";
@@ -201,11 +200,6 @@ export default function EntryForm({ onNotify }) {
       isSubmitting={isSubmitting}
       isSubmitDisabled={!isValid}
       submitLabel={isSubmitting ? "Applying…" : "Enter"}
-      footer={
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <CsvImportButton onNotify={onNotify} variant="import" />
-        </div>
-      }
     >
       <div
         style={{
