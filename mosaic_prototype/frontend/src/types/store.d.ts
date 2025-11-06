@@ -14,12 +14,18 @@ export interface AuthState {
   accessToken: string | null;
   csrfToken: string | null;
   username: string | null;
+  displayName: string | null;
+  isAdmin: boolean;
+  userId: number | null;
   tokenType: string;
   expiresAt: number;
   status: {
     login: AsyncRequestStatus;
     register: AsyncRequestStatus;
     logout: AsyncRequestStatus;
+    profile: AsyncRequestStatus;
+    profileUpdate: AsyncRequestStatus;
+    deleteAccount: AsyncRequestStatus;
   };
   error: FriendlyError | null;
 }

@@ -9,11 +9,12 @@ import EntryForm from "./components/EntryForm";
 import EntryTable from "./components/EntryTable";
 import Stats from "./components/Stats";
 import Admin from "./components/Admin";
+import ProfileModal from "./components/ProfileModal";
 import Notification from "./components/Notification";
 import LogoutButton from "./components/LogoutButton";
 import { styles } from "./styles/common";
 import { useCompactLayout } from "./utils/useBreakpoints";
-import { selectIsAuthenticated } from "./store/authSlice";
+import { fetchCurrentUserProfile, selectAuth, selectIsAuthenticated } from "./store/authSlice";
 import { loadEntries, loadStats, loadToday, setTodayDate } from "./store/entriesSlice";
 import {
   loadActivities,
@@ -24,13 +25,15 @@ import {
 import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
 
 const DEFAULT_TAB = "Today";
-const TABS = ["Today", "Activities", "Stats", "Entries", "Admin"];
+const BASE_TABS = ["Today", "Activities", "Stats", "Entries"];
+const ADMIN_TAB = "Admin";
+const ALL_TABS = [...BASE_TABS, ADMIN_TAB];
 const TAB_LABELS = {
   Today: "Today",
   Activities: "Activities",
   Stats: "Stats",
   Entries: "Entries",
-  Admin: "Admin",
+  [ADMIN_TAB]: "Admin",
 };
 
 const getTodayIso = () => {
@@ -40,13 +43,13 @@ const getTodayIso = () => {
   return adjusted.toISOString().slice(0, 10);
 };
 
-function resolveInitialTab(initialTab) {
-  if (initialTab && TABS.includes(initialTab)) {
+function resolveInitialTab(initialTab, availableTabs) {
+  if (initialTab && availableTabs.includes(initialTab)) {
     return initialTab;
   }
   if (typeof window !== "undefined") {
     const stored = window.localStorage.getItem("mosaic_active_tab");
-    if (stored && TABS.includes(stored)) {
+    if (stored && availableTabs.includes(stored)) {
       return stored;
     }
   }
@@ -55,17 +58,23 @@ function resolveInitialTab(initialTab) {
 
 export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const dispatch = useDispatch();
-  const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab));
+  const auth = useSelector(selectAuth);
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  const availableTabs = useMemo(
+    () => (auth.isAdmin ? [...BASE_TABS, ADMIN_TAB] : BASE_TABS),
+    [auth.isAdmin]
+  );
+  const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab, availableTabs));
   const [tabRenderKeys, setTabRenderKeys] = useState(() =>
-    Object.fromEntries(TABS.map((tab) => [tab, 0]))
+    Object.fromEntries(ALL_TABS.map((tab) => [tab, 0]))
   );
   const [notification, setNotification] = useState({ message: "", type: "info", visible: false });
+  const [isProfileOpen, setProfileOpen] = useState(false);
   const notificationTimerRef = useRef(null);
   const { isCompact } = useCompactLayout();
 
   const activities = useSelector(selectAllActivities);
   const selectedActivityId = useSelector(selectSelectedActivityId);
-  const isAuthenticated = useSelector(selectIsAuthenticated);
 
   const selectedActivity = useMemo(
     () => activities.find((activity) => activity.id === selectedActivityId) || null,
@@ -112,10 +121,25 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   }, [dispatch]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (isAuthenticated && auth.accessToken && auth.userId == null) {
+      dispatch(fetchCurrentUserProfile());
+    }
+  }, [auth.accessToken, auth.userId, dispatch, isAuthenticated]);
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      const fallback = availableTabs.includes(DEFAULT_TAB)
+        ? DEFAULT_TAB
+        : availableTabs[0] || DEFAULT_TAB;
+      setActiveTab(fallback);
+    }
+  }, [availableTabs, activeTab]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && availableTabs.includes(activeTab)) {
       window.localStorage.setItem("mosaic_active_tab", activeTab);
     }
-  }, [activeTab]);
+  }, [activeTab, availableTabs]);
 
   const containerStyle = {
     ...styles.container,
@@ -151,6 +175,54 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     padding: "0.25rem 0.65rem",
     letterSpacing: "0.015em",
   };
+
+  const headerActionsStyle = {
+    display: "flex",
+    flexDirection: isCompact ? "column" : "row",
+    alignItems: isCompact ? "stretch" : "center",
+    gap: "0.5rem",
+    minWidth: isCompact ? "100%" : "auto",
+  };
+
+  const userInfoStyle = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: isCompact ? "flex-start" : "flex-end",
+    gap: "0.2rem",
+  };
+
+  const userNameStyle = {
+    fontWeight: 600,
+    fontSize: "0.95rem",
+  };
+
+  const userMetaStyle = {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem",
+    flexWrap: "wrap",
+  };
+
+  const adminBadgeStyle = {
+    backgroundColor: "#fbbf24",
+    color: "#1f2937",
+    padding: "0.2rem 0.6rem",
+    borderRadius: "999px",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  };
+
+  const profileButtonStyle = {
+    ...(isCompact ? { width: "100%" } : { minWidth: "7rem" }),
+    backgroundColor: "#2563eb",
+  };
+
+  const logoutButtonStyle = isCompact ? styles.buttonMobile : { minWidth: "7rem" };
+  const userDisplayName = auth.displayName || auth.username || "Uživatel";
+  const secondaryUsername =
+    auth.displayName && auth.username && auth.displayName !== auth.username ? auth.username : null;
 
   const toastContainerStyle = {
     ...styles.toastContainer,
@@ -190,6 +262,9 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
 
   const refreshTab = useCallback(
     (tabName) => {
+      if (!availableTabs.includes(tabName)) {
+        return;
+      }
       if (tabName === "Today") {
         const todayIso = getTodayIso();
         dispatch(setTodayDate(todayIso));
@@ -211,15 +286,18 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         [tabName]: (prev?.[tabName] ?? 0) + 1,
       }));
     },
-    [dispatch]
+    [availableTabs, dispatch]
   );
 
   const handleTabSelect = useCallback(
     (tabName) => {
+      if (!availableTabs.includes(tabName)) {
+        return;
+      }
       refreshTab(tabName);
       setActiveTab((prev) => (prev === tabName ? prev : tabName));
     },
-    [refreshTab]
+    [availableTabs, refreshTab]
   );
 
   const sectionWrapperStyle = {
@@ -259,11 +337,31 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
             🔌 {API_BACKEND_LABEL}
           </span>
         </div>
-        <LogoutButton />
+        {isAuthenticated && (
+          <div style={headerActionsStyle}>
+            <div style={userInfoStyle}>
+              <span style={userNameStyle}>{userDisplayName}</span>
+              <div style={userMetaStyle}>
+                {secondaryUsername && (
+                  <span style={{ ...styles.textMuted, fontSize: "0.8rem" }}>@{secondaryUsername}</span>
+                )}
+                {auth.isAdmin && <span style={adminBadgeStyle}>Admin</span>}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setProfileOpen(true)}
+              style={{ ...styles.button, ...profileButtonStyle }}
+            >
+              Můj profil
+            </button>
+            <LogoutButton style={logoutButtonStyle} />
+          </div>
+        )}
       </div>
 
       <div style={tabBarStyle}>
-        {TABS.map((tab) => (
+        {availableTabs.map((tab) => (
           <div key={tab} style={tabItemStyle(tab)} onClick={() => handleTabSelect(tab)}>
             {TAB_LABELS[tab]}
           </div>
@@ -308,10 +406,18 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         </div>
       )}
 
-      {activeTab === "Admin" && (
+      {auth.isAdmin && activeTab === ADMIN_TAB && (
         <div style={sectionWrapperStyle}>
-          <Admin key={tabRenderKeys.Admin} onNotify={showNotification} />
+          <Admin key={tabRenderKeys[ADMIN_TAB]} onNotify={showNotification} />
         </div>
+      )}
+
+      {isAuthenticated && (
+        <ProfileModal
+          isOpen={isProfileOpen}
+          onClose={() => setProfileOpen(false)}
+          onNotify={showNotification}
+        />
       )}
     </div>
   );

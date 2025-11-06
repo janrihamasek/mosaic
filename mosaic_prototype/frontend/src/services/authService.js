@@ -60,7 +60,15 @@ function buildError(error) {
 }
 
 function normaliseAuth(username, responseData) {
-  const { access_token: accessToken, csrf_token: csrfToken, token_type: tokenType = 'Bearer', expires_in: expiresIn } = responseData;
+  const {
+    access_token: accessToken,
+    csrf_token: csrfToken,
+    token_type: tokenType = 'Bearer',
+    expires_in: expiresIn,
+    display_name: displayName,
+    is_admin: isAdmin,
+    user_id: userId,
+  } = responseData;
   const expiresAt = Date.now() + Number(expiresIn || 0) * 1000;
   return {
     username,
@@ -68,6 +76,9 @@ function normaliseAuth(username, responseData) {
     csrfToken,
     tokenType,
     expiresAt,
+    displayName: displayName || username,
+    isAdmin: Boolean(isAdmin),
+    userId: typeof userId === 'number' ? userId : null,
   };
 }
 
@@ -75,13 +86,43 @@ export function getAuthState() {
   const stored = readStorage();
   if (!stored || !stored.accessToken || !stored.csrfToken) {
     persist(null);
-    return { isAuthenticated: false, accessToken: null, csrfToken: null, username: null, tokenType: 'Bearer', expiresAt: 0 };
+    return {
+      isAuthenticated: false,
+      accessToken: null,
+      csrfToken: null,
+      username: null,
+      displayName: null,
+      isAdmin: false,
+      userId: null,
+      tokenType: 'Bearer',
+      expiresAt: 0,
+    };
   }
   if (stored.expiresAt && stored.expiresAt <= Date.now()) {
     persist(null);
-    return { isAuthenticated: false, accessToken: null, csrfToken: null, username: null, tokenType: 'Bearer', expiresAt: 0 };
+    return {
+      isAuthenticated: false,
+      accessToken: null,
+      csrfToken: null,
+      username: null,
+      displayName: null,
+      isAdmin: false,
+      userId: null,
+      tokenType: 'Bearer',
+      expiresAt: 0,
+    };
   }
-  return { ...stored, isAuthenticated: true };
+  return {
+    isAuthenticated: true,
+    accessToken: stored.accessToken ?? null,
+    csrfToken: stored.csrfToken ?? null,
+    username: stored.username ?? null,
+    displayName: stored.displayName ?? stored.username ?? null,
+    isAdmin: Boolean(stored.isAdmin),
+    userId: typeof stored.userId === 'number' ? stored.userId : null,
+    tokenType: stored.tokenType || 'Bearer',
+    expiresAt: stored.expiresAt ?? 0,
+  };
 }
 
 export async function login(username, password) {
@@ -96,9 +137,9 @@ export async function login(username, password) {
   }
 }
 
-export async function register(username, password) {
+export async function register(username, password, displayName) {
   try {
-    await authClient.post('/register', { username, password });
+    await authClient.post('/register', displayName ? { username, password, display_name: displayName } : { username, password });
   } catch (error) {
     throw buildError(error);
   }
@@ -110,6 +151,16 @@ export function logout({ silent } = { silent: false }) {
   if (!silent) {
     window.location.assign('/login');
   }
+}
+
+export function updateStoredAuth(partial) {
+  const current = readStorage() || {};
+  const next = {
+    ...current,
+    ...partial,
+  };
+  persist(next);
+  notify();
 }
 
 export function getAuthHeaders() {
@@ -163,8 +214,8 @@ export function getFriendlyMessage(code, fallback) {
 export function getTokens() {
   const state = getAuthState();
   if (!state.isAuthenticated) return null;
-  const { accessToken, csrfToken, tokenType, expiresAt, username } = state;
-  return { accessToken, csrfToken, tokenType, expiresAt, username };
+  const { accessToken, csrfToken, tokenType, expiresAt, username, displayName, isAdmin, userId } = state;
+  return { accessToken, csrfToken, tokenType, expiresAt, username, displayName, isAdmin, userId };
 }
 
 export function getAccessToken() {
