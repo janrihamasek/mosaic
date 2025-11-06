@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { useLocation, useNavigate } from "react-router-dom";
 
 import Today from "./components/Today";
 import ActivityForm from "./components/ActivityForm";
@@ -8,10 +7,8 @@ import ActivityDetail from "./components/ActivityDetail";
 import ActivityTable from "./components/ActivityTable";
 import EntryForm from "./components/EntryForm";
 import EntryTable from "./components/EntryTable";
-import BackupPanel from "./components/BackupPanel";
-import ImportExportPanel from "./components/ImportExportPanel";
 import Stats from "./components/Stats";
-import NightMotion from "./components/NightMotion";
+import Admin from "./components/Admin";
 import Notification from "./components/Notification";
 import LogoutButton from "./components/LogoutButton";
 import { styles } from "./styles/common";
@@ -27,13 +24,13 @@ import {
 import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
 
 const DEFAULT_TAB = "Today";
-const TABS = ["Today", "Activities", "Stats", "Entries", "NightMotion"];
+const TABS = ["Today", "Activities", "Stats", "Entries", "Admin"];
 const TAB_LABELS = {
   Today: "Today",
   Activities: "Activities",
   Stats: "Stats",
   Entries: "Entries",
-  NightMotion: "NightMotion",
+  Admin: "Admin",
 };
 
 const getTodayIso = () => {
@@ -58,8 +55,6 @@ function resolveInitialTab(initialTab) {
 
 export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const dispatch = useDispatch();
-  const location = useLocation();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab));
   const [tabRenderKeys, setTabRenderKeys] = useState(() =>
     Object.fromEntries(TABS.map((tab) => [tab, 0]))
@@ -121,14 +116,6 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       window.localStorage.setItem("mosaic_active_tab", activeTab);
     }
   }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab === "NightMotion" && location.pathname !== "/night-motion") {
-      navigate("/night-motion");
-    } else if (activeTab !== "NightMotion" && location.pathname === "/night-motion") {
-      navigate("/");
-    }
-  }, [activeTab, location.pathname, navigate]);
 
   const containerStyle = {
     ...styles.container,
@@ -317,18 +304,13 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       {activeTab === "Entries" && (
         <div style={sectionWrapperStyle}>
           <EntryForm key={`entries-form-${tabRenderKeys.Entries}`} onNotify={showNotification} />
-          <BackupPanel key={`entries-backup-${tabRenderKeys.Entries}`} onNotify={showNotification} />
-          <ImportExportPanel
-            key={`entries-tools-${tabRenderKeys.Entries}`}
-            onNotify={showNotification}
-          />
           <EntryTable key={`entries-table-${tabRenderKeys.Entries}`} onNotify={showNotification} />
         </div>
       )}
 
-      {activeTab === "NightMotion" && (
+      {activeTab === "Admin" && (
         <div style={sectionWrapperStyle}>
-          <NightMotion key={tabRenderKeys.NightMotion} onNotify={showNotification} />
+          <Admin key={tabRenderKeys.Admin} onNotify={showNotification} />
         </div>
       )}
     </div>
