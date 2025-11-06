@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 
 import { styles } from "../styles/common";
 import { useCompactLayout } from "../utils/useBreakpoints";
 import AdminUser from "./AdminUser";
 import AdminSettings from "./AdminSettings";
 import AdminNightMotion from "./AdminNightMotion";
+import { selectAuth } from "../store/authSlice";
 
 const SECTIONS = [
   { id: "user", label: "User", Component: AdminUser },
@@ -13,8 +15,19 @@ const SECTIONS = [
 ];
 
 export default function Admin({ onNotify }) {
+  const auth = useSelector(selectAuth);
   const { isCompact } = useCompactLayout();
-  const [activeSection, setActiveSection] = useState(SECTIONS[0].id);
+  const sections = useMemo(
+    () => (auth.isAdmin ? SECTIONS : SECTIONS.filter((section) => section.id === "user")),
+    [auth.isAdmin]
+  );
+  const [activeSection, setActiveSection] = useState(sections[0]?.id ?? "user");
+
+  useEffect(() => {
+    if (!sections.find((section) => section.id === activeSection)) {
+      setActiveSection(sections[0]?.id ?? "user");
+    }
+  }, [sections, activeSection]);
 
   const layoutStyle = useMemo(
     () => ({
@@ -86,12 +99,12 @@ export default function Admin({ onNotify }) {
   );
 
   const ActiveComponent =
-    SECTIONS.find((section) => section.id === activeSection)?.Component || AdminUser;
+    sections.find((section) => section.id === activeSection)?.Component || AdminUser;
 
   return (
     <div style={layoutStyle}>
       <nav style={menuContainerStyle} aria-label="Admin menu">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <button
             key={section.id}
             type="button"

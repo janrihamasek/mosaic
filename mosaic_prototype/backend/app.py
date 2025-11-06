@@ -665,7 +665,7 @@ def register():
     try:
         with db_transaction() as conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, created_at, display_name) VALUES (?, ?, ?, ?)",
+                "INSERT INTO users (username, password_hash, created_at, display_name, is_admin) VALUES (?, ?, ?, ?, FALSE)",
                 (username, password_hash, datetime.now(timezone.utc).isoformat(), display_name),
             )
     except IntegrityError:

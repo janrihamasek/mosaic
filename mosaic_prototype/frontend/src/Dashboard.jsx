@@ -9,7 +9,6 @@ import EntryForm from "./components/EntryForm";
 import EntryTable from "./components/EntryTable";
 import Stats from "./components/Stats";
 import Admin from "./components/Admin";
-import ProfileModal from "./components/ProfileModal";
 import Notification from "./components/Notification";
 import LogoutButton from "./components/LogoutButton";
 import { styles } from "./styles/common";
@@ -25,9 +24,8 @@ import {
 import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
 
 const DEFAULT_TAB = "Today";
-const BASE_TABS = ["Today", "Activities", "Stats", "Entries"];
 const ADMIN_TAB = "Admin";
-const ALL_TABS = [...BASE_TABS, ADMIN_TAB];
+const TABS = ["Today", "Activities", "Stats", "Entries", ADMIN_TAB];
 const TAB_LABELS = {
   Today: "Today",
   Activities: "Activities",
@@ -60,16 +58,12 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const dispatch = useDispatch();
   const auth = useSelector(selectAuth);
   const isAuthenticated = useSelector(selectIsAuthenticated);
-  const availableTabs = useMemo(
-    () => (auth.isAdmin ? [...BASE_TABS, ADMIN_TAB] : BASE_TABS),
-    [auth.isAdmin]
-  );
+  const availableTabs = TABS;
   const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab, availableTabs));
   const [tabRenderKeys, setTabRenderKeys] = useState(() =>
-    Object.fromEntries(ALL_TABS.map((tab) => [tab, 0]))
+    Object.fromEntries(TABS.map((tab) => [tab, 0]))
   );
   const [notification, setNotification] = useState({ message: "", type: "info", visible: false });
-  const [isProfileOpen, setProfileOpen] = useState(false);
   const notificationTimerRef = useRef(null);
   const { isCompact } = useCompactLayout();
 
@@ -125,15 +119,6 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       dispatch(fetchCurrentUserProfile());
     }
   }, [auth.accessToken, auth.userId, dispatch, isAuthenticated]);
-
-  useEffect(() => {
-    if (!availableTabs.includes(activeTab)) {
-      const fallback = availableTabs.includes(DEFAULT_TAB)
-        ? DEFAULT_TAB
-        : availableTabs[0] || DEFAULT_TAB;
-      setActiveTab(fallback);
-    }
-  }, [availableTabs, activeTab]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && availableTabs.includes(activeTab)) {
@@ -212,11 +197,6 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     fontWeight: 600,
     textTransform: "uppercase",
     letterSpacing: "0.04em",
-  };
-
-  const profileButtonStyle = {
-    ...(isCompact ? { width: "100%" } : { minWidth: "7rem" }),
-    backgroundColor: "#2563eb",
   };
 
   const logoutButtonStyle = isCompact ? styles.buttonMobile : { minWidth: "7rem" };
@@ -348,13 +328,6 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
                 {auth.isAdmin && <span style={adminBadgeStyle}>Admin</span>}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setProfileOpen(true)}
-              style={{ ...styles.button, ...profileButtonStyle }}
-            >
-              Můj profil
-            </button>
             <LogoutButton style={logoutButtonStyle} />
           </div>
         )}
@@ -406,18 +379,10 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         </div>
       )}
 
-      {auth.isAdmin && activeTab === ADMIN_TAB && (
+      {activeTab === ADMIN_TAB && (
         <div style={sectionWrapperStyle}>
           <Admin key={tabRenderKeys[ADMIN_TAB]} onNotify={showNotification} />
         </div>
-      )}
-
-      {isAuthenticated && (
-        <ProfileModal
-          isOpen={isProfileOpen}
-          onClose={() => setProfileOpen(false)}
-          onNotify={showNotification}
-        />
       )}
     </div>
   );
