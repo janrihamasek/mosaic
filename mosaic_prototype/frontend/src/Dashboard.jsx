@@ -17,7 +17,7 @@ import LogoutButton from "./components/LogoutButton";
 import { styles } from "./styles/common";
 import { useCompactLayout } from "./utils/useBreakpoints";
 import { selectIsAuthenticated } from "./store/authSlice";
-import { loadEntries, loadStats, loadToday } from "./store/entriesSlice";
+import { loadEntries, loadStats, loadToday, setTodayDate } from "./store/entriesSlice";
 import {
   loadActivities,
   selectAllActivities,
@@ -34,6 +34,13 @@ const TAB_LABELS = {
   Stats: "Stats",
   Entries: "Entries",
   NightMotion: "NightMotion",
+};
+
+const getTodayIso = () => {
+  const now = new Date();
+  const tzOffset = now.getTimezoneOffset();
+  const adjusted = new Date(now.getTime() - tzOffset * 60000);
+  return adjusted.toISOString().slice(0, 10);
 };
 
 function resolveInitialTab(initialTab) {
@@ -54,6 +61,9 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab));
+  const [tabRenderKeys, setTabRenderKeys] = useState(() =>
+    Object.fromEntries(TABS.map((tab) => [tab, 0]))
+  );
   const [notification, setNotification] = useState({ message: "", type: "info", visible: false });
   const notificationTimerRef = useRef(null);
   const { isCompact } = useCompactLayout();
@@ -191,6 +201,40 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     [activeTab, isCompact]
   );
 
+  const refreshTab = useCallback(
+    (tabName) => {
+      if (tabName === "Today") {
+        const todayIso = getTodayIso();
+        dispatch(setTodayDate(todayIso));
+        dispatch(loadToday(todayIso));
+        dispatch(loadStats({ date: todayIso }));
+      } else if (tabName === "Entries") {
+        dispatch(
+          loadEntries({
+            startDate: null,
+            endDate: null,
+            activity: "all",
+            category: "all",
+          })
+        );
+      }
+
+      setTabRenderKeys((prev) => ({
+        ...prev,
+        [tabName]: (prev?.[tabName] ?? 0) + 1,
+      }));
+    },
+    [dispatch]
+  );
+
+  const handleTabSelect = useCallback(
+    (tabName) => {
+      refreshTab(tabName);
+      setActiveTab((prev) => (prev === tabName ? prev : tabName));
+    },
+    [refreshTab]
+  );
+
   const sectionWrapperStyle = {
     ...styles.cardContainer,
     marginBottom: "1.5rem",
@@ -215,11 +259,11 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         <div style={titleWrapperStyle}>
           <h1
             style={{ cursor: "pointer", margin: 0 }}
-            onClick={() => setActiveTab(DEFAULT_TAB)}
+            onClick={() => handleTabSelect(DEFAULT_TAB)}
             role="button"
             tabIndex={0}
             onKeyPress={(e) => {
-              if (e.key === "Enter" || e.key === " ") setActiveTab(DEFAULT_TAB);
+              if (e.key === "Enter" || e.key === " ") handleTabSelect(DEFAULT_TAB);
             }}
           >
             🧩 Mosaic
@@ -233,7 +277,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
 
       <div style={tabBarStyle}>
         {TABS.map((tab) => (
-          <div key={tab} style={tabItemStyle(tab)} onClick={() => setActiveTab(tab)}>
+          <div key={tab} style={tabItemStyle(tab)} onClick={() => handleTabSelect(tab)}>
             {TAB_LABELS[tab]}
           </div>
         ))}
@@ -241,21 +285,23 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
 
       {activeTab === "Today" && (
         <div style={sectionWrapperStyle}>
-          <Today onNotify={showNotification} />
+          <Today key={tabRenderKeys.Today} onNotify={showNotification} />
         </div>
       )}
 
       {activeTab === "Activities" && (
         <div style={sectionWrapperStyle}>
-          <ActivityForm onNotify={showNotification} />
+          <ActivityForm key={`activities-form-${tabRenderKeys.Activities}`} onNotify={showNotification} />
           {selectedActivity && (
             <ActivityDetail
+              key={`activities-detail-${tabRenderKeys.Activities}-${selectedActivity.id}`}
               activity={selectedActivity}
               onClose={() => dispatch(selectActivity(null))}
               onNotify={showNotification}
             />
           )}
           <ActivityTable
+            key={`activities-table-${tabRenderKeys.Activities}`}
             onNotify={showNotification}
             onOpenDetail={(activity) => dispatch(selectActivity(activity?.id || null))}
           />
@@ -264,22 +310,25 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
 
       {activeTab === "Stats" && (
         <div style={sectionWrapperStyle}>
-          <Stats onNotify={showNotification} />
+          <Stats key={tabRenderKeys.Stats} onNotify={showNotification} />
         </div>
       )}
 
       {activeTab === "Entries" && (
         <div style={sectionWrapperStyle}>
-          <EntryForm onNotify={showNotification} />
-          <BackupPanel onNotify={showNotification} />
-          <ImportExportPanel onNotify={showNotification} />
-          <EntryTable onNotify={showNotification} />
+          <EntryForm key={`entries-form-${tabRenderKeys.Entries}`} onNotify={showNotification} />
+          <BackupPanel key={`entries-backup-${tabRenderKeys.Entries}`} onNotify={showNotification} />
+          <ImportExportPanel
+            key={`entries-tools-${tabRenderKeys.Entries}`}
+            onNotify={showNotification}
+          />
+          <EntryTable key={`entries-table-${tabRenderKeys.Entries}`} onNotify={showNotification} />
         </div>
       )}
 
       {activeTab === "NightMotion" && (
         <div style={sectionWrapperStyle}>
-          <NightMotion onNotify={showNotification} />
+          <NightMotion key={tabRenderKeys.NightMotion} onNotify={showNotification} />
         </div>
       )}
     </div>
