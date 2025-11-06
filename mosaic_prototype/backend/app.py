@@ -150,6 +150,25 @@ _metrics_state = {
 }
 
 
+def _get_current_user() -> Optional[dict]:
+    current = getattr(g, "current_user", None)
+    return current if isinstance(current, dict) else None
+
+
+def _current_user_id() -> Optional[int]:
+    user = _get_current_user()
+    if not user:
+        return None
+    return cast(Optional[int], user.get("id"))
+
+
+def _is_admin_user() -> bool:
+    user = _get_current_user()
+    if not user:
+        return False
+    return bool(user.get("is_admin"))
+
+
 def _update_metrics(status_code: int, duration_ms: float, *, is_error: bool = False) -> None:
     with _metrics_lock:
         _metrics_state["requests_total"] += 1
@@ -250,7 +269,7 @@ def invalidate_cache(prefix: str) -> None:
                 del _cache_storage[key]
 
 
-def _create_access_token(user_id: int, username: str) -> tuple[str, str]:
+def _create_access_token(user_id: int, username: str, *, is_admin: bool = False) -> tuple[str, str]:
     csrf_token = secrets.token_hex(16)
     now = datetime.now(timezone.utc)
     exp_minutes = app.config.get("JWT_EXP_MINUTES", 60)
@@ -260,6 +279,7 @@ def _create_access_token(user_id: int, username: str) -> tuple[str, str]:
         "csrf": csrf_token,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=int(exp_minutes))).timestamp()),
+        "is_admin": bool(is_admin),
     }
     token = jwt.encode(
         payload,
@@ -344,10 +364,21 @@ def _set_export_headers(
 
 
 def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict], int, int]:
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        raise ValidationError("Missing user context", code="unauthorized", status=401)
+
     conn = get_db_connection()
     try:
+        entry_params: list = []
+        entry_where = ""
+        if not is_admin:
+            entry_where = "WHERE e.user_id = ?"
+            entry_params.append(user_id)
+
         entries_cursor = conn.execute(
-            """
+            f"""
             SELECT
                 e.id AS entry_id,
                 e.date,
@@ -358,13 +389,24 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
                 e.activity_category,
                 e.activity_goal
             FROM entries e
+            LEFT JOIN activities a
+              ON a.name = e.activity
+             AND (a.user_id = e.user_id OR a.user_id IS NULL)
+            {entry_where}
             ORDER BY e.date ASC, e.id ASC
             LIMIT ? OFFSET ?
             """,
-            (limit, offset),
+            tuple(entry_params + [limit, offset]),
         )
+
+        activity_params: list = []
+        activity_where = ""
+        if not is_admin:
+            activity_where = "WHERE a.user_id = ?"
+            activity_params.append(user_id)
+
         activities_cursor = conn.execute(
-            """
+            f"""
             SELECT
                 a.id AS activity_id,
                 a.name,
@@ -376,13 +418,26 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
                 a.frequency_per_week,
                 a.deactivated_at
             FROM activities a
+            {activity_where}
             ORDER BY a.name ASC, a.id ASC
             LIMIT ? OFFSET ?
             """,
-            (limit, offset),
+            tuple(activity_params + [limit, offset]),
         )
-        total_entries = conn.execute("SELECT COUNT(1) FROM entries").scalar_one()
-        total_activities = conn.execute("SELECT COUNT(1) FROM activities").scalar_one()
+
+        if is_admin:
+            total_entries_stmt = "SELECT COUNT(1) FROM entries"
+            total_entries_params: Tuple = ()
+            total_activities_stmt = "SELECT COUNT(1) FROM activities"
+            total_activities_params: Tuple = ()
+        else:
+            total_entries_stmt = "SELECT COUNT(1) FROM entries WHERE user_id = ?"
+            total_entries_params = (user_id,)
+            total_activities_stmt = "SELECT COUNT(1) FROM activities WHERE user_id = ?"
+            total_activities_params = (user_id,)
+
+        total_entries = conn.execute(total_entries_stmt, total_entries_params).scalar_one()
+        total_activities = conn.execute(total_activities_stmt, total_activities_params).scalar_one()
         entries = [dict(row) for row in entries_cursor.fetchall()]
         activities = [dict(row) for row in activities_cursor.fetchall()]
         return entries, activities, int(total_entries), int(total_activities)
@@ -591,18 +646,36 @@ def login():
     payload = validate_login_payload(data)
 
     conn = get_db_connection()
+    row = None
+    is_admin_flag = False
     try:
-        row = conn.execute(
-            "SELECT id, password_hash FROM users WHERE username = ?",
-            (payload["username"],),
-        ).fetchone()
+        try:
+            row = conn.execute(
+                "SELECT id, password_hash, COALESCE(is_admin, FALSE) AS is_admin FROM users WHERE username = ?",
+                (payload["username"],),
+            ).fetchone()
+            if row is not None:
+                is_admin_flag = bool(row._mapping.get("is_admin", False))
+        except SQLAlchemyError as exc:
+            error_message = str(exc).lower()
+            if "is_admin" not in error_message:
+                raise
+            row = conn.execute(
+                "SELECT id, password_hash FROM users WHERE username = ?",
+                (payload["username"],),
+            ).fetchone()
+            is_admin_flag = False
     finally:
         conn.close()
 
     if not row or not check_password_hash(row["password_hash"], payload["password"]):
         return error_response("invalid_credentials", "Invalid username or password", 401)
 
-    access_token, csrf_token = _create_access_token(row["id"], payload["username"])
+    access_token, csrf_token = _create_access_token(
+        row["id"],
+        payload["username"],
+        is_admin=is_admin_flag,
+    )
     return jsonify(
         {
             "access_token": access_token,
@@ -656,7 +729,11 @@ def _enforce_jwt_authentication():
     if not csrf_claim:
         return error_response("invalid_csrf", "Missing CSRF token claim", 403)
 
-    g.current_user = {"id": user_id, "username": payload.get("username")}
+    g.current_user = {
+        "id": user_id,
+        "username": payload.get("username"),
+        "is_admin": bool(payload.get("is_admin", False)),
+    }
     g.csrf_token = csrf_claim
 
     if request.method not in SAFE_METHODS:
@@ -908,6 +985,11 @@ def export_csv():
 
 @app.get("/entries")
 def get_entries():
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
     activity_filter_raw = request.args.get("activity") or ""
@@ -948,6 +1030,9 @@ def get_entries():
         if category_filter:
             clauses.append("COALESCE(a.category, e.activity_category, '') = ?")
             params.append(category_filter)
+        if not is_admin:
+            clauses.append("e.user_id = ?")
+            params.append(user_id)
 
         where_sql = ""
         if clauses:
@@ -959,7 +1044,9 @@ def get_entries():
                    COALESCE(a.goal, e.activity_goal, 0) AS goal,
                    COALESCE(a.description, e.description, '') AS activity_description
             FROM entries e
-            LEFT JOIN activities a ON a.name = e.activity
+            LEFT JOIN activities a
+              ON a.name = e.activity
+             AND (a.user_id = e.user_id OR a.user_id IS NULL)
             {where_sql}
             ORDER BY e.date DESC, e.activity ASC
         """
@@ -977,6 +1064,10 @@ def get_entries():
 
 @app.post("/add_entry")
 def add_entry():
+    user_id = _current_user_id()
+    if user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["add_entry"]
     limited = rate_limit("add_entry", limits["limit"], limits["window"])
     if limited:
@@ -992,20 +1083,33 @@ def add_entry():
     try:
         with db_transaction() as conn:
             activity_row = conn.execute(
-                "SELECT category, goal, description FROM activities WHERE name = ?",
-                (activity,),
+                "SELECT category, goal, description FROM activities WHERE name = ? AND user_id = ?",
+                (activity, user_id),
             ).fetchone()
+            if not activity_row:
+                activity_row = conn.execute(
+                    "SELECT category, goal, description FROM activities WHERE name = ? AND user_id IS NULL",
+                    (activity,),
+                ).fetchone()
+
             description = activity_row["description"] if activity_row else ""
             activity_category = activity_row["category"] if activity_row else ""
             activity_goal = activity_row["goal"] if activity_row else 0
 
             existing_entry = conn.execute(
-                "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ?",
-                (date, activity),
+                "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ? AND user_id = ?",
+                (date, activity, user_id),
             ).fetchone()
+            if not existing_entry:
+                existing_entry = conn.execute(
+                    "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ? AND user_id IS NULL",
+                    (date, activity),
+                ).fetchone()
             if not activity_row and existing_entry:
                 activity_category = existing_entry["activity_category"] or activity_category
-                activity_goal = existing_entry["activity_goal"] if existing_entry["activity_goal"] is not None else activity_goal
+                activity_goal = (
+                    existing_entry["activity_goal"] if existing_entry["activity_goal"] is not None else activity_goal
+                )
 
             update_cur = conn.execute(
                 """
@@ -1014,23 +1118,60 @@ def add_entry():
                     note = ?,
                     description = ?,
                     activity_category = ?,
-                    activity_goal = ?
-                WHERE date = ? AND activity = ?
+                    activity_goal = ?,
+                    user_id = ?
+                WHERE date = ? AND activity = ? AND user_id = ?
                 """,
-                (float_value, note, description, activity_category, activity_goal, date, activity),
+                (
+                    float_value,
+                    note,
+                    description,
+                    activity_category,
+                    activity_goal,
+                    user_id,
+                    date,
+                    activity,
+                    user_id,
+                ),
             )
 
             if update_cur.rowcount > 0:
                 response = jsonify({"message": "Záznam aktualizován"}), 200
             else:
-                conn.execute(
+                update_cur = conn.execute(
                     """
-                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    UPDATE entries
+                    SET value = ?,
+                        note = ?,
+                        description = ?,
+                        activity_category = ?,
+                        activity_goal = ?,
+                        user_id = ?
+                    WHERE date = ? AND activity = ? AND user_id IS NULL
                     """,
-                    (date, activity, description, float_value, note, activity_category, activity_goal),
+                    (
+                        float_value,
+                        note,
+                        description,
+                        activity_category,
+                        activity_goal,
+                        user_id,
+                        date,
+                        activity,
+                    ),
                 )
-                response = jsonify({"message": "Záznam uložen"}), 201
+
+                if update_cur.rowcount > 0:
+                    response = jsonify({"message": "Záznam aktualizován"}), 200
+                else:
+                    conn.execute(
+                        """
+                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (date, activity, description, float_value, note, activity_category, activity_goal, user_id),
+                    )
+                    response = jsonify({"message": "Záznam uložen"}), 201
     except SQLAlchemyError as exc:
         return error_response("database_error", str(exc), 500)
     else:
@@ -1041,6 +1182,11 @@ def add_entry():
 
 @app.delete("/entries/<int:entry_id>")
 def delete_entry(entry_id):
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["delete_entry"]
     limited = rate_limit("delete_entry", limits["limit"], limits["window"])
     if limited:
@@ -1048,7 +1194,13 @@ def delete_entry(entry_id):
 
     try:
         with db_transaction() as conn:
-            cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+            if is_admin:
+                cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+            else:
+                cur = conn.execute(
+                    "DELETE FROM entries WHERE id = ? AND user_id = ?",
+                    (entry_id, user_id),
+                )
         if cur.rowcount == 0:
             return error_response("not_found", "Záznam nenalezen", 404)
         invalidate_cache("today")
@@ -1060,21 +1212,36 @@ def delete_entry(entry_id):
 
 @app.get("/activities")
 def get_activities():
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     show_all = request.args.get("all", "false").lower() in ("1", "true", "yes")
     conn = get_db_connection()
     try:
         pagination = parse_pagination()
-        params = [pagination["limit"], pagination["offset"]]
-        if show_all:
-            rows = conn.execute(
-                "SELECT * FROM activities ORDER BY active DESC, category ASC, name ASC LIMIT ? OFFSET ?",
-                params,
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM activities WHERE active = TRUE ORDER BY active DESC, category ASC, name ASC LIMIT ? OFFSET ?",
-                params,
-            ).fetchall()
+        params: list = []
+        where_clauses = []
+        if not is_admin:
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
+        if not show_all:
+            where_clauses.append("active = TRUE")
+
+        where_sql = ""
+        if where_clauses:
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+
+        params.extend([pagination["limit"], pagination["offset"]])
+        query = f"""
+            SELECT *
+            FROM activities
+            {where_sql}
+            ORDER BY active DESC, category ASC, name ASC
+            LIMIT ? OFFSET ?
+        """
+        rows = conn.execute(query, params).fetchall()
         payload = []
         for row in rows:
             item = dict(row)
@@ -1090,6 +1257,10 @@ def get_activities():
 
 @app.post("/add_activity")
 def add_activity():
+    user_id = _current_user_id()
+    if user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["add_activity"]
     limited = rate_limit("add_activity", limits["limit"], limits["window"])
     if limited:
@@ -1108,10 +1279,10 @@ def add_activity():
         with db_transaction() as conn:
             conn.execute(
                 """
-                INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at)
-                VALUES (?, ?, ?, ?, TRUE, ?, ?, NULL)
+                INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at, user_id)
+                VALUES (?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
                 """,
-                (name, category, goal, description, frequency_per_day, frequency_per_week)
+                (name, category, goal, description, frequency_per_day, frequency_per_week, user_id)
             )
         invalidate_cache("today")
         invalidate_cache("stats")
@@ -1128,6 +1299,11 @@ def add_activity():
 
 @app.put("/activities/<int:activity_id>")
 def update_activity(activity_id):
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["update_activity"]
     limited = rate_limit("update_activity", limits["limit"], limits["window"])
     if limited:
@@ -1137,10 +1313,16 @@ def update_activity(activity_id):
     payload = validate_activity_update_payload(data)
 
     with db_transaction() as conn:
-        cur = conn.execute("SELECT name FROM activities WHERE id = ?", (activity_id,))
-        row = cur.fetchone()
+        select_query = "SELECT name, user_id FROM activities WHERE id = ?"
+        select_params: list = [activity_id]
+        if not is_admin:
+            select_query += " AND user_id = ?"
+            select_params.append(user_id)
+        row = conn.execute(select_query, select_params).fetchone()
         if not row:
             return error_response("not_found", "Aktivita nenalezena", 404)
+
+        owner_user_id = row["user_id"]
 
         update_clauses = []
         params = []
@@ -1153,7 +1335,11 @@ def update_activity(activity_id):
             return jsonify({"message": "No changes detected"}), 200
 
         params.append(activity_id)
-        conn.execute(f"UPDATE activities SET {', '.join(update_clauses)} WHERE id = ?", params)
+        update_where = "id = ?"
+        if not is_admin:
+            update_where += " AND user_id = ?"
+            params.append(user_id)
+        conn.execute(f"UPDATE activities SET {', '.join(update_clauses)} WHERE {update_where}", params)
 
         entry_update_clauses = []
         entry_params = []
@@ -1168,8 +1354,12 @@ def update_activity(activity_id):
             entry_params.append(payload["goal"])
         if entry_update_clauses:
             entry_params.append(row["name"])
+            entry_where = "activity = ?"
+            if owner_user_id is not None:
+                entry_where += " AND user_id = ?"
+                entry_params.append(owner_user_id)
             conn.execute(
-                f"UPDATE entries SET {', '.join(entry_update_clauses)} WHERE activity = ?",
+                f"UPDATE entries SET {', '.join(entry_update_clauses)} WHERE {entry_where}",
                 entry_params,
             )
 
@@ -1180,6 +1370,11 @@ def update_activity(activity_id):
 
 @app.patch("/activities/<int:activity_id>/deactivate")
 def deactivate_activity(activity_id):
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["activity_status"]
     limited = rate_limit("activities_deactivate", limits["limit"], limits["window"])
     if limited:
@@ -1187,9 +1382,14 @@ def deactivate_activity(activity_id):
     deactivation_date = datetime.now().strftime("%Y-%m-%d")
 
     with db_transaction() as conn:
+        params = [deactivation_date, activity_id]
+        where_clause = "id = ?"
+        if not is_admin:
+            where_clause += " AND user_id = ?"
+            params.append(user_id)
         cur = conn.execute(
-            "UPDATE activities SET active = FALSE, deactivated_at = ? WHERE id = ?",
-            (deactivation_date, activity_id),
+            f"UPDATE activities SET active = FALSE, deactivated_at = ? WHERE {where_clause}",
+            params,
         )
         if cur.rowcount == 0:
             return error_response("not_found", "Aktivita nenalezena", 404)
@@ -1200,13 +1400,26 @@ def deactivate_activity(activity_id):
 
 @app.patch("/activities/<int:activity_id>/activate")
 def activate_activity(activity_id):
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["activity_status"]
     limited = rate_limit("activities_activate", limits["limit"], limits["window"])
     if limited:
         return limited
 
-        with db_transaction() as conn:
-            cur = conn.execute("UPDATE activities SET active = TRUE, deactivated_at = NULL WHERE id = ?", (activity_id,))
+    with db_transaction() as conn:
+        params = [activity_id]
+        where_clause = "id = ?"
+        if not is_admin:
+            where_clause += " AND user_id = ?"
+            params.append(user_id)
+        cur = conn.execute(
+            f"UPDATE activities SET active = TRUE, deactivated_at = NULL WHERE {where_clause}",
+            params,
+        )
         if cur.rowcount == 0:
             return error_response("not_found", "Aktivita nenalezena", 404)
     invalidate_cache("today")
@@ -1225,6 +1438,11 @@ def get_progress_stats():
     else:
         target_date = datetime.now().date()
 
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     cache_key_parts = ("dashboard", target_date.isoformat())
     cached = cache_get("stats", cache_key_parts)
     if cached is not None:
@@ -1235,16 +1453,19 @@ def get_progress_stats():
 
     conn = get_db_connection()
     try:
-        activity_goal_rows = conn.execute(
-            """
+        activity_goal_sql = """
             SELECT
                 COALESCE(NULLIF(category, ''), 'Other') AS category,
                 COALESCE(SUM(goal), 0) AS total_goal
             FROM activities
             WHERE active = TRUE
-            GROUP BY category
         """
-        ).fetchall()
+        activity_goal_params: list = []
+        if not is_admin:
+            activity_goal_sql += " AND user_id = ?"
+            activity_goal_params.append(user_id)
+        activity_goal_sql += "\n            GROUP BY category"
+        activity_goal_rows = conn.execute(activity_goal_sql, activity_goal_params).fetchall()
 
         total_active_goal = 0.0
         category_goal_totals: Dict[str, float] = {}
@@ -1260,8 +1481,7 @@ def get_progress_stats():
             value = max(float(total_value or 0.0), 0.0)
             return min(value / total_active_goal, 1.0)
 
-        daily_rows = conn.execute(
-            """
+        daily_sql = """
             SELECT
                 date,
                 COALESCE(SUM(value), 0) AS total_value,
@@ -1269,18 +1489,20 @@ def get_progress_stats():
                 COUNT(*) AS entry_count
             FROM entries
             WHERE date BETWEEN ? AND ?
-            GROUP BY date
-        """,
-            (window_30_start, today_str),
-        ).fetchall()
+        """
+        daily_params: list = [window_30_start, today_str]
+        if not is_admin:
+            daily_sql += " AND user_id = ?"
+            daily_params.append(user_id)
+        daily_sql += "\n            GROUP BY date"
+        daily_rows = conn.execute(daily_sql, daily_params).fetchall()
 
         daily_completion = {}
         for row in daily_rows:
             ratio = compute_ratio(row["total_value"])
             daily_completion[row["date"]] = ratio
 
-        category_daily_rows = conn.execute(
-            """
+        category_daily_sql = """
             SELECT
                 date,
                 COALESCE(NULLIF(activity_category, ''), 'Other') AS category,
@@ -1288,10 +1510,13 @@ def get_progress_stats():
                 COALESCE(SUM(activity_goal), 0) AS total_goal
             FROM entries
             WHERE date BETWEEN ? AND ?
-            GROUP BY date, category
-        """,
-            (window_30_start, today_str),
-        ).fetchall()
+        """
+        category_daily_params: list = [window_30_start, today_str]
+        if not is_admin:
+            category_daily_sql += " AND user_id = ?"
+            category_daily_params.append(user_id)
+        category_daily_sql += "\n            GROUP BY date, category"
+        category_daily_rows = conn.execute(category_daily_sql, category_daily_params).fetchall()
 
         categories_seen = set(category_goal_totals.keys())
         category_daily_completion: Dict[str, Dict[str, float]] = defaultdict(dict)
@@ -1321,18 +1546,22 @@ def get_progress_stats():
         goal_completion_today = round(min(goal_ratio_today * 100, 100.0), 1)
 
 
-        distribution_rows = conn.execute(
-            """
+        distribution_sql = """
             SELECT
                 COALESCE(NULLIF(activity_category, ''), 'Other') AS category,
                 COUNT(*) AS entry_count
             FROM entries
             WHERE date BETWEEN ? AND ?
+        """
+        distribution_params: list = [window_30_start, today_str]
+        if not is_admin:
+            distribution_sql += " AND user_id = ?"
+            distribution_params.append(user_id)
+        distribution_sql += """
             GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other')
             ORDER BY entry_count DESC, LOWER(COALESCE(NULLIF(activity_category, ''), 'Other')) ASC
-        """,
-            (window_30_start, today_str),
-        ).fetchall()
+        """
+        distribution_rows = conn.execute(distribution_sql, distribution_params).fetchall()
 
         total_entries = sum(int(row["entry_count"] or 0) for row in distribution_rows)
         activity_distribution = []
@@ -1372,16 +1601,18 @@ def get_progress_stats():
             "percent": round((active_days / 30) * 100, 1) if active_days else 0.0,
         }
 
-        pos_neg_row = conn.execute(
-            """
+        pos_neg_sql = """
             SELECT
                 SUM(CASE WHEN COALESCE(value, 0) > 0 THEN 1 ELSE 0 END) AS positive_count,
                 SUM(CASE WHEN COALESCE(value, 0) = 0 THEN 1 ELSE 0 END) AS negative_count
             FROM entries
             WHERE date BETWEEN ? AND ?
-        """,
-            (window_30_start, today_str),
-        ).fetchone()
+        """
+        pos_neg_params: list = [window_30_start, today_str]
+        if not is_admin:
+            pos_neg_sql += " AND user_id = ?"
+            pos_neg_params.append(user_id)
+        pos_neg_row = conn.execute(pos_neg_sql, pos_neg_params).fetchone()
 
         positive_count = int(pos_neg_row["positive_count"] or 0)
         negative_count = int(pos_neg_row["negative_count"] or 0)
@@ -1392,19 +1623,23 @@ def get_progress_stats():
             "ratio": ratio_value,
         }
 
-        consistent_rows = conn.execute(
-            """
+        consistent_sql = """
             SELECT
                 COALESCE(NULLIF(activity_category, ''), 'Other') AS category,
                 activity AS name,
                 COUNT(DISTINCT date) AS active_days
             FROM entries
             WHERE date BETWEEN ? AND ?
+        """
+        consistent_params: list = [window_30_start, today_str]
+        if not is_admin:
+            consistent_sql += " AND user_id = ?"
+            consistent_params.append(user_id)
+        consistent_sql += """
             GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other'), activity
             ORDER BY LOWER(COALESCE(NULLIF(activity_category, ''), 'Other')) ASC, active_days DESC, LOWER(activity) ASC
-        """,
-            (window_30_start, today_str),
-        ).fetchall()
+        """
+        consistent_rows = conn.execute(consistent_sql, consistent_params).fetchall()
 
         consistent_by_category: Dict[str, list[dict]] = defaultdict(list)
         for row in consistent_rows:
@@ -1466,6 +1701,11 @@ def get_progress_stats():
 
 @app.get("/today")
 def get_today():
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
     pagination = parse_pagination(default_limit=200)
     cache_key_parts = (date, pagination["limit"], pagination["offset"])
@@ -1474,8 +1714,24 @@ def get_today():
         return jsonify(cached)
     conn = get_db_connection()
     try:
-        rows = conn.execute("""
-            SELECT 
+        join_clause = "LEFT JOIN entries e ON e.activity = a.name AND e.date = ?"
+        join_params: list = [date]
+        if not is_admin:
+            join_clause += " AND e.user_id = ?"
+            join_params.append(user_id)
+
+        where_conditions = [
+            "(a.active = TRUE OR (a.deactivated_at IS NOT NULL AND ? < a.deactivated_at))"
+        ]
+        where_params: list = [date]
+        if not is_admin:
+            where_conditions.append("a.user_id = ?")
+            where_params.append(user_id)
+
+        where_sql = "WHERE " + " AND ".join(where_conditions)
+
+        query = f"""
+            SELECT
                 a.id AS activity_id,
                 a.name,
                 a.category,
@@ -1488,13 +1744,13 @@ def get_today():
                 e.note,
                 e.activity_goal
             FROM activities a
-            LEFT JOIN entries e
-              ON e.activity = a.name AND e.date = ?
-            WHERE a.active = TRUE
-               OR (a.deactivated_at IS NOT NULL AND ? < a.deactivated_at)
+            {join_clause}
+            {where_sql}
             ORDER BY a.name ASC
             LIMIT ? OFFSET ?
-        """, (date, date, pagination["limit"], pagination["offset"]))
+        """
+        params = join_params + where_params + [pagination["limit"], pagination["offset"]]
+        rows = conn.execute(query, params)
         rows = rows.fetchall()
         data = []
         for r in rows:
@@ -1510,19 +1766,34 @@ def get_today():
 
 @app.delete("/activities/<int:activity_id>")
 def delete_activity(activity_id):
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["delete_activity"]
     limited = rate_limit("delete_activity", limits["limit"], limits["window"])
     if limited:
         return limited
 
     with db_transaction() as conn:
-        row = conn.execute("SELECT active FROM activities WHERE id = ?", (activity_id,)).fetchone()
+        select_query = "SELECT active FROM activities WHERE id = ?"
+        select_params: list = [activity_id]
+        if not is_admin:
+            select_query += " AND user_id = ?"
+            select_params.append(user_id)
+        row = conn.execute(select_query, select_params).fetchone()
         if not row:
             return error_response("not_found", "Aktivita nenalezena", 404)
         if bool(row["active"]):
             return error_response("invalid_state", "Aktivitu nelze smazat, nejprve ji deaktivujte", 400)
 
-        conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,))
+        delete_query = "DELETE FROM activities WHERE id = ?"
+        delete_params: list = [activity_id]
+        if not is_admin:
+            delete_query += " AND user_id = ?"
+            delete_params.append(user_id)
+        conn.execute(delete_query, delete_params)
     invalidate_cache("today")
     invalidate_cache("stats")
     return jsonify({"message": "Aktivita smazána"}), 200
@@ -1530,6 +1801,11 @@ def delete_activity(activity_id):
 
 @app.post("/finalize_day")
 def finalize_day():
+    user_id = _current_user_id()
+    is_admin = _is_admin_user()
+    if not is_admin and user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
     limits = app.config["RATE_LIMITS"]["finalize_day"]
     limited = rate_limit("finalize_day", limits["limit"], limits["window"])
     if limited:
@@ -1540,16 +1816,23 @@ def finalize_day():
 
     with db_transaction() as conn:
         # získej všechny aktivní aktivity
-        active_activities = conn.execute(
-            """
+        active_query = """
             SELECT name, description, category, goal
             FROM activities
             WHERE active = TRUE
                OR (deactivated_at IS NOT NULL AND ? < deactivated_at)
-            """,
-            (date,),
-        ).fetchall()
-        existing = conn.execute("SELECT activity FROM entries WHERE date = ?", (date,)).fetchall()
+        """
+        active_params: list = [date]
+        if not is_admin:
+            active_query += " AND user_id = ?"
+            active_params.append(user_id)
+        active_activities = conn.execute(active_query, active_params).fetchall()
+        existing_query = "SELECT activity FROM entries WHERE date = ?"
+        existing_params: list = [date]
+        if not is_admin:
+            existing_query += " AND user_id = ?"
+            existing_params.append(user_id)
+        existing = conn.execute(existing_query, existing_params).fetchall()
         existing_names = {e["activity"] for e in existing}
 
         created = 0
@@ -1557,10 +1840,10 @@ def finalize_day():
             if a["name"] not in existing_names:
                 conn.execute(
                     """
-                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal)
-                    VALUES (?, ?, ?, 0, '', ?, ?)
+                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal, user_id)
+                    VALUES (?, ?, ?, 0, '', ?, ?, ?)
                     """,
-                    (date, a["name"], a["description"], a["category"], a["goal"])
+                    (date, a["name"], a["description"], a["category"], a["goal"], user_id),
                 )
                 created += 1
     invalidate_cache("today")

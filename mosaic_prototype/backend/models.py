@@ -60,6 +60,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
 
     activities = db.relationship("Activity", back_populates="user", passive_deletes=True)
     entries = db.relationship("Entry", back_populates="user", passive_deletes=True)
