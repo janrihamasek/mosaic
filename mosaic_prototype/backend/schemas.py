@@ -341,6 +341,7 @@ class FinalizeDayPayload(BaseModel):
 class RegisterPayload(BaseModel):
     username: str
     password: str
+    display_name: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -363,6 +364,18 @@ class RegisterPayload(BaseModel):
             raise ValueError("password must be at least 8 characters")
         return value
 
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        name = value.strip()
+        if not name:
+            return None
+        if len(name) > 120:
+            raise ValueError("display_name must be at most 120 characters")
+        return name
+
 
 class LoginPayload(BaseModel):
     username: str
@@ -384,3 +397,38 @@ class LoginPayload(BaseModel):
         if not isinstance(value, str) or not value:
             raise ValueError("password must not be empty")
         return value
+
+
+class UserUpdatePayload(BaseModel):
+    display_name: Optional[str] = None
+    password: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        name = value.strip()
+        if not name:
+            raise ValueError("display_name must not be empty")
+        if len(name) > 120:
+            raise ValueError("display_name must be at most 120 characters")
+        return name
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        if not isinstance(value, str) or len(value) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return value
+
+    @model_validator(mode="after")
+    def ensure_any_field(self):
+        data = self.model_dump(exclude_none=True)
+        if not data:
+            raise ValueError("At least one field must be provided")
+        return self

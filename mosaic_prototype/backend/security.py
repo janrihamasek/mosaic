@@ -2,6 +2,7 @@ from collections import defaultdict, deque
 from datetime import datetime, UTC
 from threading import Lock
 from typing import Any, Dict, Optional
+from functools import wraps
 
 from flask import current_app, jsonify, request, g
 from pydantic import ValidationError as PydanticValidationError
@@ -15,6 +16,7 @@ from schemas import (
     FinalizeDayPayload,
     LoginPayload,
     RegisterPayload,
+    UserUpdatePayload,
 )
 
 
@@ -83,6 +85,17 @@ def require_api_key():
     if provided != api_key:
         return error_response("unauthorized", "Unauthorized", 401)
     return None
+
+
+def require_admin(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        user_obj = getattr(g, "current_user", None)
+        if not user_obj or not user_obj.get("is_admin"):
+            return error_response("forbidden", "Admin privileges required", 403)
+        return fn(*args, **kwargs)
+
+    return wrapped
 
 
 class ValidationError(Exception):
@@ -197,6 +210,19 @@ def validate_csv_import_payload(files) -> Any:
         message, details = _extract_error_info(exc)
         raise ValidationError(message, details=details)
     return data.file
+
+
+def validate_user_update_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValidationError("Invalid JSON payload", code="invalid_json")
+
+    try:
+        data = UserUpdatePayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        message, details = _extract_error_info(exc)
+        raise ValidationError(message, details=details)
+
+    return data.model_dump(exclude_none=True)
 
 
 def validate_finalize_day_payload(payload: Dict[str, Any]) -> Dict[str, Any]:

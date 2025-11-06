@@ -42,6 +42,8 @@ from security import (
     validate_finalize_day_payload,
     validate_login_payload,
     validate_register_payload,
+    validate_user_update_payload,
+    require_admin,
 )
 from extensions import db, migrate
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -269,7 +271,13 @@ def invalidate_cache(prefix: str) -> None:
                 del _cache_storage[key]
 
 
-def _create_access_token(user_id: int, username: str, *, is_admin: bool = False) -> tuple[str, str]:
+def _create_access_token(
+    user_id: int,
+    username: str,
+    *,
+    is_admin: bool = False,
+    display_name: Optional[str] = None,
+) -> tuple[str, str]:
     csrf_token = secrets.token_hex(16)
     now = datetime.now(timezone.utc)
     exp_minutes = app.config.get("JWT_EXP_MINUTES", 60)
@@ -280,6 +288,7 @@ def _create_access_token(user_id: int, username: str, *, is_admin: bool = False)
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=int(exp_minutes))).timestamp()),
         "is_admin": bool(is_admin),
+        "display_name": (display_name or "").strip(),
     }
     token = jwt.encode(
         payload,
@@ -304,6 +313,36 @@ def _is_public_endpoint(endpoint: Optional[str]) -> bool:
         return True
     public = app.config.get("PUBLIC_ENDPOINTS", set())
     return endpoint in public
+
+
+def _row_value(row, key, default=None):
+    if hasattr(row, "_mapping"):
+        return row._mapping.get(key, default)
+    if isinstance(row, dict):
+        return row.get(key, default)
+    return getattr(row, key, default)
+
+
+def _serialize_user_row(row) -> dict:
+    username = _row_value(row, "username", "")
+    display_name = _row_value(row, "display_name", "") or username
+    created_at_value = _row_value(row, "created_at")
+    if isinstance(created_at_value, datetime):
+        created_at_str = created_at_value.replace(
+            tzinfo=created_at_value.tzinfo or timezone.utc
+        ).isoformat()
+    elif created_at_value:
+        created_at_str = str(created_at_value)
+    else:
+        created_at_str = None
+
+    return {
+        "id": _row_value(row, "id"),
+        "username": username,
+        "display_name": display_name,
+        "is_admin": bool(_row_value(row, "is_admin", False)),
+        "created_at": created_at_str,
+    }
 
 
 def jwt_required():
@@ -621,13 +660,13 @@ def register():
     payload = validate_register_payload(data)
     username = payload["username"]
     password_hash = generate_password_hash(payload["password"])
-    del payload
+    display_name = payload.get("display_name") or username
 
     try:
         with db_transaction() as conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                (username, password_hash, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO users (username, password_hash, created_at, display_name) VALUES (?, ?, ?, ?)",
+                (username, password_hash, datetime.now(timezone.utc).isoformat(), display_name),
             )
     except IntegrityError:
         return error_response("conflict", "Username already exists", 409)
@@ -648,33 +687,53 @@ def login():
     conn = get_db_connection()
     row = None
     is_admin_flag = False
+    display_name = None
     try:
         try:
             row = conn.execute(
-                "SELECT id, password_hash, COALESCE(is_admin, FALSE) AS is_admin FROM users WHERE username = ?",
+                """
+                SELECT
+                    id,
+                    password_hash,
+                    COALESCE(is_admin, FALSE) AS is_admin,
+                    COALESCE(NULLIF(display_name, ''), username) AS display_name
+                FROM users
+                WHERE username = ?
+                """,
                 (payload["username"],),
             ).fetchone()
-            if row is not None:
-                is_admin_flag = bool(row._mapping.get("is_admin", False))
         except SQLAlchemyError as exc:
             error_message = str(exc).lower()
             if "is_admin" not in error_message:
                 raise
             row = conn.execute(
-                "SELECT id, password_hash FROM users WHERE username = ?",
+                """
+                SELECT
+                    id,
+                    password_hash,
+                    FALSE AS is_admin,
+                    username AS display_name
+                FROM users
+                WHERE username = ?
+                """,
                 (payload["username"],),
             ).fetchone()
-            is_admin_flag = False
     finally:
         conn.close()
 
     if not row or not check_password_hash(row["password_hash"], payload["password"]):
         return error_response("invalid_credentials", "Invalid username or password", 401)
 
+    if row and "is_admin" in row.keys():
+        is_admin_flag = bool(row["is_admin"])
+    if row and "display_name" in row.keys():
+        display_name = row["display_name"]
+
     access_token, csrf_token = _create_access_token(
         row["id"],
         payload["username"],
         is_admin=is_admin_flag,
+        display_name=display_name,
     )
     return jsonify(
         {
@@ -682,8 +741,154 @@ def login():
             "csrf_token": csrf_token,
             "token_type": "Bearer",
             "expires_in": int(app.config.get("JWT_EXP_MINUTES", 60)) * 60,
+            "display_name": display_name,
+            "is_admin": is_admin_flag,
         }
     )
+
+
+@app.get("/user")
+@jwt_required()
+def get_current_user_profile():
+    current_user = getattr(g, "current_user", None)
+    if not current_user:
+        return error_response("unauthorized", "Unauthorized", 401)
+    user_id = current_user["id"]
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT
+                id,
+                username,
+                COALESCE(NULLIF(display_name, ''), username) AS display_name,
+                COALESCE(is_admin, FALSE) AS is_admin,
+                created_at
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return error_response("not_found", "User not found", 404)
+    return jsonify(_serialize_user_row(row))
+
+
+@app.patch("/user")
+@jwt_required()
+def update_current_user():
+    current_user = getattr(g, "current_user", None)
+    if not current_user:
+        return error_response("unauthorized", "Unauthorized", 401)
+
+    data = request.get_json(silent=True) or {}
+    payload = validate_user_update_payload(data)
+
+    updates = []
+    params: list = []
+    if "display_name" in payload:
+        updates.append("display_name = ?")
+        params.append(payload["display_name"].strip())
+    if "password" in payload:
+        updates.append("password_hash = ?")
+        params.append(generate_password_hash(payload["password"]))
+
+    if not updates:
+        return jsonify({"message": "No changes detected"}), 200
+
+    params.append(current_user["id"])
+
+    with db_transaction() as conn:
+        conn.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        row = conn.execute(
+            """
+            SELECT
+                id,
+                username,
+                COALESCE(NULLIF(display_name, ''), username) AS display_name,
+                COALESCE(is_admin, FALSE) AS is_admin,
+                created_at
+            FROM users
+            WHERE id = ?
+            """,
+            (current_user["id"],),
+        ).fetchone()
+
+    if not row:
+        return error_response("not_found", "User not found", 404)
+
+    return jsonify(
+        {
+            "message": "Profile updated",
+            "user": _serialize_user_row(row),
+        }
+    )
+
+
+@app.delete("/user")
+@jwt_required()
+def delete_current_user():
+    current_user = getattr(g, "current_user", None)
+    if not current_user:
+        return error_response("unauthorized", "Unauthorized", 401)
+    user_id = current_user["id"]
+
+    with db_transaction() as conn:
+        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    if cur.rowcount == 0:
+        return error_response("not_found", "User not found", 404)
+
+    invalidate_cache("today")
+    invalidate_cache("stats")
+
+    return jsonify({"message": "Account deleted"}), 200
+
+
+@app.get("/users")
+@jwt_required()
+@require_admin
+def list_users():
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                id,
+                username,
+                COALESCE(NULLIF(display_name, ''), username) AS display_name,
+                COALESCE(is_admin, FALSE) AS is_admin,
+                created_at
+            FROM users
+            ORDER BY LOWER(username) ASC
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    return jsonify([_serialize_user_row(row) for row in rows])
+
+
+@app.delete("/users/<int:user_id>")
+@jwt_required()
+@require_admin
+def admin_delete_user(user_id: int):
+    current_user = getattr(g, "current_user", None)
+    if current_user and current_user.get("id") == user_id:
+        return error_response("invalid_operation", "Admins cannot delete their own account", 400)
+
+    with db_transaction() as conn:
+        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    if cur.rowcount == 0:
+        return error_response("not_found", "User not found", 404)
+
+    invalidate_cache("today")
+    invalidate_cache("stats")
+    return jsonify({"message": f"User {user_id} deleted"}), 200
 
 
 @app.before_request
@@ -733,6 +938,7 @@ def _enforce_jwt_authentication():
         "id": user_id,
         "username": payload.get("username"),
         "is_admin": bool(payload.get("is_admin", False)),
+        "display_name": payload.get("display_name") or "",
     }
     g.csrf_token = csrf_claim
 
