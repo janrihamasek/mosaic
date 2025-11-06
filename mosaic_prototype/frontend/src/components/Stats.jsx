@@ -5,6 +5,8 @@ import { ErrorState } from "./ErrorState";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { loadStats, selectStatsState } from "../store/entriesSlice";
+import { selectAllActivities } from "../store/activitiesSlice";
+import { fetchEntries } from "../api";
 import { useCompactLayout } from "../utils/useBreakpoints";
 
 const pieColors = ["#3a7bd5", "#f1b24a", "#8b1e3f", "#43cea2", "#8f36ff", "#9ba3af"];
@@ -46,6 +48,44 @@ const dualBarContainer = {
   display: "flex",
 };
 
+const selectorRowStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "0.75rem",
+  alignItems: "center",
+};
+
+const selectorLabelStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.35rem",
+  fontSize: "0.8rem",
+  color: "#9ba3af",
+};
+
+const selectorFieldStyle = {
+  ...styles.input,
+  minWidth: "9rem",
+  backgroundColor: "#1f2024",
+  color: "#e6e6e6",
+};
+
+const analysisSectionStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "1rem",
+  padding: "1rem",
+  borderRadius: "0.5rem",
+  backgroundColor: "#232428",
+  border: "1px solid #303136",
+};
+
+const analysisListStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.85rem",
+};
+
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -56,6 +96,17 @@ const normaliseIndex = (index, length) => {
   if (!length) return 0;
   const mod = index % length;
   return mod >= 0 ? mod : mod + length;
+};
+
+const METRIC_OPTIONS = ["Progress"];
+const ENTITY_OPTIONS = ["Activity", "Category"];
+const WINDOW_OPTIONS = ["30 days", "90 days"];
+const UNCATEGORISED_LABEL = "Uncategorised";
+
+const toLocalDateString = (dateObj) => {
+  const tzOffset = dateObj.getTimezoneOffset();
+  const adjusted = new Date(dateObj.getTime() - tzOffset * 60000);
+  return adjusted.toISOString().slice(0, 10);
 };
 
 const navButtonStyle = {
@@ -71,7 +122,14 @@ const navButtonStyle = {
 export default function Stats({ onNotify }) {
   const dispatch = useDispatch();
   const { snapshot, status, error, date } = useSelector(selectStatsState);
+  const activities = useSelector(selectAllActivities);
   const { isCompact } = useCompactLayout();
+  const [statMetric, setStatMetric] = useState("Progress");
+  const [statEntity, setStatEntity] = useState("Activity");
+  const [statWindow, setStatWindow] = useState("30 days");
+  const [analysisEntries, setAnalysisEntries] = useState([]);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState(null);
 
   const refetchStats = async () => {
     try {
@@ -128,6 +186,196 @@ export default function Stats({ onNotify }) {
     const path = points.length > 1 ? points.map((p) => `${p.x},${p.y}`).join(" ") : "";
     return { points, path, width, height };
   }, [snapshot]);
+
+  const activityMeta = useMemo(() => {
+    const map = new Map();
+    (activities || []).forEach((activity) => {
+      const perDay = toNumber(activity.frequency_per_day, 0);
+      const perWeek = toNumber(activity.frequency_per_week, 0);
+      let goalPerDay = 0;
+      if (perDay > 0 && perWeek > 0) {
+        goalPerDay = (perDay * perWeek) / 7;
+      } else {
+        goalPerDay = toNumber(activity.goal, 0);
+      }
+      map.set(activity.name, {
+        goalPerDay,
+        category: activity.category || UNCATEGORISED_LABEL,
+      });
+    });
+    return map;
+  }, [activities]);
+
+  useEffect(() => {
+    let ignore = false;
+    const fetchData = async () => {
+      if (statMetric !== "Progress") {
+        setAnalysisEntries([]);
+        setAnalysisError(null);
+        setAnalysisLoading(false);
+        return;
+      }
+      setAnalysisLoading(true);
+      setAnalysisError(null);
+      try {
+        const days = statWindow === "90 days" ? 90 : 30;
+        const endDate = new Date();
+        endDate.setHours(0, 0, 0, 0);
+        const startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - (days - 1));
+
+        const startDateStr = toLocalDateString(startDate);
+        const endDateStr = toLocalDateString(endDate);
+        const limit = 500;
+        let offset = 0;
+        let collected = [];
+        while (true) {
+          const response = await fetchEntries({
+            startDate: startDateStr,
+            endDate: endDateStr,
+            activity: "all",
+            category: "all",
+            limit,
+            offset,
+          });
+          const items = Array.isArray(response) ? response : [];
+          collected = collected.concat(items);
+          if (items.length < limit) {
+            break;
+          }
+          offset += limit;
+        }
+        if (!ignore) {
+          setAnalysisEntries(collected);
+        }
+      } catch (err) {
+        if (!ignore) {
+          setAnalysisError(err);
+          setAnalysisEntries([]);
+        }
+      } finally {
+        if (!ignore) {
+          setAnalysisLoading(false);
+        }
+      }
+    };
+
+    void fetchData();
+
+    return () => {
+      ignore = true;
+    };
+  }, [statMetric, statWindow]);
+
+  const progressRows = useMemo(() => {
+    if (statMetric !== "Progress") return [];
+    const days = statWindow === "90 days" ? 90 : 30;
+    const filteredEntries = analysisEntries || [];
+
+    if (!filteredEntries.length) {
+      return [];
+    }
+
+    if (statEntity === "Activity") {
+      const perActivity = new Map();
+      filteredEntries.forEach((entry) => {
+        const activityName = entry?.activity || "Unknown activity";
+        const meta = activityMeta.get(activityName);
+        const metaGoal = toNumber(meta?.goalPerDay, 0);
+        const entryGoal = toNumber(entry?.goal, 0);
+        const goalPerDay = metaGoal > 0 ? metaGoal : entryGoal;
+        const value = toNumber(entry?.value, 0);
+        if (!perActivity.has(activityName)) {
+          perActivity.set(activityName, {
+            name: activityName,
+            totalValue: 0,
+            goalPerDay,
+          });
+        }
+        const record = perActivity.get(activityName);
+        record.totalValue += value;
+        if (goalPerDay > 0) {
+          record.goalPerDay = goalPerDay;
+        }
+      });
+
+      return Array.from(perActivity.values())
+        .map((record) => {
+          const totalGoal = record.goalPerDay > 0 ? record.goalPerDay * days : 0;
+          const percent = totalGoal > 0 ? Math.min(100, (record.totalValue / totalGoal) * 100) : 0;
+          return {
+            key: `activity-${record.name}`,
+            label: record.name,
+            percent,
+            percentLabel: `${percent.toFixed(1)}%`,
+            ratioLabel:
+              totalGoal > 0
+                ? `${record.totalValue.toFixed(1)} / ${totalGoal.toFixed(1)}`
+                : `${record.totalValue.toFixed(1)} / N/A`,
+            totalGoal,
+            totalValue: record.totalValue,
+          };
+        })
+        .filter((row) => row.totalValue > 0 || row.totalGoal > 0)
+        .sort((a, b) => {
+          if (b.percent !== a.percent) return b.percent - a.percent;
+          return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+        });
+    }
+
+    const perCategory = new Map();
+    filteredEntries.forEach((entry) => {
+      const activityName = entry?.activity || "Unknown activity";
+      const meta = activityMeta.get(activityName);
+      const categoryName = meta?.category || entry?.category || UNCATEGORISED_LABEL;
+      const metaGoal = toNumber(meta?.goalPerDay, 0);
+      const entryGoal = toNumber(entry?.goal, 0);
+      const goalPerDay = metaGoal > 0 ? metaGoal : entryGoal;
+      const value = toNumber(entry?.value, 0);
+
+      if (!perCategory.has(categoryName)) {
+        perCategory.set(categoryName, {
+          name: categoryName,
+          totalValue: 0,
+          goalPerDaySum: 0,
+          seenActivities: new Set(),
+        });
+      }
+      const record = perCategory.get(categoryName);
+      record.totalValue += value;
+      if (!record.seenActivities.has(activityName)) {
+        record.seenActivities.add(activityName);
+        if (goalPerDay > 0) {
+          record.goalPerDaySum += goalPerDay;
+        }
+      }
+    });
+
+    return Array.from(perCategory.values())
+      .map((record) => {
+        const totalGoal = record.goalPerDaySum > 0 ? record.goalPerDaySum * days : 0;
+        const percent = totalGoal > 0 ? Math.min(100, (record.totalValue / totalGoal) * 100) : 0;
+        return {
+          key: `category-${record.name}`,
+          label: record.name,
+          percent,
+          percentLabel: `${percent.toFixed(1)}%`,
+          ratioLabel:
+            totalGoal > 0
+              ? `${record.totalValue.toFixed(1)} / ${totalGoal.toFixed(1)}`
+              : `${record.totalValue.toFixed(1)} / N/A`,
+          totalGoal,
+          totalValue: record.totalValue,
+        };
+      })
+      .filter((row) => row.totalValue > 0 || row.totalGoal > 0)
+      .sort((a, b) => {
+        if (b.percent !== a.percent) return b.percent - a.percent;
+        return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+      });
+  }, [activityMeta, analysisEntries, statEntity, statMetric, statWindow]);
+
+  const analysisRows = statMetric === "Progress" ? progressRows : [];
 
   const activeRatio = snapshot?.active_days_ratio || {};
   const activeDays = toNumber(activeRatio.active_days, 0);
@@ -216,7 +464,7 @@ export default function Stats({ onNotify }) {
         </div>
       )}
 
-      {snapshot && (
+      {status === "succeeded" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           <div style={singleColumnSectionStyle}>
             <div
@@ -627,6 +875,113 @@ export default function Stats({ onNotify }) {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {snapshot && (
+        <div style={analysisSectionStyle}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Custom statistics</h3>
+            <div style={selectorRowStyle}>
+              <label style={selectorLabelStyle}>
+                <span>Metric</span>
+                <select
+                  value={statMetric}
+                  onChange={(event) => setStatMetric(event.target.value)}
+                  style={selectorFieldStyle}
+                >
+                  {METRIC_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={selectorLabelStyle}>
+                <span>Dimension</span>
+                <select
+                  value={statEntity}
+                  onChange={(event) => setStatEntity(event.target.value)}
+                  style={selectorFieldStyle}
+                >
+                  {ENTITY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={selectorLabelStyle}>
+                <span>Window</span>
+                <select
+                  value={statWindow}
+                  onChange={(event) => setStatWindow(event.target.value)}
+                  style={selectorFieldStyle}
+                >
+                  {WINDOW_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          {analysisLoading && <Loading message="Calculating statistics…" inline />}
+
+          {!analysisLoading && analysisError && (
+            <span style={{ color: "#f28b82", fontSize: "0.85rem" }}>
+              Failed to load statistics data.
+            </span>
+          )}
+
+          {!analysisLoading && !analysisError && analysisRows.length > 0 && (
+            <div style={analysisListStyle}>
+              {analysisRows.map((row) => (
+                <div
+                  key={row.key}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.4rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{row.label}</span>
+                    <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
+                      {row.percentLabel}
+                      {row.ratioLabel && <span style={{ marginLeft: "0.5rem" }}>({row.ratioLabel})</span>}
+                    </span>
+                  </div>
+                  <div style={meterContainer}>
+                    <div
+                      style={{
+                        ...meterFillBase,
+                        width: `${Math.min(100, Math.max(0, row.percent))}%`,
+                        backgroundColor:
+                          row.percent >= 80 ? "#43cea2" : row.percent >= 50 ? "#3a7bd5" : "#8b1e3f",
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!analysisLoading && !analysisError && analysisRows.length === 0 && (
+            <span style={{ color: "#9ba3af", fontStyle: "italic" }}>
+              No data available for the selected filters.
+            </span>
+          )}
         </div>
       )}
     </div>

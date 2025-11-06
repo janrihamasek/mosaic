@@ -27,7 +27,7 @@ export default function ActivityForm({ onNotify }) {
   const { mutationStatus } = useSelector(selectActivitiesState);
   const isSaving = mutationStatus === 'loading';
   const { isCompact } = useCompactLayout();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const fieldWrapperStyle = { display: 'flex', flexDirection: 'column', gap: 4 };
   const frequencySectionStyle = {
     display: 'grid',
@@ -78,54 +78,41 @@ export default function ActivityForm({ onNotify }) {
 
   const submitLabel = isSaving || isSubmitting ? 'Saving...' : 'Enter';
 
-  const collapsibleCardStyle = {
-    ...styles.card,
-    margin: 0,
+  const toggleCollapsed = () => setIsCollapsed((prev) => !prev);
+  const titleButtonStyle = {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '0.75rem',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '0.5rem',
+    width: '100%',
+    background: 'transparent',
+    border: 'none',
+    color: 'inherit',
+    font: 'inherit',
+    padding: 0,
+    cursor: 'pointer',
+    textAlign: 'left',
   };
-
-  if (isCollapsed) {
-    return (
-      <div style={collapsibleCardStyle}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-          <h2 style={{ margin: 0 }}>Create activity</h2>
-          <p style={{ ...styles.textMuted, fontSize: '0.875rem', margin: 0 }}>
-            Add a new activity whenever your catalogue needs an update.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setIsCollapsed(false)}
-          style={{
-            ...styles.button,
-            alignSelf: isCompact ? 'stretch' : 'flex-start',
-          }}
-        >
-          Show form
-        </button>
-      </div>
-    );
-  }
 
   return (
     <FormWrapper
-      title="Create activity"
+      title={
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          style={titleButtonStyle}
+          aria-expanded={!isCollapsed}
+        >
+          <span>Create activity</span>
+          <span aria-hidden="true">{isCollapsed ? '\u25BC' : '\u25B2'}</span>
+        </button>
+      }
       onSubmit={handleSubmit(onSubmit)}
       isSubmitting={isSaving || isSubmitting}
       isSubmitDisabled={!isValid}
       submitLabel={submitLabel}
+      isCollapsed={isCollapsed}
     >
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          type="button"
-          onClick={() => setIsCollapsed(true)}
-          style={{ ...styles.button, backgroundColor: '#3a3b3f', minWidth: 'auto' }}
-        >
-          Hide form
-        </button>
-      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '0.75rem' : '1rem' }}>
         <div style={fieldWrapperStyle}>
           <input

@@ -89,7 +89,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
     <ModalForm
       isOpen
       onClose={handleDiscard}
-      title={`${activity.name} - overview`}
+      title={activity.name}
       closeLabel={hasChanges ? "Not Save" : "Close"}
       isDismissDisabled={isSaving}
       footerContent={

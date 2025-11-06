@@ -24,6 +24,7 @@ const FormWrapper: React.FC<FormWrapperProps> = ({
   footer,
   submitButtonProps,
   cancelButtonProps,
+  isCollapsed = false,
   ...formProps
 }) => {
   const { isCompact } = useCompactLayout();
@@ -72,43 +73,47 @@ const FormWrapper: React.FC<FormWrapperProps> = ({
         </header>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>{children}</div>
+      {!isCollapsed && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>{children}</div>
+      )}
 
-      {footer}
+      {!isCollapsed && footer}
 
-      <div style={actionRowStyle}>
-        {isLoading && <Loading inline />}
-        {onCancel && (
+      {!isCollapsed && (
+        <div style={actionRowStyle}>
+          {isLoading && <Loading inline />}
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{
+                ...buttonBase,
+                backgroundColor: "#3a3b3f",
+                opacity: isBusy || cancelDisabled ? 0.7 : 1,
+                cursor: isBusy || cancelDisabled ? "not-allowed" : styles.button.cursor,
+                ...(cancelStyle ?? {}),
+              }}
+              disabled={isBusy || cancelDisabled}
+              {...restCancelButtonProps}
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
-            type="button"
-            onClick={onCancel}
+            type="submit"
             style={{
               ...buttonBase,
-              backgroundColor: "#3a3b3f",
-              opacity: isBusy || cancelDisabled ? 0.7 : 1,
-              cursor: isBusy || cancelDisabled ? "not-allowed" : styles.button.cursor,
-              ...(cancelStyle ?? {}),
+              opacity: isBusy ? 0.75 : 1,
+              cursor: isBusy || isSubmitDisabled ? "not-allowed" : styles.button.cursor,
+              ...(submitStyle ?? {}),
             }}
-            disabled={isBusy || cancelDisabled}
-            {...restCancelButtonProps}
+            disabled={isBusy || isSubmitDisabled}
+            {...restSubmitButtonProps}
           >
-            {cancelLabel}
+            {submitLabel}
           </button>
-        )}
-        <button
-          type="submit"
-          style={{
-            ...buttonBase,
-            opacity: isBusy ? 0.75 : 1,
-            cursor: isBusy || isSubmitDisabled ? "not-allowed" : styles.button.cursor,
-            ...(submitStyle ?? {}),
-          }}
-          disabled={isBusy || isSubmitDisabled}
-          {...restSubmitButtonProps}
-        >
-          {submitLabel}
-        </button>
-      </div>
+        </div>
+      )}
     </form>
   );
 };

@@ -11,6 +11,7 @@ import {
   saveDirtyTodayRows,
   finalizeToday,
   selectStatsState,
+  loadStats,
 } from "../store/entriesSlice";
 import Loading from "./Loading";
 import ErrorState from "./ErrorState";
@@ -37,7 +38,9 @@ export default function Today({ onNotify }) {
   }, [dirty]);
 
   useEffect(() => {
+    if (!date) return;
     dispatch(loadToday(date));
+    dispatch(loadStats({ date }));
   }, [dispatch, date]);
 
   useEffect(() => {
@@ -201,7 +204,9 @@ export default function Today({ onNotify }) {
     );
   }, [rows]);
 
-  const statsGoal = Number(statsState?.snapshot?.goal_completion_today);
+  const statsDate = statsState?.date;
+  const statsSnapshot = statsDate === date ? statsState?.snapshot : null;
+  const statsGoal = Number(statsSnapshot?.goal_completion_today);
   const hasStatsGoal = Number.isFinite(statsGoal);
   const fallbackGoalPercent =
     progressStats.totalGoal > 0 ? (progressStats.totalValue / progressStats.totalGoal) * 100 : 0;
@@ -219,10 +224,18 @@ export default function Today({ onNotify }) {
       ? `${progressStats.totalValue.toFixed(1)} / ${progressStats.totalGoal.toFixed(1)}`
       : null;
   const goalProgressColor = clampedGoalPercent >= 50 ? "#2f9e44" : "#8b1e3f";
-  const streakLength = Number.isFinite(statsState?.snapshot?.streak_length)
-    ? statsState.snapshot.streak_length
+  const streakLength = Number.isFinite(statsSnapshot?.streak_length)
+    ? statsSnapshot.streak_length
     : null;
-  const statsLoading = statsState?.status === "loading" && !statsState?.snapshot;
+  const statsLoading = statsState?.status === "loading" && statsDate !== date;
+  const selectedDateLabel = useMemo(() => {
+    if (!date) return null;
+    const parsed = new Date(`${date}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return date;
+    }
+    return parsed.toLocaleDateString();
+  }, [date]);
   const { isCompact, isDesktop } = useCompactLayout();
 
   const navigationButtonStyle = {
@@ -463,17 +476,23 @@ export default function Today({ onNotify }) {
             border: "1px solid #303136",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              fontSize: "0.8125rem",
-              color: "#9ba3af",
-              textTransform: "uppercase",
-            }}
-          >
-            <span>Goal Completion Today</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              <span
+                style={{
+                  fontSize: "0.8125rem",
+                  color: "#9ba3af",
+                  textTransform: "uppercase",
+                }}
+              >
+                Goal Completion
+              </span>
+              {selectedDateLabel && (
+                <span style={{ ...styles.textMuted, fontSize: "0.75rem", textTransform: "none" }}>
+                  {selectedDateLabel}
+                </span>
+              )}
+            </div>
             {statsLoading && <span style={{ ...styles.textMuted, fontSize: "0.75rem" }}>Loading…</span>}
           </div>
           <div style={{ fontSize: "2rem", fontWeight: 600 }}>{goalPercentLabel}</div>
@@ -494,7 +513,7 @@ export default function Today({ onNotify }) {
           </div>
           {ratioLabel && (
             <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
-              Logged {ratioLabel} of today&apos;s target
+              Logged {ratioLabel} of the daily target
             </span>
           )}
           {typeof streakLength === "number" && (

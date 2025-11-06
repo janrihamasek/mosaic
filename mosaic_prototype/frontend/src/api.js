@@ -7,6 +7,8 @@ function extractParams(filters = {}) {
   if (filters.endDate) params.set('end_date', filters.endDate);
   if (filters.activity && filters.activity !== 'all') params.set('activity', filters.activity);
   if (filters.category && filters.category !== 'all') params.set('category', filters.category);
+  if (typeof filters.limit === 'number') params.set('limit', String(filters.limit));
+  if (typeof filters.offset === 'number') params.set('offset', String(filters.offset));
   return params;
 }
 

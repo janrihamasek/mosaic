@@ -28,7 +28,7 @@ export interface ModalFormProps {
 
 export interface FormWrapperProps
   extends Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit"> {
-  title?: string;
+  title?: ReactNode;
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   children: ReactNode;
   isLoading?: boolean;
@@ -41,6 +41,7 @@ export interface FormWrapperProps
   footer?: ReactNode;
   submitButtonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
   cancelButtonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
+  isCollapsed?: boolean;
 }
 
 export interface DataTableColumn {
