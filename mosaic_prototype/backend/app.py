@@ -120,7 +120,7 @@ app.config.setdefault("PUBLIC_ENDPOINTS", {"home"})
 app.config.setdefault("JWT_SECRET", os.environ.get("MOSAIC_JWT_SECRET") or "change-me")
 app.config.setdefault("JWT_ALGORITHM", "HS256")
 app.config.setdefault("JWT_EXP_MINUTES", int(os.environ.get("MOSAIC_JWT_EXP_MINUTES", "60")))
-app.config["PUBLIC_ENDPOINTS"].update({"login", "register", "metrics", "healthz"})
+app.config["PUBLIC_ENDPOINTS"].update({"login", "register", "metrics", "health", "healthz"})
 
 db.init_app(app)
 migrate.init_app(app, db)
@@ -219,6 +219,11 @@ def _record_request_metrics(status_code: int, duration_ms: float, *, is_error: b
             bucket["errors_5xx"] += 1
             _metrics_state["errors_5xx"] += 1
         _metrics_state["last_updated"] = now
+
+
+def _now_perf_counter() -> float:
+    """Indirection so tests can monkeypatch app.perf_counter reliably."""
+    return getattr(sys.modules[__name__], "perf_counter")()
 
 
 def reset_metrics_state() -> None:
@@ -426,7 +431,7 @@ def _cache_build_key(prefix: str, key_parts: Tuple) -> str:
 
 @app.before_request
 def _start_request_timer() -> None:
-    g.request_start_time = perf_counter()
+    g.request_start_time = _now_perf_counter()
     g.request_id = secrets.token_hex(8)
     route = request.endpoint or request.path
     g.metrics_method = (request.method or "GET").upper()
@@ -442,7 +447,7 @@ def _start_request_timer() -> None:
 @app.after_request
 def _log_request(response: Response) -> Response:
     start = getattr(g, "request_start_time", None)
-    duration_ms = (perf_counter() - start) * 1000 if start else 0.0
+    duration_ms = (_now_perf_counter() - start) * 1000 if start else 0.0
     current_user = getattr(g, "current_user", None)
     user_id = current_user.get("id") if isinstance(current_user, dict) else None
     if user_id is not None:
@@ -464,7 +469,7 @@ def _log_request(response: Response) -> Response:
 def _clear_request_context(exc: Optional[BaseException]) -> None:
     if exc is not None and not getattr(g, "metrics_recorded", False):
         start = getattr(g, "request_start_time", None)
-        duration_ms = (perf_counter() - start) * 1000 if start else 0.0
+        duration_ms = (_now_perf_counter() - start) * 1000 if start else 0.0
         status_code = getattr(exc, "code", 500) if hasattr(exc, "code") else 500
         _record_request_metrics(status_code, duration_ms, is_error=True)
         g.metrics_recorded = True
