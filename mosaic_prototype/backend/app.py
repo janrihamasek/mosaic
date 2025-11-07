@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from threading import Lock, Thread
-from time import perf_counter, time
-from typing import Dict, Iterator, Optional, Tuple, cast
+from time import perf_counter, sleep, time
+from typing import Dict, Iterator, List, Optional, Tuple, cast
 from urllib.parse import urlparse, urlunparse
 
 import structlog
@@ -143,13 +143,195 @@ _cache_lock = Lock()
 TODAY_CACHE_TTL = 60
 STATS_CACHE_TTL = 300
 
+_METRICS_LOG_INTERVAL_SECONDS = int(os.environ.get("METRICS_LOG_INTERVAL_SECONDS", "60"))
 _metrics_lock = Lock()
-_metrics_state = {
-    "requests_total": 0,
-    "errors_total": 0,
-    "total_latency_ms": 0.0,
-    "status_counts": defaultdict(int),
-}
+
+
+def _endpoint_bucket_factory() -> dict:
+    return {
+        "count": 0,
+        "total_latency_ms": 0.0,
+        "errors_4xx": 0,
+        "errors_5xx": 0,
+        "status_counts": defaultdict(int),
+    }
+
+
+def _initialize_metrics_state() -> dict:
+    return {
+        "requests_total": 0,
+        "latency_total_ms": 0.0,
+        "errors_4xx": 0,
+        "errors_5xx": 0,
+        "status_counts": defaultdict(int),
+        "per_endpoint": defaultdict(_endpoint_bucket_factory),
+    }
+
+
+_metrics_state = _initialize_metrics_state()
+_metrics_logger_thread: Optional[Thread] = None
+
+
+def _resolve_metrics_dimensions() -> Tuple[str, str]:
+    method = (getattr(g, "metrics_method", None) or getattr(request, "method", "GET") or "GET").upper()
+    endpoint = getattr(g, "metrics_endpoint", None)
+    if not endpoint:
+        endpoint = request.endpoint
+    if not endpoint:
+        rule = getattr(request, "url_rule", None)
+        endpoint = getattr(rule, "rule", None) if rule else None
+    if not endpoint:
+        endpoint = request.path or "<unmatched>"
+    return method, endpoint
+
+
+def _record_request_metrics(status_code: int, duration_ms: float, *, is_error: bool = False) -> None:
+    method, endpoint = _resolve_metrics_dimensions()
+    is_client_error = 400 <= status_code < 500
+    is_server_error = status_code >= 500
+
+    with _metrics_lock:
+        bucket = _metrics_state["per_endpoint"][(method, endpoint)]
+        bucket["count"] += 1
+        bucket["total_latency_ms"] += duration_ms
+        bucket["status_counts"][status_code] += 1
+
+        _metrics_state["requests_total"] += 1
+        _metrics_state["latency_total_ms"] += duration_ms
+        _metrics_state["status_counts"][status_code] += 1
+
+        error_recorded = False
+        if is_client_error:
+            bucket["errors_4xx"] += 1
+            _metrics_state["errors_4xx"] += 1
+            error_recorded = True
+        if is_server_error:
+            bucket["errors_5xx"] += 1
+            _metrics_state["errors_5xx"] += 1
+            error_recorded = True
+        if is_error and not error_recorded:
+            bucket["errors_5xx"] += 1
+            _metrics_state["errors_5xx"] += 1
+
+
+def reset_metrics_state() -> None:
+    """
+    Reset the in-memory metrics store. Intended for use in tests.
+    """
+
+    global _metrics_state
+    with _metrics_lock:
+        _metrics_state = _initialize_metrics_state()
+
+
+def get_metrics_json() -> Dict[str, object]:
+    with _metrics_lock:
+        requests_total = _metrics_state["requests_total"]
+        total_latency_ms = _metrics_state["latency_total_ms"]
+        avg_latency_ms = total_latency_ms / requests_total if requests_total else 0.0
+        endpoints: List[Dict[str, object]] = []
+        for (method, endpoint), bucket in _metrics_state["per_endpoint"].items():
+            count = bucket["count"]
+            avg_endpoint_latency = bucket["total_latency_ms"] / count if count else 0.0
+            endpoints.append(
+                {
+                    "method": method,
+                    "endpoint": endpoint,
+                    "count": count,
+                    "avg_latency_ms": round(avg_endpoint_latency, 2),
+                    "total_latency_ms": round(bucket["total_latency_ms"], 2),
+                    "errors_4xx": bucket["errors_4xx"],
+                    "errors_5xx": bucket["errors_5xx"],
+                    "status_counts": {
+                        str(code): value for code, value in bucket["status_counts"].items()
+                    },
+                }
+            )
+        endpoints.sort(key=lambda item: (item["endpoint"], item["method"]))
+
+        return {
+            "requests_total": requests_total,
+            "total_latency_ms": round(total_latency_ms, 2),
+            "avg_latency_ms": round(avg_latency_ms, 2),
+            "errors_total": {
+                "4xx": _metrics_state["errors_4xx"],
+                "5xx": _metrics_state["errors_5xx"],
+            },
+            "status_counts": {
+                str(code): value for code, value in _metrics_state["status_counts"].items()
+            },
+            "endpoints": endpoints,
+        }
+
+
+def get_metrics_text() -> str:
+    snapshot = get_metrics_json()
+    lines = [
+        "# HELP mosaic_requests_total Total HTTP requests processed by the Mosaic backend",
+        "# TYPE mosaic_requests_total counter",
+    ]
+    for entry in snapshot["endpoints"]:
+        lines.append(
+            f'mosaic_requests_total{{method="{entry["method"]}",endpoint="{entry["endpoint"]}"}} '
+            f'{entry["count"]}'
+        )
+    lines.append(f'mosaic_requests_global_total {snapshot["requests_total"]}')
+
+    lines.extend(
+        [
+            "# HELP mosaic_request_latency_ms_total Cumulative request latency in milliseconds",
+            "# TYPE mosaic_request_latency_ms_total counter",
+        ]
+    )
+    for entry in snapshot["endpoints"]:
+        lines.append(
+            f'mosaic_request_latency_ms_total{{method="{entry["method"]}",endpoint="{entry["endpoint"]}"}} '
+            f'{entry["total_latency_ms"]}'
+        )
+    lines.append(
+        f'mosaic_request_latency_ms_average {snapshot["avg_latency_ms"]}'
+    )
+
+    lines.extend(
+        [
+            "# HELP mosaic_requests_errors_total Request error counts grouped by class",
+            "# TYPE mosaic_requests_errors_total counter",
+        ]
+    )
+    for error_type, value in snapshot["errors_total"].items():
+        lines.append(f'mosaic_requests_errors_total{{type="{error_type}"}} {value}')
+
+    status_counts = snapshot["status_counts"]
+    if status_counts:
+        lines.extend(
+            [
+                "# HELP mosaic_status_code_total Total responses grouped by HTTP status code",
+                "# TYPE mosaic_status_code_total counter",
+            ]
+        )
+        for status_code, value in status_counts.items():
+            lines.append(f'mosaic_status_code_total{{status="{status_code}"}} {value}')
+
+    return "\n".join(lines) + "\n"
+
+
+def _metrics_logger_loop() -> None:
+    while True:
+        sleep(_METRICS_LOG_INTERVAL_SECONDS)
+        snapshot = get_metrics_json()
+        logger.info("metrics.snapshot", metrics=snapshot)
+
+
+def _ensure_metrics_logger_started() -> None:
+    global _metrics_logger_thread
+    if _metrics_logger_thread and _metrics_logger_thread.is_alive():
+        return
+    thread = Thread(target=_metrics_logger_loop, daemon=True, name="metrics-logger")
+    thread.start()
+    _metrics_logger_thread = thread
+
+
+_ensure_metrics_logger_started()
 
 
 def _get_current_user() -> Optional[dict]:
@@ -171,32 +353,6 @@ def _is_admin_user() -> bool:
     return bool(user.get("is_admin"))
 
 
-def _update_metrics(status_code: int, duration_ms: float, *, is_error: bool = False) -> None:
-    with _metrics_lock:
-        _metrics_state["requests_total"] += 1
-        _metrics_state["total_latency_ms"] += duration_ms
-        _metrics_state["status_counts"][status_code] += 1
-        if is_error or status_code >= 500:
-            _metrics_state["errors_total"] += 1
-
-
-def _get_metrics_snapshot() -> Dict[str, object]:
-    with _metrics_lock:
-        requests_total = _metrics_state["requests_total"]
-        avg_latency = (
-            _metrics_state["total_latency_ms"] / requests_total if requests_total else 0.0
-        )
-        status_counts = {
-            str(code): count for code, count in _metrics_state["status_counts"].items()
-        }
-        return {
-            "requests_total": requests_total,
-            "errors_total": _metrics_state["errors_total"],
-            "avg_latency_ms": round(avg_latency, 2),
-            "status_counts": status_counts,
-        }
-
-
 def _cache_build_key(prefix: str, key_parts: Tuple) -> str:
     return prefix + "::" + "::".join(str(part) for part in key_parts)
 
@@ -206,6 +362,8 @@ def _start_request_timer() -> None:
     g.request_start_time = perf_counter()
     g.request_id = secrets.token_hex(8)
     route = request.endpoint or request.path
+    g.metrics_method = (request.method or "GET").upper()
+    g.metrics_endpoint = route or "<unmatched>"
     structlog.contextvars.bind_contextvars(
         request_id=g.request_id,
         route=route,
@@ -224,11 +382,13 @@ def _log_request(response: Response) -> Response:
         structlog.contextvars.bind_contextvars(user_id=user_id)
 
     status_code = response.status_code
+    g.metrics_endpoint = request.endpoint or getattr(g, "metrics_endpoint", request.path)
+    g.metrics_method = (request.method or "GET").upper()
     logger.bind(
         status_code=status_code,
         duration_ms=round(duration_ms, 2),
     ).info("request.completed")
-    _update_metrics(status_code, duration_ms)
+    _record_request_metrics(status_code, duration_ms)
     g.metrics_recorded = True
     return response
 
@@ -239,7 +399,8 @@ def _clear_request_context(exc: Optional[BaseException]) -> None:
         start = getattr(g, "request_start_time", None)
         duration_ms = (perf_counter() - start) * 1000 if start else 0.0
         status_code = getattr(exc, "code", 500) if hasattr(exc, "code") else 500
-        _update_metrics(status_code, duration_ms, is_error=True)
+        _record_request_metrics(status_code, duration_ms, is_error=True)
+        g.metrics_recorded = True
     structlog.contextvars.clear_contextvars()
 
 
@@ -645,8 +806,10 @@ def home():
 
 @app.get("/metrics")
 def metrics():
-    snapshot = _get_metrics_snapshot()
-    return jsonify(snapshot)
+    if (request.args.get("format") or "").lower() == "json":
+        return jsonify(get_metrics_json())
+    text_body = get_metrics_text()
+    return Response(text_body, mimetype="text/plain; version=0.0.4; charset=utf-8")
 
 
 @app.post("/register")
