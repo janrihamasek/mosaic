@@ -1,4 +1,4 @@
-# NightMotion Streaming Proxy – Phase 2
+# NightMotion Streaming Proxy
 
 ## Endpoint Summary
 
