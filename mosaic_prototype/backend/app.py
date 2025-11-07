@@ -74,6 +74,11 @@ def configure_logging() -> None:
 
 configure_logging()
 
+from audit import install_runtime_log_handler, log_event  # noqa: E402
+from routes.logs import logs_bp  # noqa: E402
+
+install_runtime_log_handler()
+
 logger = structlog.get_logger("mosaic.backend")
 
 app = Flask(__name__)
@@ -124,6 +129,7 @@ app.config["PUBLIC_ENDPOINTS"].update({"login", "register", "metrics", "health",
 
 db.init_app(app)
 migrate.init_app(app, db)
+app.register_blueprint(logs_bp)
 
 ERROR_CODE_BY_STATUS = {
     400: "bad_request",
@@ -920,15 +926,34 @@ def register():
     password_hash = generate_password_hash(payload["password"])
     display_name = payload.get("display_name") or username
 
+    new_user_id: Optional[int] = None
     try:
         with db_transaction() as conn:
             conn.execute(
                 "INSERT INTO users (username, password_hash, created_at, display_name, is_admin) VALUES (?, ?, ?, ?, FALSE)",
                 (username, password_hash, datetime.now(timezone.utc).isoformat(), display_name),
             )
+            new_row = conn.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            if new_row:
+                new_user_id = new_row["id"]
     except IntegrityError:
+        log_event(
+            "auth.register_failed",
+            "Username already exists",
+            level="warning",
+            context={"username": username},
+        )
         return error_response("conflict", "Username already exists", 409)
 
+    log_event(
+        "auth.register",
+        "User registered",
+        user_id=new_user_id,
+        context={"username": username},
+    )
     return jsonify({"message": "User registered"}), 201
 
 
@@ -980,6 +1005,13 @@ def login():
         conn.close()
 
     if not row or not check_password_hash(row["password_hash"], payload["password"]):
+        log_event(
+            "auth.login_failed",
+            "Invalid username or password",
+            user_id=row["id"] if row else None,
+            level="warning",
+            context={"username": payload["username"]},
+        )
         return error_response("invalid_credentials", "Invalid username or password", 401)
 
     if row and "is_admin" in row.keys():
@@ -992,6 +1024,12 @@ def login():
         payload["username"],
         is_admin=is_admin_flag,
         display_name=display_name,
+    )
+    log_event(
+        "auth.login",
+        "User logged in",
+        user_id=row["id"],
+        context={"username": payload["username"], "is_admin": is_admin_flag},
     )
     return jsonify(
         {
@@ -1292,17 +1330,32 @@ def backup_status():
 @app.post("/backup/run")
 @jwt_required()
 def backup_run():
+    operator_id = _current_user_id()
     try:
         result = backup_manager.create_backup(initiated_by="api")
     except Exception as exc:
         logger.bind(status_code=500).exception("backup.run_error", error=str(exc))
+        log_event(
+            "backup.run_failed",
+            "Backup creation failed",
+            user_id=operator_id,
+            level="error",
+            context={"error": str(exc)},
+        )
         return error_response("backup_error", "Failed to create backup", 500)
+    log_event(
+        "backup.run",
+        "Backup created",
+        user_id=operator_id,
+        context={"backup": result},
+    )
     return jsonify({"message": "Backup completed", "backup": result})
 
 
 @app.post("/backup/toggle")
 @jwt_required()
 def backup_toggle():
+    operator_id = _current_user_id()
     payload = request.get_json(silent=True) or {}
     enabled = payload.get("enabled")
     interval = payload.get("interval_minutes")
@@ -1321,7 +1374,20 @@ def backup_toggle():
         status = backup_manager.toggle(enabled=enabled, interval_minutes=interval)
     except Exception as exc:
         logger.bind(status_code=500).exception("backup.toggle_error", error=str(exc))
+        log_event(
+            "backup.toggle_failed",
+            "Backup settings update failed",
+            user_id=operator_id,
+            level="error",
+            context={"error": str(exc)},
+        )
         return error_response("backup_error", "Unable to update backup settings", 500)
+    log_event(
+        "backup.toggle",
+        "Backup settings updated",
+        user_id=operator_id,
+        context={"status": status},
+    )
     return jsonify({"message": "Backup settings updated", "status": status})
 
 
@@ -1335,6 +1401,12 @@ def backup_download(filename: str):
     except FileNotFoundError:
         return error_response("not_found", "Backup not found", 404)
 
+    log_event(
+        "backup.download",
+        "Backup downloaded",
+        user_id=_current_user_id(),
+        context={"filename": filename},
+    )
     return send_file(path, as_attachment=True, download_name=path.name)
 
 
@@ -1666,9 +1738,22 @@ def delete_entry(entry_id):
                     (entry_id, user_id),
                 )
         if cur.rowcount == 0:
+            log_event(
+                "entry.delete_missing",
+                "Entry delete attempted but not found",
+                user_id=user_id,
+                level="warning",
+                context={"entry_id": entry_id, "as_admin": is_admin},
+            )
             return error_response("not_found", "Záznam nenalezen", 404)
         invalidate_cache("today")
         invalidate_cache("stats")
+        log_event(
+            "entry.delete",
+            "Entry deleted",
+            user_id=user_id,
+            context={"entry_id": entry_id, "as_admin": is_admin},
+        )
         return jsonify({"message": "Záznam smazán"}), 200
     except SQLAlchemyError as exc:
         return error_response("database_error", str(exc), 500)
@@ -1750,9 +1835,25 @@ def add_activity():
             )
         invalidate_cache("today")
         invalidate_cache("stats")
+        log_event(
+            "activity.create",
+            "Activity created",
+            user_id=user_id,
+            context={
+                "name": name,
+                "category": category,
+            },
+        )
         return jsonify({"message": "Kategorie přidána"}), 201
     except IntegrityError as exc:
         logger.exception("activities.insert_conflict", error=str(exc))
+        log_event(
+            "activity.create_failed",
+            "Activity creation failed",
+            user_id=user_id,
+            level="warning",
+            context={"name": name, "error": "duplicate"},
+        )
         return error_response(
             "conflict",
             "Kategorie s tímto názvem již existuje",
@@ -2317,6 +2418,7 @@ def finalize_day():
 
 @app.post("/import_csv")
 def import_csv_endpoint():
+    user_id = _current_user_id()
     limits = app.config["RATE_LIMITS"]["import_csv"]
     limited = rate_limit("import_csv", limits["limit"], limits["window"])
     if limited:
@@ -2335,6 +2437,13 @@ def import_csv_endpoint():
     except Exception as exc:  # pragma: no cover - defensive
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+        log_event(
+            "import.csv_failed",
+            "CSV import failed",
+            user_id=user_id,
+            level="error",
+            context={"error": str(exc), "filename": filename},
+        )
         return error_response("import_failed", f"Failed to import CSV: {exc}", 500)
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -2342,6 +2451,12 @@ def import_csv_endpoint():
 
     invalidate_cache("today")
     invalidate_cache("stats")
+    log_event(
+        "import.csv",
+        "CSV import completed",
+        user_id=user_id,
+        context={"summary": summary, "filename": filename},
+    )
     return jsonify({"message": "CSV import completed", "summary": summary}), 200
 
 
