@@ -1,0 +1,12 @@
+FAIL src/__tests__/entriesSlice.test.ts
+  ● Test suite failed to run
+
+    src/__tests__/entriesSlice.test.ts:25:3 - error TS2739: Type '{ login: "idle"; register: "idle"; logout: "idle"; }' is missing the following properties from type '{ login: AsyncRequestStatus; register: AsyncRequestStatus; logout: AsyncRequestStatus; profile: AsyncRequestStatus; profileUpdate: AsyncRequestStatus; deleteAccount: AsyncRequestStatus; }': profile, profileUpdate, deleteAccount
+
+    25   status: {
+         ~~~~~~
+
+      src/types/store.d.ts:22:3
+        22   status: {
+             ~~~~~~
+        The expected type comes from property 'status' which is declared here on type 'AuthState'

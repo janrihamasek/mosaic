@@ -20,12 +20,18 @@ const authInitialState: AuthState = {
   accessToken: null,
   csrfToken: null,
   username: null,
+  displayName: null,
+  isAdmin: false,
+  userId: null,
   tokenType: 'Bearer',
   expiresAt: 0,
   status: {
     login: 'idle',
     register: 'idle',
     logout: 'idle',
+    profile: 'idle',
+    profileUpdate: 'idle',
+    deleteAccount: 'idle',
   },
   error: null,
 };

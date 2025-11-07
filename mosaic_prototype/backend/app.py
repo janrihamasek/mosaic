@@ -447,7 +447,7 @@ def _start_request_timer() -> None:
 @app.after_request
 def _log_request(response: Response) -> Response:
     start = getattr(g, "request_start_time", None)
-    duration_ms = (_now_perf_counter() - start) * 1000 if start else 0.0
+    duration_ms = (_now_perf_counter() - start) * 1000 if start is not None else 0.0
     current_user = getattr(g, "current_user", None)
     user_id = current_user.get("id") if isinstance(current_user, dict) else None
     if user_id is not None:
@@ -469,7 +469,7 @@ def _log_request(response: Response) -> Response:
 def _clear_request_context(exc: Optional[BaseException]) -> None:
     if exc is not None and not getattr(g, "metrics_recorded", False):
         start = getattr(g, "request_start_time", None)
-        duration_ms = (_now_perf_counter() - start) * 1000 if start else 0.0
+        duration_ms = (_now_perf_counter() - start) * 1000 if start is not None else 0.0
         status_code = getattr(exc, "code", 500) if hasattr(exc, "code") else 500
         _record_request_metrics(status_code, duration_ms, is_error=True)
         g.metrics_recorded = True
