@@ -7,9 +7,11 @@
   - `AdminUser.jsx`
   - `AdminSettings.jsx` → `BackupPanel.jsx`, `ImportExportPanel.jsx`
   - `HealthPanel.jsx`
+  - `AdminLogs.jsx`
   - `AdminNightMotion.jsx` → `NightMotion.tsx`
 - Redux slices involved: `authSlice`, `backupSlice`, `adminSlice`, `nightMotionSlice`
-- API touchpoints: `/user`, `/users`, `/backup/*`, `/export/(csv|json)`, `/import_csv`, `/healthz`, `/metrics?format=json`, `/api/stream-proxy`
+- API touchpoints: `/user`, `/users`, `/backup/*`, `/export/(csv|json)`, `/import_csv`, `/healthz`,
+  `/metrics?format=json`, `/logs/activity`, `/logs/runtime`, `/api/stream-proxy`
 
 ## Purpose
 - Provide a single surface for profile management, tenant administration, backups/import/export controls, and production health monitoring.
@@ -21,7 +23,8 @@
   1. **User** — always available.
   2. **Settings** — admin-only.
   3. **Health** — admin-only.
-  4. **NightMotion** — admin-only.
+  4. **Logs** — admin-only.
+  5. **NightMotion** — admin-only.
 - Active item button uses `styles.tabActive` (compact) or a bordered card style (desktop). Selection stored in component state; it resets if the available sections change (e.g., non-admin view).
 - Right content area swaps in the selected component. Each card reuses `styles.card` for consistency.
 
@@ -62,9 +65,18 @@
 - `Admin.jsx` inspects `auth.isAdmin` to determine available sections. Non-admins never render Settings/Health/NightMotion, ensuring backend-only APIs remain inaccessible via UI.
 - Notifications bubble up through the shared `onNotify` callback from `Dashboard`, so every section can emit toasts consistently.
 - `adminSlice` maintains independent status/error/lastFetched values for health vs metrics requests, enabling partial success rendering.
+- `adminSlice` also maintains cached responses for activity/runtime logs so all admin users see a synchronized auto-refresh cadence.
 - `backupSlice` tracks long-running states (`running`, `toggling`, `downloading`), preventing duplicate operations.
 
 ## Open Questions / Future Enhancements
 - Add user list & role management UI (currently CLI/`/users` only).
 - Surface backup history/audit entries directly in the Settings section instead of raw file names.
 - Expand Health with sparkline histories or Prometheus badge integration once external monitoring is wired up.
+- Add richer log filtering (per-user/event-type search) and CSV export from the Logs section.
+
+### Logs
+- `AdminLogs.jsx` exposes two tabs: **Activity Logs** (persistent audit trail from `/logs/activity`) and **Runtime Logs** (ephemeral structlog buffer from `/logs/runtime`).
+- Each tab reuses `DataTable.tsx` with columns for timestamp, user, event type, level badge, and message body. Runtime logs swap the "user" column for the emitting logger name.
+- The component dispatches `loadActivityLogs` / `loadRuntimeLogs` on mount and via a shared 60 s interval; manual refresh button triggers both thunks immediately.
+- State: `admin.activityLogs` and `admin.runtimeLogs` track `status`, `data`, `error`, and `lastFetched`. Errors surface inline without clearing previously loaded rows.
+- User identification prefers `context.username`, falling back to `user_id` or “System” to distinguish backend automations.

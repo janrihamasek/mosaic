@@ -189,3 +189,14 @@ export async function fetchMetrics() {
   const response = await apiClient.get('/metrics', { params: { format: 'json' } });
   return response.data;
 }
+
+// --- ADMIN / LOGS ---
+export async function fetchActivityLogs(params = {}) {
+  const response = await apiClient.get('/logs/activity', { params });
+  return response.data;
+}
+
+export async function fetchRuntimeLogs(params = {}) {
+  const response = await apiClient.get('/logs/runtime', { params });
+  return response.data;
+}

@@ -1,6 +1,11 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 
-import { fetchHealth, fetchMetrics } from "../api";
+import {
+  fetchActivityLogs,
+  fetchHealth,
+  fetchMetrics,
+  fetchRuntimeLogs,
+} from "../api";
 
 const buildInitialSectionState = () => ({
   status: "idle",
@@ -12,6 +17,8 @@ const buildInitialSectionState = () => ({
 const initialState = {
   health: buildInitialSectionState(),
   metrics: buildInitialSectionState(),
+  activityLogs: buildInitialSectionState(),
+  runtimeLogs: buildInitialSectionState(),
 };
 
 const resolveErrorMessage = (action, fallback) =>
@@ -26,6 +33,22 @@ export const loadMetrics = createAsyncThunk("admin/loadMetrics", async () => {
   const response = await fetchMetrics();
   return response;
 });
+
+export const loadActivityLogs = createAsyncThunk(
+  "admin/loadActivityLogs",
+  async (params = {}) => {
+    const response = await fetchActivityLogs(params);
+    return response;
+  }
+);
+
+export const loadRuntimeLogs = createAsyncThunk(
+  "admin/loadRuntimeLogs",
+  async (params = {}) => {
+    const response = await fetchRuntimeLogs(params);
+    return response;
+  }
+);
 
 const adminSlice = createSlice({
   name: "admin",
@@ -60,11 +83,41 @@ const adminSlice = createSlice({
       .addCase(loadMetrics.rejected, (state, action) => {
         state.metrics.status = "failed";
         state.metrics.error = resolveErrorMessage(action, "Failed to load metrics");
+      })
+      .addCase(loadActivityLogs.pending, (state) => {
+        state.activityLogs.status = "loading";
+        state.activityLogs.error = null;
+      })
+      .addCase(loadActivityLogs.fulfilled, (state, action) => {
+        state.activityLogs.status = "succeeded";
+        state.activityLogs.data = action.payload;
+        state.activityLogs.lastFetched = Date.now();
+        state.activityLogs.error = null;
+      })
+      .addCase(loadActivityLogs.rejected, (state, action) => {
+        state.activityLogs.status = "failed";
+        state.activityLogs.error = resolveErrorMessage(action, "Failed to load activity logs");
+      })
+      .addCase(loadRuntimeLogs.pending, (state) => {
+        state.runtimeLogs.status = "loading";
+        state.runtimeLogs.error = null;
+      })
+      .addCase(loadRuntimeLogs.fulfilled, (state, action) => {
+        state.runtimeLogs.status = "succeeded";
+        state.runtimeLogs.data = action.payload;
+        state.runtimeLogs.lastFetched = Date.now();
+        state.runtimeLogs.error = null;
+      })
+      .addCase(loadRuntimeLogs.rejected, (state, action) => {
+        state.runtimeLogs.status = "failed";
+        state.runtimeLogs.error = resolveErrorMessage(action, "Failed to load runtime logs");
       });
   },
 });
 
 export const selectHealthState = (state) => state.admin.health;
 export const selectMetricsState = (state) => state.admin.metrics;
+export const selectActivityLogsState = (state) => state.admin.activityLogs;
+export const selectRuntimeLogsState = (state) => state.admin.runtimeLogs;
 
 export default adminSlice.reducer;

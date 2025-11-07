@@ -8,6 +8,7 @@ Design reference for primary dashboard surfaces. Each document captures layout, 
 - [Entries](Entries.md)
 - [NightMotion](NightMotion.md)
 - [Admin](Admin.md)
+- [Admin Logs](AdminLogs.md)
 
 Usage guidelines:
 - Update the relevant page spec before implementing significant UI/UX changes
