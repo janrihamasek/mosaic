@@ -5,7 +5,7 @@ from threading import Lock
 from typing import Any, Dict, Optional
 
 import structlog
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 
 from extensions import db
 from models import ActivityLog
@@ -88,12 +88,21 @@ def _persist_log(
         session.commit()
     except SQLAlchemyError as exc:
         session.rollback()
-        audit_logger.error(
-            "activity_log.persist_failed",
-            event_type=event_type,
-            user_id=user_id,
-            error=str(exc),
-        )
+        if is_activity_log_table_missing_error(exc):
+            audit_logger.warning(
+                "activity_log.table_missing",
+                event_type=event_type,
+                user_id=user_id,
+                message=message,
+                details="Activity log table missing. Apply latest migrations.",
+            )
+        else:
+            audit_logger.error(
+                "activity_log.persist_failed",
+                event_type=event_type,
+                user_id=user_id,
+                error=str(exc),
+            )
 
 
 def log_event(
@@ -139,3 +148,23 @@ def get_runtime_logs(limit: Optional[int] = None) -> list[Dict[str, Any]]:
     if limit is None or limit >= len(items):
         return items
     return items[-limit:]
+
+
+def _extract_error_message(exc: SQLAlchemyError) -> str:
+    if isinstance(exc, (ProgrammingError, OperationalError)) and getattr(exc, "orig", None):
+        return str(exc.orig).lower()
+    return str(exc).lower()
+
+
+def is_activity_log_table_missing_error(exc: SQLAlchemyError) -> bool:
+    message = _extract_error_message(exc)
+    if "activity_logs" not in message:
+        return False
+    indicators = (
+        "does not exist",
+        "no such table",
+        "undefined table",
+        "relation 'activity_logs' does not exist",
+        "relation \"activity_logs\" does not exist",
+    )
+    return any(indicator in message for indicator in indicators)

@@ -5,12 +5,15 @@ from typing import Optional
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import desc
+from sqlalchemy.exc import SQLAlchemyError
+import structlog
 
-from audit import get_runtime_logs
+from audit import get_runtime_logs, is_activity_log_table_missing_error
 from models import ActivityLog
 from security import error_response, require_admin
 
 logs_bp = Blueprint("logs", __name__, url_prefix="/logs")
+logger = structlog.get_logger("mosaic.logs")
 
 
 def _parse_iso_timestamp(value: Optional[str]) -> Optional[datetime]:
@@ -63,13 +66,23 @@ def list_activity_logs():
     if end_ts:
         query = query.filter(ActivityLog.timestamp <= end_ts)
 
-    total = query.count()
-    rows = (
-        query.order_by(desc(ActivityLog.timestamp))
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    try:
+        total = query.count()
+        rows = (
+            query.order_by(desc(ActivityLog.timestamp))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except SQLAlchemyError as exc:
+        logger.warning("logs.activity_query_failed", error=str(exc))
+        if is_activity_log_table_missing_error(exc):
+            return error_response(
+                "logs_unavailable",
+                "Activity logs storage is not initialized. Run database migrations and retry.",
+                503,
+            )
+        return error_response("database_error", "Unable to fetch activity logs", 500)
 
     return jsonify(
         {
