@@ -16,22 +16,44 @@ const TABS = [
   { id: "activity", label: "Activity Logs" },
   { id: "runtime", label: "Runtime Logs" },
 ];
+const LOCAL_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function formatTimestamp(value) {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString();
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    const pad = (num) => String(num).padStart(2, "0");
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   } catch (_err) {
     return value;
   }
 }
 
 function formatUser(row) {
-  if (row?.context?.username) {
-    return row.context.username;
+  const username =
+    row?.context?.username ??
+    row?.username ??
+    row?.runtime?.username ??
+    row?.runtime?.user ??
+    row?.runtime?.context?.username;
+  const userId =
+    row?.user_id ??
+    row?.runtime?.user_id ??
+    row?.runtime?.context?.user_id;
+  if (username) {
+    return username;
   }
-  if (row?.user_id != null) {
-    return `User #${row.user_id}`;
+  if (userId != null) {
+    return `User #${userId}`;
   }
   return "System";
 }
@@ -74,6 +96,30 @@ function formatLastUpdated(timestamp) {
   }
 }
 
+function parseRuntimePayload(message) {
+  if (!message) {
+    return {};
+  }
+  if (typeof message === "object") {
+    return message;
+  }
+  if (typeof message === "string") {
+    try {
+      return JSON.parse(message);
+    } catch (_err) {
+      return {};
+    }
+  }
+  return {};
+}
+
+const formatDurationMs = (value) => {
+  if (!Number.isFinite(value)) {
+    return "—";
+  }
+  return `${Math.round(value)} ms`;
+};
+
 export default function AdminLogs() {
   const dispatch = useDispatch();
   const [activeTab, setActiveTab] = useState(TABS[0].id);
@@ -107,6 +153,7 @@ export default function AdminLogs() {
       (runtimeState.data?.logs ?? []).map((log, index) => ({
         id: log.id ?? `${log.timestamp ?? "log"}-${index}`,
         ...log,
+        runtime: parseRuntimePayload(log.message),
       })),
     [runtimeState.data]
   );
@@ -144,17 +191,66 @@ export default function AdminLogs() {
     []
   );
 
-  const runtimeColumns = useMemo(
-    () => [
+  const runtimeColumns = useMemo(() => {
+    const renderRequest = (row) => {
+      const method =
+        row.runtime?.method ??
+        row.runtime?.http_method ??
+        row.method ??
+        row.http_method;
+      const route =
+        row.runtime?.route ??
+        row.runtime?.path ??
+        row.route ??
+        row.endpoint ??
+        row.runtime?.endpoint;
+      if (!route && !method) {
+        return "—";
+      }
+      return `${(method || "GET").toUpperCase()} ${route || "/"}`;
+    };
+    const renderStatus = (row) => {
+      const status =
+        row.runtime?.status_code ??
+        row.runtime?.status ??
+        row.status_code ??
+        row.status;
+      return status != null ? status : "—";
+    };
+    const renderDuration = (row) => {
+      const duration =
+        row.runtime?.duration_ms ??
+        row.runtime?.duration ??
+        row.duration_ms ??
+        row.duration;
+      return formatDurationMs(duration);
+    };
+    return [
       {
         key: "timestamp",
         label: "Timestamp",
         render: (row) => formatTimestamp(row.timestamp),
       },
       {
-        key: "logger",
-        label: "Logger",
-        render: (row) => row.logger || "—",
+        key: "user",
+        label: "User",
+        render: (row) => formatUser(row),
+      },
+      {
+        key: "request",
+        label: "Request",
+        width: "30%",
+        render: renderRequest,
+      },
+      {
+        key: "status",
+        label: "Status",
+        render: renderStatus,
+      },
+      {
+        key: "duration",
+        label: "Duration",
+        render: renderDuration,
       },
       {
         key: "level",
@@ -162,21 +258,14 @@ export default function AdminLogs() {
         width: "6rem",
         render: (row) => toLevelBadge(row.level),
       },
-      {
-        key: "message",
-        label: "Message",
-        width: "45%",
-        render: (row) => row.message || "—",
-      },
-    ],
-    []
-  );
+    ];
+  }, []);
 
   const activeConfig = useMemo(() => {
     if (activeTab === "runtime") {
       return {
         title: "Runtime Logs",
-        description: "Recent in-memory log buffer exposed by the backend (non-persistent).",
+        description: "Recent in-memory log buffer (non-persistent).",
         state: runtimeState,
         rows: runtimeRows,
         columns: runtimeColumns,
@@ -208,6 +297,10 @@ export default function AdminLogs() {
   const hasRows = activeConfig.rows.length > 0;
   const activeError = activeConfig.state.error;
   const refreshButtonDisabled = activityState.status === "loading" || runtimeState.status === "loading";
+  const tabSpecificSubtitle =
+    activeTab === "runtime"
+      ? "Recent in-memory request traces (non-persistent)."
+      : "Persistent user & system events stored in the database.";
 
   return (
     <div
@@ -230,8 +323,11 @@ export default function AdminLogs() {
         <div>
           <h3 style={{ margin: 0 }}>System Logs</h3>
           <p style={{ margin: "0.25rem 0 0", color: "#9ca3af", fontSize: "0.9rem" }}>
+            {tabSpecificSubtitle}
+          </p>
+          <p style={{ margin: "0.15rem 0 0", color: "#9ca3af", fontSize: "0.85rem" }}>
             Auto-refresh every 60s • Last update: {formatLastUpdated(activeConfig.state.lastFetched)}
-            {isRefreshing ? " (refreshing…)" : ""}
+            {isRefreshing ? " (refreshing…)" : ""} • Times shown in {LOCAL_TIMEZONE}
           </p>
         </div>
         <button
@@ -281,7 +377,9 @@ export default function AdminLogs() {
       </div>
 
       <div>
-        <p style={{ margin: "0 0 0.85rem", color: "#c1c6cf" }}>{activeConfig.description}</p>
+        <p style={{ margin: "0 0 0.85rem", color: "#c1c6cf" }}>
+          {activeConfig.description}
+        </p>
         {activeError && hasRows && (
           <ErrorState
             message={activeError}

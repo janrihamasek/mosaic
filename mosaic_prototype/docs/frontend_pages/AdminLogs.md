@@ -10,7 +10,10 @@
 ## Layout
 1. **Header**
    - Title: “System Logs”
-   - Subtext shows last refreshed time for the active tab and notes the 60 s auto-refresh.
+   - Subtext changes with the active tab:
+     - Activity tab — “Persistent user & system events stored in the database.”
+     - Runtime tab — “Recent in-memory request traces (non-persistent).”
+   - Second line always shows “Auto-refresh every 60 s · Last update HH:mm:ss · Times shown in {local timezone}”.
    - “Refresh now” button triggers both log fetch thunks; disabled while any fetch is in flight.
 2. **Tab selector**
    - Buttons: “Activity Logs” (default) and “Runtime Logs”.
@@ -26,7 +29,7 @@
 ### Activity Logs
 - Source payload: `{ items, total, limit, offset }`
 - Columns:
-  1. `timestamp` → locale string, fallback to raw ISO.
+  1. `timestamp` → formatted as `YYYY-MM-DD HH:mm:ss` in the viewer’s local timezone.
   2. `user` → `context.username` > `user_id` > “System”.
   3. `event_type`
   4. `level` → badge with tone (info/warn/error/etc.).
@@ -36,11 +39,14 @@
 
 ### Runtime Logs
 - Source payload: `{ logs: [{ timestamp, logger, level, message }], limit }`
+- Each `message` field is JSON, parsed client-side to extract `method`, `route`/`path`, `status_code`, `duration_ms`, and optional user hints.
 - Columns:
-  1. `timestamp`
-  2. `logger`
-  3. `level` badge
-  4. `message`
+  1. `timestamp` (`YYYY-MM-DD HH:mm:ss`, local time)
+  2. `user` (derived from payload if present, otherwise “System”)
+  3. `request` → `METHOD /route`
+  4. `status`
+  5. `duration` (rounded ms)
+  6. `level` badge
 - Empty message: “No runtime logs captured yet.”
 - Loading copy: “Loading runtime logs…”
 
@@ -48,7 +54,7 @@
 - Requests fire on mount if the respective slice status is `idle`.
 - A `setInterval` re-dispatches both thunks every 60 s; clearing occurs on unmount.
 - Manual refresh triggers both thunks to keep datasets in sync with the same cadence.
-- While loading with existing data, the header text adds “(refreshing…)” to avoid hiding the table.
+- While loading with existing data, the header text adds “(refreshing…)” alongside the timestamp to avoid hiding the table.
 - DataTable receives `error` only when there are zero rows, so stale data remains visible even if the latest poll fails.
 - Row IDs prefer backend `id`; runtime entries fall back to `{timestamp}-{index}` to keep keys stable enough for React.
 
