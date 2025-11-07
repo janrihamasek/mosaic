@@ -1,43 +1,42 @@
 # NightMotion Page Specification
 
 ## Identification
-- Route: `/night-motion` (navigated when tab `NightMotion` is active)
-- Primary component: `mosaic_prototype/frontend/src/components/NightMotion.tsx`
+- Location: `Dashboard` → `Admin` tab → `NightMotion` section (admin-only)
+- Wrapper: `AdminNightMotion.jsx` (renders `NightMotion.tsx`)
 - Redux slice: `nightMotionSlice`
-- Ancillary services: `authService` (`getAccessToken`, `getCsrfToken`), streaming proxy via `getStreamProxyUrl`
-- API touchpoints: `/api/stream-proxy` (proxied MJPEG stream)
+- Ancillary services: `authService` (`getAccessToken`, `getCsrfToken`), streaming proxy builder `getStreamProxyUrl`
+- API touchpoints: `/api/stream-proxy` (MJPEG stream, inherits global auth/API key headers)
 
 ## Purpose
-- Authenticate against proxied camera stream and render live NightMotion preview within dashboard shell
-- Persist stream credentials client-side for rapid reconnects
-- Provide start/stop controls with robust error handling and status feedback
+- Allow administrators to proxy a secured NightMotion RTSP feed through Mosaic without exposing credentials in the browser.
+- Persist per-operator credentials locally for fast reconnects during surveillance/debug sessions.
+- Co-locate advanced tooling (start/stop controls, troubleshooting) with the rest of the Admin surface.
 
 ## Layout
-- Flex container (`layoutStyle`) splitting into two columns (form + preview); collapses to vertical stack under compact layout
-- Form column uses `FormWrapper` with inputs for username, password (toggleable visibility), stream URL
-- Video column (`videoWrapperStyle`) displays status indicator, optional error text, and stream preview area (img placeholder)
-- Helper copy below preview explains latency and troubleshooting tips
+- Flex container (`layoutStyle`) splitting into two columns (form + preview); collapses to vertical stack on compact layouts.
+- Form column uses `FormWrapper` with inputs for username, password (toggleable visibility), and stream URL.
+- Video column (`videoWrapperStyle`) displays status indicator, optional error copy, and the MJPEG preview `<img>`.
+- Helper copy under the preview clarifies latency expectations and rate limiting (2 requests/minute).
 
 ## Interactive Elements
-- Form submission runs validation, persists credentials to `localStorage` (`nightMotionConfig`), and invokes streaming logic
-- Password visibility toggle switches between text/password inputs using inline button
-- Start button disabled while stream starting/active; Stop button disabled in idle state
-- Component listens for status changes and animates indicator (`statusVisible` fade)
-- Stream lifecycle
-  - On submit: dispatch `startStreamAction`, fetch MJPEG via proxy with auth headers, parse multipart frames
-  - `AbortController` used for cancellation; `stopStream` dispatched on cleanup or stop button
-  - Auto-transition to `error` status when fetch fails or `<img>` emits `onError`
-- `useEffect` hydrates stored config once, resets on unmount to prevent leaks
+- Form submission validates required fields, persists credentials to `localStorage` (`nightMotionConfig`), and kicks off the streaming pipeline.
+- Password visibility toggle switches between `type="password"` / `type="text"`.
+- Start button disabled while `status === "starting"` or `status === "active"`; Stop disabled when idle.
+- Status indicator animates based on `nightMotion.status` (`idle`, `starting`, `active`, `error`) and includes textual feedback.
+- Stream lifecycle:
+  1. Dispatch `startStream` (clears errors, sets `status="starting"`).
+  2. Build proxy URL via `getStreamProxyUrl` and fetch the MJPEG stream with JWT, CSRF, and API key headers.
+  3. Update `<img>` source with the response stream; listen for `onError` to flip to `error` state.
+  4. `AbortController` halts the request when stopping or unmounting; `stopStream` resets slice state.
+- Admin tab unmounts the component when navigating away, ensuring resources are released.
 
 ## Data Bindings
-- `selectNightMotionState` provides `{ username, password, streamUrl, status, error }`
-  - Inputs register via `react-hook-form` and dispatch `setField` on change; also clears errors when user edits after failure
-  - Status indicator maps to `statusColors`/`statusLabels`
-  - Error copy bound to `error` state; resets on successful start or explicit stop
-- Stream pipeline uses tokens from auth service to set `Authorization` and `X-CSRF-Token` headers
-- `setStatus` transitions: `idle` → `starting` → `active`, or `error` with message “Stream nelze navázat” / “Vyplňte všechna pole” etc.
-- Successful frame decode updates React state `streamSrc` (object URL) for `<img src>` binding
-- Cleanup (`clearStreamResources`) revokes object URLs and aborts fetch to avoid memory leaks
+- `selectNightMotionState` → `{ username, password, streamUrl, status, error }`.
+  - Inputs dispatch `setField` on change and clear previous errors.
+  - Status indicator + helper text derive from `status` and `error`.
+- Stream pipeline uses tokens from `authService` (`getAccessToken`, `getCsrfToken`) to populate headers and meet `/api/stream-proxy` security requirements.
+- `setStatus` transitions enforce `idle → starting → active` or `error`; stopping resets credentials unless user stored them explicitly.
+- Object URLs created for the `<img>` preview are revoked in the cleanup effect to avoid memory leaks.
 
 ## Styles
 - Shared button/input styling from `styles/common.js`
@@ -46,8 +45,8 @@
 - Responsive adjustments via `useCompactLayout` for min heights and max video height
 
 ## Notes
-- Streaming assumes MJPEG boundary `--frame`; adjust parser if backend format changes
-- Credentials stored in `localStorage`; consider encryption/secure storage before shipping to production
-- Proxy requires valid Mosaic session tokens—spec ensures `getAccessToken`/`getCsrfToken` present before attempting stream
-- Current UI does not auto-retry on failure; future iteration could surface retry button or timed backoff
-- Tests rely on Jest setup (TextEncoder/TextDecoder polyfills) to simulate stream parsing; keep parity when refactoring
+- Section only renders for admins; `Admin.jsx` omits it for standard users to avoid exposing protected tooling.
+- Backend enforces a per-minute rate limit; surface clearer UI feedback if we detect 429 responses.
+- Streaming assumes MJPEG boundary `--frame`; adjust parser if backend format changes.
+- Credentials remain in `localStorage`; consider encryption or per-user secrets before production rollout.
+- Tests rely on Jest setup (TextEncoder/TextDecoder polyfills) to simulate stream parsing; keep parity when refactoring.
