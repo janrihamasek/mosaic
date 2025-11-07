@@ -178,3 +178,14 @@ export async function downloadBackupFile(filename) {
 
 export const getStreamProxyUrl = (url, username, password) =>
   `${API_BASE}/api/stream-proxy?url=${encodeURIComponent(url)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+
+// --- ADMIN / HEALTH ---
+export async function fetchHealth() {
+  const response = await apiClient.get('/healthz');
+  return response.data;
+}
+
+export async function fetchMetrics() {
+  const response = await apiClient.get('/metrics', { params: { format: 'json' } });
+  return response.data;
+}

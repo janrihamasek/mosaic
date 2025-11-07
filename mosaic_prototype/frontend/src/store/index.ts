@@ -9,6 +9,7 @@ import entriesReducer from "./entriesSlice";
 import activitiesReducer from "./activitiesSlice";
 import backupReducer from "./backupSlice";
 import nightMotionReducer from "./nightMotionSlice";
+import adminReducer from "./adminSlice";
 import { subscribe as subscribeAuthChanges, getAuthState } from "../services/authService";
 
 export const store = configureStore({
@@ -18,6 +19,7 @@ export const store = configureStore({
     activities: activitiesReducer,
     nightMotion: nightMotionReducer,
     backup: backupReducer,
+    admin: adminReducer,
   },
 });
 

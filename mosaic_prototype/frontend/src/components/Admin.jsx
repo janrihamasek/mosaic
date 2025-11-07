@@ -6,11 +6,13 @@ import { useCompactLayout } from "../utils/useBreakpoints";
 import AdminUser from "./AdminUser";
 import AdminSettings from "./AdminSettings";
 import AdminNightMotion from "./AdminNightMotion";
+import HealthPanel from "./HealthPanel";
 import { selectAuth } from "../store/authSlice";
 
 const SECTIONS = [
   { id: "user", label: "User", Component: AdminUser },
   { id: "settings", label: "Settings", Component: AdminSettings },
+  { id: "health", label: "Health", Component: HealthPanel },
   { id: "nightMotion", label: "NightMotion", Component: AdminNightMotion },
 ];
 
