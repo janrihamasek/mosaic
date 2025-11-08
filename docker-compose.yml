@@ -31,6 +31,7 @@ services:
       - "5000:5000"
     volumes:
       - ./mosaic_prototype/backend:/app
+      - ./certs:/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +54,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ./certs:/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:5000/ || exit 1"]
       interval: 30s
@@ -72,6 +75,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ./certs:/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:5000/ || exit 1"]
       interval: 20s
@@ -85,21 +90,25 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        REACT_APP_API_URL: ${FRONTEND_API_URL:-http://localhost:5000}
+        REACT_APP_API_URL: ${FRONTEND_API_URL:-https://10.0.1.31:5001}
         REACT_APP_API_KEY: ${FRONTEND_API_KEY:-dev-api-key}
         REACT_APP_BACKEND_LABEL: ${FRONTEND_BACKEND_LABEL:-Development API}
+    env_file:
+      - .env.prod
     ports:
       - "3000:3000"
     environment:
-      REACT_APP_API_URL: ${FRONTEND_API_URL:-http://localhost:5000}
-      REACT_APP_API_BASE_URL: ${FRONTEND_API_URL:-http://localhost:5000}
+      REACT_APP_API_URL: ${FRONTEND_API_URL:-https://10.0.1.31:5001}
+      REACT_APP_API_BASE_URL: ${FRONTEND_API_URL:-https://10.0.1.31:5001}
       REACT_APP_API_KEY: ${FRONTEND_API_KEY:-dev-api-key}
       REACT_APP_BACKEND_LABEL: ${FRONTEND_BACKEND_LABEL:-Development API}
+    volumes:
+      - ./certs:/certs:ro
     depends_on:
-      mosaic_backend_dev:
+      mosaic_backend_prod:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q --no-check-certificate --spider https://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -111,21 +120,25 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        REACT_APP_API_URL: ${FRONTEND_STAGING_API_URL:-http://localhost:5002}
+        REACT_APP_API_URL: ${FRONTEND_STAGING_API_URL:-https://10.0.1.31:5002}
         REACT_APP_API_KEY: ${FRONTEND_STAGING_API_KEY:-staging-api-key}
         REACT_APP_BACKEND_LABEL: ${FRONTEND_STAGING_BACKEND_LABEL:-Staging API}
+    env_file:
+      - .env.staging
     ports:
       - "3001:3000"
     environment:
-      REACT_APP_API_URL: ${FRONTEND_STAGING_API_URL:-http://localhost:5002}
-      REACT_APP_API_BASE_URL: ${FRONTEND_STAGING_API_URL:-http://localhost:5002}
+      REACT_APP_API_URL: ${FRONTEND_STAGING_API_URL:-https://10.0.1.31:5002}
+      REACT_APP_API_BASE_URL: ${FRONTEND_STAGING_API_URL:-https://10.0.1.31:5002}
       REACT_APP_API_KEY: ${FRONTEND_STAGING_API_KEY:-staging-api-key}
       REACT_APP_BACKEND_LABEL: ${FRONTEND_STAGING_BACKEND_LABEL:-Staging API}
+    volumes:
+      - ./certs:/certs:ro
     depends_on:
       mosaic_backend_staging:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q --no-check-certificate --spider https://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5

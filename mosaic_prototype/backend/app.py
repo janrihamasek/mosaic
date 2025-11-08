@@ -10,8 +10,8 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from functools import wraps
 from pathlib import Path
+from functools import wraps
 from threading import Lock, Thread
 from time import perf_counter, sleep, time
 from typing import Dict, Iterator, List, NamedTuple, Optional, Tuple, cast
@@ -30,6 +30,7 @@ from werkzeug.utils import secure_filename
 
 from backup_manager import BackupManager
 from import_data import import_csv as run_import_csv
+from https_utils import resolve_ssl_context
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from security import (
     ValidationError,
@@ -81,7 +82,28 @@ install_runtime_log_handler()
 
 logger = structlog.get_logger("mosaic.backend")
 
-app = Flask(__name__)
+class MosaicFlask(Flask):
+    def run(
+        self,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        debug: Optional[bool] = None,
+        load_dotenv: bool = True,
+        **options,
+    ) -> None:
+        if host is None:
+            host = os.environ.get("FLASK_RUN_HOST", "0.0.0.0")
+        if port is None:
+            port = int(os.environ.get("FLASK_RUN_PORT", os.environ.get("PORT", "5000")))
+        ssl_context = options.get("ssl_context")
+        if ssl_context is None:
+            ssl_context = resolve_ssl_context()
+            if ssl_context:
+                options["ssl_context"] = ssl_context
+        super().run(host=host, port=port, debug=debug, load_dotenv=load_dotenv, **options)
+
+
+app = MosaicFlask(__name__)
 
 
 def _resolve_cors_origins() -> list[str]:
@@ -2609,4 +2631,5 @@ def import_csv_endpoint():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    debug = os.environ.get("FLASK_DEBUG", "0").lower() in ("1", "true", "yes")
+    app.run(debug=debug)

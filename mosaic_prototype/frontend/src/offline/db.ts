@@ -64,7 +64,7 @@ function openDb(): Promise<IDBDatabaseLike> {
 }
 
 function isIDBRequest(value: unknown): value is IDBRequest {
-  return !!value && typeof (value as IDBRequest).onsuccess === "function" && "result" in (value as IDBRequest);
+  return !!value && "onsuccess" in (value as IDBRequest) && "result" in (value as IDBRequest);
 }
 
 async function withStore<T>(

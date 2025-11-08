@@ -18,18 +18,17 @@ ENV REACT_APP_BACKEND_LABEL=${REACT_APP_BACKEND_LABEL}
 RUN npm run build
 
 
-FROM node:18-alpine AS runner
+FROM caddy:2-alpine AS runner
 
-WORKDIR /app
+WORKDIR /srv
 
-RUN npm install -g serve
+COPY --from=build /app/build /srv
+COPY mosaic_prototype/frontend/Caddyfile /etc/caddy/Caddyfile
 
-COPY --from=build /app/build ./build
+ENV FRONTEND_LISTEN=:3000
 
 EXPOSE 3000
 
-ENV PORT=3000
+HEALTHCHECK CMD wget -q --no-check-certificate --spider https://localhost:3000/ || exit 1
 
-HEALTHCHECK CMD wget -q --spider http://localhost:3000/ || exit 1
-
-CMD ["serve", "-s", "build", "-l", "3000"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
