@@ -58,14 +58,19 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const dispatch = useDispatch();
   const auth = useSelector(selectAuth);
   const isAuthenticated = useSelector(selectIsAuthenticated);
-  const availableTabs = TABS;
+  const availableTabs = useMemo(
+    () => (auth.isAdmin ? TABS : TABS.filter((tab) => tab !== ADMIN_TAB)),
+    [auth.isAdmin]
+  );
   const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab, availableTabs));
   const [tabRenderKeys, setTabRenderKeys] = useState(() =>
     Object.fromEntries(TABS.map((tab) => [tab, 0]))
   );
   const [notification, setNotification] = useState({ message: "", type: "info", visible: false });
   const notificationTimerRef = useRef(null);
-  const { isCompact } = useCompactLayout();
+  const { isCompact, isMobile } = useCompactLayout();
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [canInstall, setCanInstall] = useState(false);
 
   const activities = useSelector(selectAllActivities);
   const selectedActivityId = useSelector(selectSelectedActivityId);
@@ -126,10 +131,51 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     }
   }, [activeTab, availableTabs]);
 
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab(availableTabs[0] || DEFAULT_TAB);
+    }
+  }, [activeTab, availableTabs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+      setCanInstall(true);
+    };
+    const handleAppInstalled = () => {
+      setInstallPromptEvent(null);
+      setCanInstall(false);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = useCallback(async () => {
+    if (!installPromptEvent) {
+      return;
+    }
+    installPromptEvent.prompt();
+    const choice = await installPromptEvent.userChoice;
+    if (choice?.outcome === "accepted") {
+      showNotification("Mosaic was added to your home screen.", "success");
+    }
+    setInstallPromptEvent(null);
+    setCanInstall(false);
+  }, [installPromptEvent, showNotification]);
+
   const containerStyle = {
     ...styles.container,
     padding: isCompact ? "1.25rem" : styles.container.padding,
     margin: isCompact ? "1rem auto" : styles.container.margin,
+    paddingBottom: isMobile ? "5.5rem" : styles.container.paddingBottom || "1.5rem",
   };
 
   const headerStyle = {
@@ -167,6 +213,13 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     alignItems: isCompact ? "stretch" : "center",
     gap: "0.5rem",
     minWidth: isCompact ? "100%" : "auto",
+  };
+
+  const installButtonStyle = {
+    ...styles.button,
+    backgroundColor: "#0ea5e9",
+    border: "1px solid rgba(14, 165, 233, 0.4)",
+    width: isCompact ? "100%" : "auto",
   };
 
   const userInfoStyle = {
@@ -215,13 +268,18 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       : {}),
   };
 
-  const tabBarStyle = {
-    ...styles.tabBar,
-    flexWrap: isCompact ? "wrap" : "nowrap",
-    gap: "0.5rem",
-    overflowX: isCompact ? "auto" : "visible",
-    marginBottom: "1.5rem",
-  };
+  const tabBarStyle = isMobile
+    ? {
+        ...styles.tabBar,
+        ...styles.tabBarDock,
+      }
+    : {
+        ...styles.tabBar,
+        flexWrap: isCompact ? "wrap" : "nowrap",
+        gap: "0.5rem",
+        overflowX: isCompact ? "auto" : "visible",
+        marginBottom: "1.5rem",
+      };
 
   const tabItemStyle = useCallback(
     (tabName) =>
@@ -328,6 +386,11 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
                 {auth.isAdmin && <span style={adminBadgeStyle}>Admin</span>}
               </div>
             </div>
+            {canInstall && (
+              <button type="button" style={installButtonStyle} onClick={handleInstallClick}>
+                Install App
+              </button>
+            )}
             <LogoutButton style={logoutButtonStyle} />
           </div>
         )}

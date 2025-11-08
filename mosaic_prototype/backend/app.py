@@ -82,7 +82,24 @@ install_runtime_log_handler()
 logger = structlog.get_logger("mosaic.backend")
 
 app = Flask(__name__)
-CORS(app)
+
+
+def _resolve_cors_origins() -> list[str]:
+    raw = os.environ.get("CORS_ALLOW_ORIGINS", "")
+    if raw.strip():
+        parsed = [origin.strip() for origin in raw.split(",") if origin.strip()]
+        if parsed:
+            return parsed
+    return ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+CORS(
+    app,
+    origins=_resolve_cors_origins(),
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-API-Key"],
+    expose_headers=["Content-Disposition"],
+)
 
 
 def _resolve_database_uri() -> str:
