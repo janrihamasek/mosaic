@@ -177,6 +177,10 @@ _cache_lock = Lock()
 TODAY_CACHE_TTL = 60
 STATS_CACHE_TTL = 300
 
+_IDEMPOTENCY_TTL_SECONDS = int(os.environ.get("IDEMPOTENCY_TTL_SECONDS", "600"))
+_idempotency_lock = Lock()
+_idempotency_store: Dict[str, Tuple[float, dict, int]] = {}
+
 
 def _cache_scope_key_parts(scope: Optional[CacheScope]) -> Tuple[str, ...]:
     if scope is None:
@@ -570,6 +574,43 @@ def invalidate_cache(prefix: str) -> None:
         for key in list(_cache_storage.keys()):
             if key.startswith(key_prefix):
                 del _cache_storage[key]
+
+
+def _compose_idempotency_token(user_id: Optional[int], key: Optional[str]) -> Optional[str]:
+    if user_id is None or not key:
+        return None
+    return f"{user_id}::{key.strip()}"
+
+
+def _idempotency_lookup(user_id: Optional[int], key: Optional[str]) -> Optional[Tuple[dict, int]]:
+    token = _compose_idempotency_token(user_id, key)
+    if not token:
+        return None
+    now = time()
+    with _idempotency_lock:
+        entry = _idempotency_store.get(token)
+        if not entry:
+            return None
+        expires_at, payload, status_code = entry
+        if expires_at <= now:
+            del _idempotency_store[token]
+            return None
+        return payload, status_code
+
+
+def _idempotency_store_response(user_id: Optional[int], key: Optional[str], payload: dict, status_code: int) -> None:
+    token = _compose_idempotency_token(user_id, key)
+    if not token:
+        return
+    expires_at = time() + _IDEMPOTENCY_TTL_SECONDS
+    with _idempotency_lock:
+        _idempotency_store[token] = (expires_at, payload, status_code)
+
+
+def _header_truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in ("1", "true", "yes", "force", "overwrite")
 
 
 def _create_access_token(
@@ -1671,6 +1712,12 @@ def add_entry():
     if limited:
         return limited
 
+    idempotency_key = request.headers.get("X-Idempotency-Key")
+    cached_response = _idempotency_lookup(user_id, idempotency_key)
+    if cached_response:
+        payload, status_code = cached_response
+        return jsonify(payload), status_code
+
     data = request.get_json() or {}
     payload = validate_entry_payload(data)
     date = payload["date"]
@@ -1734,7 +1781,9 @@ def add_entry():
             )
 
             if update_cur.rowcount > 0:
-                response = jsonify({"message": "Záznam aktualizován"}), 200
+                response_payload = {"message": "Záznam aktualizován"}
+                status_code = 200
+                response = jsonify(response_payload), status_code
             else:
                 update_cur = conn.execute(
                     """
@@ -1760,7 +1809,9 @@ def add_entry():
                 )
 
                 if update_cur.rowcount > 0:
-                    response = jsonify({"message": "Záznam aktualizován"}), 200
+                    response_payload = {"message": "Záznam aktualizován"}
+                    status_code = 200
+                    response = jsonify(response_payload), status_code
                 else:
                     conn.execute(
                         """
@@ -1769,12 +1820,16 @@ def add_entry():
                     """,
                         (date, activity, description, float_value, note, activity_category, activity_goal, user_id),
                     )
-                    response = jsonify({"message": "Záznam uložen"}), 201
+                    response_payload = {"message": "Záznam uložen"}
+                    status_code = 201
+                    response = jsonify(response_payload), status_code
     except SQLAlchemyError as exc:
         return error_response("database_error", str(exc), 500)
     else:
         invalidate_cache("today")
         invalidate_cache("stats")
+        if idempotency_key:
+            _idempotency_store_response(user_id, idempotency_key, response_payload, status_code)
         return response
 
 
@@ -1877,6 +1932,14 @@ def add_activity():
     if limited:
         return limited
 
+    idempotency_key = request.headers.get("X-Idempotency-Key")
+    cached_response = _idempotency_lookup(user_id, idempotency_key)
+    if cached_response:
+        payload, status_code = cached_response
+        return jsonify(payload), status_code
+
+    overwrite_requested = _header_truthy(request.headers.get("X-Overwrite-Existing"))
+
     data = request.get_json() or {}
     payload = validate_activity_create_payload(data)
     name = payload["name"]
@@ -1906,8 +1969,28 @@ def add_activity():
                 "category": category,
             },
         )
-        return jsonify({"message": "Kategorie přidána"}), 201
+        response_payload = {"message": "Kategorie přidána"}
+        if idempotency_key:
+            _idempotency_store_response(user_id, idempotency_key, response_payload, 201)
+        return jsonify(response_payload), 201
     except IntegrityError as exc:
+        if overwrite_requested:
+            with db_transaction() as conn:
+                cur = conn.execute(
+                    """
+                    UPDATE activities
+                    SET category = ?, goal = ?, description = ?, frequency_per_day = ?, frequency_per_week = ?, active = TRUE, deactivated_at = NULL
+                    WHERE name = ? AND user_id = ?
+                    """,
+                    (category, goal, description, frequency_per_day, frequency_per_week, name, user_id),
+                )
+            if cur.rowcount > 0:
+                invalidate_cache("today")
+                invalidate_cache("stats")
+                response_payload = {"message": "Kategorie aktualizována", "overwrite": True}
+                if idempotency_key:
+                    _idempotency_store_response(user_id, idempotency_key, response_payload, 200)
+                return jsonify(response_payload), 200
         logger.exception("activities.insert_conflict", error=str(exc))
         log_event(
             "activity.create_failed",

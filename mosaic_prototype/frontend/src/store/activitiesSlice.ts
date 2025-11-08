@@ -1,16 +1,11 @@
 import { createAsyncThunk, createSlice, isAnyOf, type PayloadAction } from "@reduxjs/toolkit";
-import {
-  fetchActivities,
-  addActivity as addActivityApi,
-  updateActivity as updateActivityApi,
-  activateActivity as activateActivityApi,
-  deactivateActivity as deactivateActivityApi,
-  deleteActivity as deleteActivityApi,
-} from "../api";
+import { fetchActivities } from "../api";
 import { loadEntries, loadToday } from "./entriesSlice";
 import type { RootState, AppDispatch } from "./index";
 import type { ActivitiesState, FriendlyError } from "../types/store";
 import type { Activity } from "../types/api";
+import { submitOfflineMutation } from "../offline/queue";
+import { readActivitiesSnapshot, saveActivitiesSnapshot } from "../offline/snapshots";
 
 type ActivityMutationPayload = Record<string, unknown>;
 
@@ -37,6 +32,38 @@ function serialiseError(error: unknown): FriendlyError | null {
 
 const normaliseReject = (error: unknown): FriendlyError => serialiseError(error) ?? {};
 
+type ActivityLists = {
+  active: Activity[];
+  all: Activity[];
+};
+
+const cloneLists = (state: ActivitiesState): ActivityLists => ({
+  active: [...(state.active || [])],
+  all: [...(state.all || [])],
+});
+
+const tempId = () => -Math.floor(Math.random() * 1_000_000 + Date.now());
+
+async function applyAndPersistActivitiesSnapshot(
+  getState: () => RootState,
+  transformer: (lists: ActivityLists) => ActivityLists
+): Promise<ActivityLists> {
+  const state = getState();
+  const current = cloneLists(state.activities);
+  const next = transformer(current);
+  await saveActivitiesSnapshot(next.active, next.all);
+  return next;
+}
+
+async function updateLocalActivities(
+  dispatch: AppDispatch,
+  getState: () => RootState,
+  transformer: (lists: ActivityLists) => ActivityLists
+): Promise<void> {
+  const next = await applyAndPersistActivitiesSnapshot(getState, transformer);
+  dispatch(setActivitiesFromSnapshot(next));
+}
+
 export const loadActivities = createAsyncThunk<
   { active: Activity[]; all: Activity[] },
   void,
@@ -47,8 +74,14 @@ export const loadActivities = createAsyncThunk<
       fetchActivities({ all: false }),
       fetchActivities({ all: true }),
     ]);
-    return { active: (active || []) as Activity[], all: (all || []) as Activity[] };
+    const payload = { active: (active || []) as Activity[], all: (all || []) as Activity[] };
+    await saveActivitiesSnapshot(payload.active, payload.all);
+    return payload;
   } catch (error) {
+    const cached = await readActivitiesSnapshot();
+    if (cached) {
+      return cached;
+    }
     return rejectWithValue(normaliseReject(error));
   }
 });
@@ -59,7 +92,26 @@ export const createActivity = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/createActivity", async (payload, { dispatch, rejectWithValue, getState }) => {
   try {
-    await addActivityApi(payload);
+    const result = await submitOfflineMutation({
+      action: "add_activity",
+      endpoint: "/add_activity",
+      method: "POST",
+      payload,
+    });
+    if (result.queued) {
+      await updateLocalActivities(dispatch, getState, (lists) => {
+        const activity: Activity = {
+          id: tempId(),
+          name: String(payload.name) || "Activity",
+          category: String(payload.category ?? ""),
+          goal: Number(payload.goal ?? 0),
+          active: true,
+        };
+        const nextAll = [...lists.all.filter((item) => item.name !== activity.name), activity];
+        const nextActive = activity.active === false ? lists.active : [...lists.active, activity];
+        return { active: nextActive, all: nextAll };
+      });
+    }
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -75,7 +127,19 @@ export const updateActivityDetails = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/updateActivityDetails", async ({ id, payload }, { dispatch, rejectWithValue, getState }) => {
   try {
-    await updateActivityApi(id, payload);
+    const result = await submitOfflineMutation({
+      action: "update_activity",
+      endpoint: `/activities/${id}`,
+      method: "PUT",
+      payload,
+    });
+    if (result.queued) {
+      await updateLocalActivities(dispatch, getState, (lists) => {
+        const mapper = (items: Activity[]) =>
+          items.map((item) => (item.id === id ? { ...item, ...payload } : item));
+        return { active: mapper(lists.active), all: mapper(lists.all) };
+      });
+    }
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -91,7 +155,20 @@ export const activateActivity = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/activateActivity", async (id, { dispatch, rejectWithValue, getState }) => {
   try {
-    await activateActivityApi(id);
+    const result = await submitOfflineMutation({
+      action: "activate_activity",
+      endpoint: `/activities/${id}/activate`,
+      method: "PATCH",
+    });
+    if (result.queued) {
+      await updateLocalActivities(dispatch, getState, (lists) => {
+        const mapper = (items: Activity[]) =>
+          items.map((item) =>
+            item.id === id ? { ...item, active: true, deactivated_at: null } : item
+          );
+        return { active: mapper(lists.active), all: mapper(lists.all) };
+      });
+    }
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -107,7 +184,21 @@ export const deactivateActivity = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/deactivateActivity", async (id, { dispatch, rejectWithValue, getState }) => {
   try {
-    await deactivateActivityApi(id);
+    const result = await submitOfflineMutation({
+      action: "deactivate_activity",
+      endpoint: `/activities/${id}/deactivate`,
+      method: "PATCH",
+    });
+    if (result.queued) {
+      const today = new Date().toISOString().slice(0, 10);
+      await updateLocalActivities(dispatch, getState, (lists) => {
+        const mapper = (items: Activity[]) =>
+          items.map((item) =>
+            item.id === id ? { ...item, active: false, deactivated_at: today } : item
+          );
+        return { active: mapper(lists.active), all: mapper(lists.all) };
+      });
+    }
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -123,7 +214,17 @@ export const removeActivity = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/removeActivity", async (id, { dispatch, rejectWithValue, getState }) => {
   try {
-    await deleteActivityApi(id);
+    const result = await submitOfflineMutation({
+      action: "delete_activity",
+      endpoint: `/activities/${id}`,
+      method: "DELETE",
+    });
+    if (result.queued) {
+      await updateLocalActivities(dispatch, getState, (lists) => ({
+        active: lists.active.filter((item) => item.id !== id),
+        all: lists.all.filter((item) => item.id !== id),
+      }));
+    }
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -145,6 +246,10 @@ const activitiesSlice = createSlice({
     clearActivitiesError(state) {
       state.error = null;
       state.mutationError = null;
+    },
+    setActivitiesFromSnapshot(state, action: PayloadAction<ActivityLists>) {
+      state.active = action.payload.active;
+      state.all = action.payload.all;
     },
   },
   extraReducers: (builder) => {
@@ -194,7 +299,7 @@ const activitiesSlice = createSlice({
   },
 });
 
-export const { selectActivity, clearActivitiesError } = activitiesSlice.actions;
+export const { selectActivity, clearActivitiesError, setActivitiesFromSnapshot } = activitiesSlice.actions;
 
 export const selectActivitiesState = (state: RootState) => state.activities;
 export const selectAllActivities = (state: RootState) => state.activities.all;

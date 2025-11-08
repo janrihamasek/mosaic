@@ -22,6 +22,7 @@ import {
   selectSelectedActivityId,
 } from "./store/activitiesSlice";
 import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
+import { selectOfflineState } from "./store/offlineSlice";
 
 const DEFAULT_TAB = "Today";
 const ADMIN_TAB = "Admin";
@@ -58,6 +59,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const dispatch = useDispatch();
   const auth = useSelector(selectAuth);
   const isAuthenticated = useSelector(selectIsAuthenticated);
+  const offlineState = useSelector(selectOfflineState);
   const availableTabs = useMemo(
     () => (auth.isAdmin ? TABS : TABS.filter((tab) => tab !== ADMIN_TAB)),
     [auth.isAdmin]
@@ -207,6 +209,42 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     letterSpacing: "0.015em",
   };
 
+  const badgeRowStyle = {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "0.4rem",
+    alignItems: "center",
+  };
+
+  const statusBadgeBase = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    borderRadius: "999px",
+    padding: "0.25rem 0.65rem",
+    letterSpacing: "0.02em",
+  };
+
+  const offlineBadgeStyle = {
+    ...statusBadgeBase,
+    backgroundColor: "#7f1d1d",
+    color: "#fff",
+  };
+
+  const syncingBadgeStyle = {
+    ...statusBadgeBase,
+    backgroundColor: "#0f172a",
+    color: "#93c5fd",
+  };
+
+  const pendingBadgeStyle = {
+    ...statusBadgeBase,
+    backgroundColor: "#7c2d12",
+    color: "#ffedd5",
+  };
+
   const headerActionsStyle = {
     display: "flex",
     flexDirection: isCompact ? "column" : "row",
@@ -348,6 +386,32 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
     return null;
   }
 
+  const statusBadges = [
+    <span key="backend" style={backendBadgeStyle} title={`Aktuální API: ${API_BASE_URL}`}>
+      🔌 {API_BACKEND_LABEL}
+    </span>,
+  ];
+
+  if (!offlineState.online) {
+    statusBadges.push(
+      <span key="offline" style={offlineBadgeStyle} title="Changes will be queued and synced later">
+        ⚠️ Offline
+      </span>
+    );
+  } else if (offlineState.syncing) {
+    statusBadges.push(
+      <span key="syncing" style={syncingBadgeStyle}>
+        🔄 Syncing…
+      </span>
+    );
+  } else if (offlineState.pendingCount > 0) {
+    statusBadges.push(
+      <span key="pending" style={pendingBadgeStyle}>
+        ⏳ Pending {offlineState.pendingCount}
+      </span>
+    );
+  }
+
   return (
     <div style={containerStyle}>
       <div style={toastContainerStyle}>
@@ -371,9 +435,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
           >
             🧩 Mosaic
           </h1>
-          <span style={backendBadgeStyle} title={`Aktuální API: ${API_BASE_URL}`}>
-            🔌 {API_BACKEND_LABEL}
-          </span>
+          <div style={badgeRowStyle}>{statusBadges}</div>
         </div>
         {isAuthenticated && (
           <div style={headerActionsStyle}>

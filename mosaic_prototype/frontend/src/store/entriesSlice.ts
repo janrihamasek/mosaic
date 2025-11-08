@@ -2,12 +2,13 @@ import { createAsyncThunk, createSlice, type PayloadAction } from "@reduxjs/tool
 import {
   fetchEntries,
   deleteEntry as deleteEntryApi,
-  addEntry as addEntryApi,
   fetchToday as fetchTodayApi,
   finalizeDay as finalizeDayApi,
   fetchProgressStats,
   importEntriesCsv,
 } from "../api";
+import { submitOfflineMutation } from "../offline/queue";
+import { readTodaySnapshot, saveTodaySnapshot } from "../offline/snapshots";
 import type { RootState, AppDispatch } from "./index";
 import type {
   EntriesFilters,
@@ -164,11 +165,20 @@ export const loadToday = createAsyncThunk<
   const effectiveDate = date || currentDate;
   try {
     const data = (await fetchTodayApi(effectiveDate)) as TodayRowInput[] | null;
+    const rows = normalizeTodayRows(data || []);
+    await saveTodaySnapshot(effectiveDate, rows);
     return {
       date: effectiveDate,
-      rows: normalizeTodayRows(data || []),
+      rows,
     };
   } catch (error) {
+    const cachedRows = await readTodaySnapshot(effectiveDate);
+    if (cachedRows) {
+      return {
+        date: effectiveDate,
+        rows: normalizeTodayRows(cachedRows),
+      };
+    }
     return rejectWithValue(normaliseReject(error));
   }
 });
@@ -185,16 +195,20 @@ export const saveDirtyTodayRows = createAsyncThunk<
     return { saved: 0, date: today.date };
   }
   try {
-    await Promise.all(
-      entriesToSave.map((row) =>
-        addEntryApi({
+    for (const row of entriesToSave) {
+      await submitOfflineMutation({
+        action: "add_entry",
+        endpoint: "/add_entry",
+        method: "POST",
+        payload: {
           date: today.date,
           activity: row.name,
           value: Number(row.value) || 0,
           note: row.note || "",
-        })
-      )
-    );
+        },
+      });
+    }
+    await saveTodaySnapshot(today.date, today.rows);
     dispatch(loadToday(today.date));
     dispatch(loadEntries(filters));
     dispatch(loadStats({ date: stats.date }));
