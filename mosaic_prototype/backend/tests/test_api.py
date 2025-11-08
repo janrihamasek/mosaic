@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app import _cache_storage
+from app import CacheScope, _cache_storage, build_cache_key
 
 
 @pytest.fixture
@@ -722,7 +722,11 @@ def test_today_cache_invalidation(client, auth_headers):
 def test_stats_cache_invalidation(client, auth_headers):
     _cache_storage.clear()
     target_date = "2024-06-01"
-    cache_key = f"stats::dashboard::{target_date}"
+    user_resp = client.get("/user", headers=auth_headers)
+    assert user_resp.status_code == 200
+    user_profile = user_resp.get_json()
+    cache_scope = CacheScope(user_profile["id"], bool(user_profile.get("is_admin")))
+    cache_key = build_cache_key("stats", ("dashboard", target_date), scope=cache_scope)
 
     resp = client.post(
         "/add_activity",

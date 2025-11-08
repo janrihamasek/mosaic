@@ -14,7 +14,7 @@ from functools import wraps
 from pathlib import Path
 from threading import Lock, Thread
 from time import perf_counter, sleep, time
-from typing import Dict, Iterator, List, Optional, Tuple, cast
+from typing import Dict, Iterator, List, NamedTuple, Optional, Tuple, cast
 from urllib.parse import urlparse, urlunparse
 
 import click
@@ -147,10 +147,34 @@ ERROR_CODE_BY_STATUS = {
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
-_cache_storage: Dict[str, Tuple[float, object]] = {}
+class CacheScope(NamedTuple):
+    user_id: Optional[int]
+    is_admin: bool
+
+
+CacheEntry = Tuple[float, object, Optional[CacheScope]]
+
+
+_cache_storage: Dict[str, CacheEntry] = {}
 _cache_lock = Lock()
 TODAY_CACHE_TTL = 60
 STATS_CACHE_TTL = 300
+
+
+def _cache_scope_key_parts(scope: Optional[CacheScope]) -> Tuple[str, ...]:
+    if scope is None:
+        return tuple()
+    user_component = (
+        f"user:{scope.user_id}"
+        if scope.user_id is not None
+        else "user:anonymous"
+    )
+    role_component = "role:admin" if scope.is_admin else "role:user"
+    return (user_component, role_component)
+
+
+def _namespaced_cache_key_parts(key_parts: Tuple, scope: Optional[CacheScope]) -> Tuple:
+    return _cache_scope_key_parts(scope) + key_parts
 
 _SERVER_START_TIME = time()
 _METRICS_LOG_INTERVAL_SECONDS = int(os.environ.get("METRICS_LOG_INTERVAL_SECONDS", "60"))
@@ -435,6 +459,10 @@ def _cache_build_key(prefix: str, key_parts: Tuple) -> str:
     return prefix + "::" + "::".join(str(part) for part in key_parts)
 
 
+def build_cache_key(prefix: str, key_parts: Tuple, *, scope: Optional[CacheScope] = None) -> str:
+    return _cache_build_key(prefix, _namespaced_cache_key_parts(key_parts, scope))
+
+
 @app.before_request
 def _start_request_timer() -> None:
     g.request_start_time = _now_perf_counter()
@@ -482,24 +510,41 @@ def _clear_request_context(exc: Optional[BaseException]) -> None:
     structlog.contextvars.clear_contextvars()
 
 
-def cache_get(prefix: str, key_parts: Tuple) -> Optional[object]:
-    key = _cache_build_key(prefix, key_parts)
+def cache_get(prefix: str, key_parts: Tuple, *, scope: Optional[CacheScope] = None) -> Optional[object]:
+    key = build_cache_key(prefix, key_parts, scope=scope)
     now = time()
     with _cache_lock:
         entry = _cache_storage.get(key)
         if not entry:
             return None
-        expires_at, value = entry
+        expires_at, value, entry_scope = entry
         if expires_at <= now:
             del _cache_storage[key]
             return None
+        if scope and entry_scope and scope != entry_scope:
+            logger.warning(
+                "cache.cross_user_hit",
+                prefix=prefix,
+                key=key,
+                cached_user_id=entry_scope.user_id,
+                requested_user_id=scope.user_id,
+                cached_is_admin=entry_scope.is_admin,
+                requested_is_admin=scope.is_admin,
+            )
         return copy.deepcopy(value)
 
 
-def cache_set(prefix: str, key_parts: Tuple, value: object, ttl: int) -> None:
-    key = _cache_build_key(prefix, key_parts)
+def cache_set(
+    prefix: str,
+    key_parts: Tuple,
+    value: object,
+    ttl: int,
+    *,
+    scope: Optional[CacheScope] = None,
+) -> None:
+    key = build_cache_key(prefix, key_parts, scope=scope)
     with _cache_lock:
-        _cache_storage[key] = (time() + ttl, copy.deepcopy(value))
+        _cache_storage[key] = (time() + ttl, copy.deepcopy(value), scope)
 
 
 def invalidate_cache(prefix: str) -> None:
@@ -2008,8 +2053,9 @@ def get_progress_stats():
     if not is_admin and user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
+    cache_scope = CacheScope(user_id, is_admin)
     cache_key_parts = ("dashboard", target_date.isoformat())
-    cached = cache_get("stats", cache_key_parts)
+    cached = cache_get("stats", cache_key_parts, scope=cache_scope)
     if cached is not None:
         return jsonify(cached)
 
@@ -2258,7 +2304,7 @@ def get_progress_stats():
             "avg_goal_fulfillment_by_category": avg_goal_fulfillment_by_category,
             "top_consistent_activities_by_category": top_consistent_activities_by_category,
         }
-        cache_set("stats", cache_key_parts, payload, STATS_CACHE_TTL)
+        cache_set("stats", cache_key_parts, payload, STATS_CACHE_TTL, scope=cache_scope)
         return jsonify(payload)
     finally:
         conn.close()
@@ -2273,8 +2319,9 @@ def get_today():
 
     date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
     pagination = parse_pagination(default_limit=200)
+    cache_scope = CacheScope(user_id, is_admin)
     cache_key_parts = (date, pagination["limit"], pagination["offset"])
-    cached = cache_get("today", cache_key_parts)
+    cached = cache_get("today", cache_key_parts, scope=cache_scope)
     if cached is not None:
         return jsonify(cached)
     conn = get_db_connection()
@@ -2325,7 +2372,7 @@ def get_today():
             data.append(item)
     finally:
         conn.close()
-    cache_set("today", cache_key_parts, data, TODAY_CACHE_TTL)
+    cache_set("today", cache_key_parts, data, TODAY_CACHE_TTL, scope=cache_scope)
     return jsonify(data)
 
 
