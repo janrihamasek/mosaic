@@ -119,7 +119,14 @@ CORS(
     app,
     origins=_resolve_cors_origins(),
     supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-API-Key"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-CSRF-Token",
+        "X-API-Key",
+        "X-Idempotency-Key",
+        "X-Overwrite-Existing",
+    ],
     expose_headers=["Content-Disposition"],
 )
 

@@ -23,7 +23,8 @@ FROM caddy:2-alpine AS runner
 WORKDIR /srv
 
 COPY --from=build /app/build /srv
-COPY mosaic_prototype/frontend/Caddyfile /etc/caddy/Caddyfile
+COPY --chmod=644 certs/ /certs/
+COPY --chmod=644 mosaic_prototype/frontend/Caddyfile /etc/caddy/Caddyfile
 
 ENV FRONTEND_LISTEN=:3000
 

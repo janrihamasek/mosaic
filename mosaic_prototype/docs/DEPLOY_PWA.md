@@ -32,7 +32,7 @@ During `npm run build`, `react-scripts` compiles the React bundle, copies the ma
    ```bash
    mkcert -install
    mkcert 10.0.1.31
-   # produces 10.0.1.31.pem and 10.0.1.31-key.pem
+   # produces 10.0.1.31.key.pem and 10.0.1.31.key (rename if needed)
    ```
    Place the files in `./certs/` (mounted into the backend container) or alongside `docker-compose.yml` if running bare-metal. Set `USE_HTTPS=true` and `SERVER_IP=10.0.1.31` in the environment file (`.env.prod`, `.env.dev`, etc.), restart the backend, and browse to `https://10.0.1.31:5001`. On mobile, install the mkcert root CA (see mkcert docs) so iOS/Android trust the certificate; afterwards the PWA will install and sync offline via the HTTPS origin.
 
@@ -40,13 +40,13 @@ During `npm run build`, `react-scripts` compiles the React bundle, copies the ma
 
 The `docker-compose.yml` file now spins up both the Flask API and the static React build behind HTTPS:
 
-1. Generate the mkcert cert/key and store them in `./certs/` (names can be either `10.0.1.31.pem`/`-key.pem` or with dashes – the backend looks for both).
+1. Generate the mkcert cert/key and store them in `./certs/` (the stack now expects `10.0.1.31.key.pem` for the certificate and `10.0.1.31.key` for the key; symlink/rename if mkcert produced a different pattern).
 2. In `.env.prod` (and optionally `.env.staging`) set:
    ```
    USE_HTTPS=true
    SERVER_IP=10.0.1.31
-   TLS_CERT_FILE=/certs/10-0-1-31.pem
-   TLS_KEY_FILE=/certs/10-0-1-31-key.pem
+   TLS_CERT_FILE=/certs/10.0.1.31.key.pem
+   TLS_KEY_FILE=/certs/10.0.1.31.key
    ```
 3. Build & run only the production services:
    ```bash
