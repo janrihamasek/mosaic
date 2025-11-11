@@ -181,7 +181,8 @@ def validate_activity_create_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValidationError(message, details=details)
 
     result = data.model_dump()
-    result["goal"] = data.computed_goal
+    goal_value = data.goal if data.goal is not None else data.computed_goal
+    result["goal"] = goal_value
     return result
 
 

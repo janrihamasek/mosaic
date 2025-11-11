@@ -57,6 +57,7 @@ class ActivityCreatePayload(BaseModel):
     frequency_per_day: int
     frequency_per_week: int
     description: str = ""
+    goal: Optional[float] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -87,6 +88,19 @@ class ActivityCreatePayload(BaseModel):
         if len(value) > 180:
             raise ValueError("description must be at most 180 characters")
         return value
+
+    @field_validator("goal", mode="before")
+    @classmethod
+    def validate_goal(cls, value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError("goal must be a number")
+        if number < 0:
+            raise ValueError("goal must be non-negative")
+        return number
 
     @field_validator("frequency_per_day", mode="before")
     @classmethod

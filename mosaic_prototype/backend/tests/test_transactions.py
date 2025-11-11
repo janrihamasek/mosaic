@@ -19,10 +19,10 @@ def test_import_csv_rolls_back_on_failure(tmp_path, client, monkeypatch):
 
     state = {"calls": 0}
 
-    def failing_upsert(parsed, activity):
+    def failing_upsert(parsed, activity, **kwargs):
         state["calls"] += 1
         if state["calls"] == 1:
-            return original_upsert(parsed, activity)
+            return original_upsert(parsed, activity, **kwargs)
         raise RuntimeError("Simulated failure after first upsert")
 
     monkeypatch.setattr("import_data._upsert_entry", failing_upsert)

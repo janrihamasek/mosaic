@@ -1790,6 +1790,37 @@ def add_entry():
                 activity_goal = (
                     existing_entry["activity_goal"] if existing_entry["activity_goal"] is not None else activity_goal
                 )
+            if not activity_row:
+                # ensure activity exists so that /today and other queries include the new entry
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO activities (
+                            name,
+                            category,
+                            goal,
+                            description,
+                            active,
+                            frequency_per_day,
+                            frequency_per_week,
+                            deactivated_at,
+                            user_id
+                        )
+                        VALUES (?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
+                        """,
+                        (
+                            activity,
+                            activity_category or "",
+                            float(activity_goal or 0),
+                            description or "",
+                            1,
+                            1,
+                            user_id,
+                        ),
+                    )
+                except IntegrityError:
+                    # another request may have created it concurrently; safe to ignore
+                    pass
 
             update_cur = conn.execute(
                 """
