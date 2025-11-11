@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from werkzeug.datastructures import FileStorage
@@ -446,3 +447,80 @@ class UserUpdatePayload(BaseModel):
         if not data:
             raise ValueError("At least one field must be provided")
         return self
+
+
+class WearableRecordPayload(BaseModel):
+    type: str
+    start: datetime
+    end: Optional[datetime] = None
+    fields: Dict[str, Any]
+    dedupe_key: str
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("type must not be empty")
+        if len(text) > 64:
+            raise ValueError("type must be at most 64 characters")
+        return text
+
+    @field_validator("fields")
+    @classmethod
+    def validate_fields(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        if value is None:
+            raise ValueError("fields must be an object")
+        if not isinstance(value, dict):
+            raise ValueError("fields must be an object")
+        return value
+
+    @field_validator("dedupe_key")
+    @classmethod
+    def validate_dedupe_key(cls, value: str) -> str:
+        key = (value or "").strip()
+        if not key:
+            raise ValueError("dedupe_key must not be empty")
+        if len(key) > 255:
+            raise ValueError("dedupe_key must be at most 255 characters")
+        return key
+
+
+class WearableBatchPayload(BaseModel):
+    source_app: str
+    device_id: str
+    tz: str
+    records: List[WearableRecordPayload]
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("source_app", "device_id")
+    @classmethod
+    def validate_text(cls, value: str, info: ValidationInfo) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError(f"{info.field_name} must not be empty")
+        if len(text) > 128:
+            raise ValueError(f"{info.field_name} must be at most 128 characters")
+        return text
+
+    @field_validator("tz")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        tz_value = (value or "").strip()
+        if not tz_value:
+            raise ValueError("tz must not be empty")
+        try:
+            ZoneInfo(tz_value)
+        except ZoneInfoNotFoundError:
+            raise ValueError("Invalid timezone identifier")
+        return tz_value
+
+    @field_validator("records")
+    @classmethod
+    def validate_records(cls, value: List[WearableRecordPayload]) -> List[WearableRecordPayload]:
+        if not value:
+            raise ValueError("records must contain at least one item")
+        return value

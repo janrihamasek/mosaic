@@ -1,6 +1,7 @@
 import copy
 import csv
 import io
+import json
 import os
 import secrets
 import subprocess
@@ -10,6 +11,7 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from functools import wraps
 from threading import Lock, Thread
@@ -46,6 +48,7 @@ from security import (
     validate_login_payload,
     validate_register_payload,
     validate_user_update_payload,
+    validate_wearable_batch_payload,
     require_admin,
 )
 from extensions import db, migrate
@@ -162,6 +165,7 @@ app.config.setdefault(
         "delete_entry": {"limit": 90, "window": 60},
         "finalize_day": {"limit": 10, "window": 60},
         "import_csv": {"limit": 5, "window": 300},
+        "wearable_ingest": {"limit": 60, "window": 60},
         "login": {"limit": 10, "window": 60},
         "register": {"limit": 5, "window": 3600},
     },
@@ -609,6 +613,14 @@ def invalidate_cache(prefix: str) -> None:
         for key in list(_cache_storage.keys()):
             if key.startswith(key_prefix):
                 del _cache_storage[key]
+
+
+def _coerce_utc(dt_value: datetime, tzinfo: ZoneInfo) -> datetime:
+    if dt_value.tzinfo is None:
+        aware = dt_value.replace(tzinfo=tzinfo)
+    else:
+        aware = dt_value
+    return aware.astimezone(timezone.utc)
 
 
 def _compose_idempotency_token(user_id: Optional[int], key: Optional[str]) -> Optional[str]:
@@ -2627,6 +2639,165 @@ def finalize_day():
     invalidate_cache("today")
     invalidate_cache("stats")
     return jsonify({"message": f"{created} missing entries added for {date}"}), 200
+
+
+@app.post("/ingest/wearable/batch")
+def ingest_wearable_batch():
+    user_id = _current_user_id()
+    if user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
+    limits = app.config["RATE_LIMITS"].get("wearable_ingest", {"limit": 60, "window": 60})
+    limited = rate_limit("wearable_ingest", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    payload = validate_wearable_batch_payload(request.get_json() or {})
+    source_app = payload["source_app"]
+    device_id = payload["device_id"]
+    tz_name = payload["tz"]
+    tzinfo = ZoneInfo(tz_name)
+    records = payload["records"]
+
+    accepted = 0
+    duplicates = 0
+    errors: list[dict] = []
+    now_iso = _utcnow().isoformat()
+    source_key = f"{user_id}:{source_app.lower()}:{device_id}"
+    sync_metadata = json.dumps({"tz": tz_name})
+
+    with db_transaction() as conn:
+        source_row = conn.execute(
+            "SELECT id FROM wearable_sources WHERE dedupe_key = ?",
+            (source_key,),
+        ).fetchone()
+        if source_row:
+            source_id = source_row["id"]
+            conn.execute(
+                "UPDATE wearable_sources SET updated_at = ?, sync_metadata = ? WHERE id = ?",
+                (now_iso, sync_metadata, source_id),
+            )
+        else:
+            insert_result = conn.execute(
+                """
+                INSERT INTO wearable_sources (
+                    user_id,
+                    provider,
+                    external_id,
+                    display_name,
+                    sync_metadata,
+                    last_synced_at,
+                    dedupe_key,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                RETURNING id
+                """,
+                (
+                    user_id,
+                    source_app,
+                    device_id,
+                    source_app,
+                    sync_metadata,
+                    source_key,
+                    now_iso,
+                    now_iso,
+                ),
+            )
+            new_row = insert_result.fetchone()
+            source_id = new_row["id"] if new_row else None
+
+        if source_id is None:
+            return error_response("internal_error", "Unable to resolve wearable source", 500)
+
+        insert_sql = """
+            INSERT INTO wearable_raw (
+                user_id,
+                source_id,
+                collected_at_utc,
+                received_at_utc,
+                payload,
+                dedupe_key,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (dedupe_key) DO NOTHING
+        """
+
+        for index, record in enumerate(records):
+            start_dt = record["start"]
+            end_dt = record.get("end")
+            try:
+                collected_utc = _coerce_utc(start_dt, tzinfo)
+                end_utc = _coerce_utc(end_dt, tzinfo) if end_dt else None
+                if end_utc and end_utc < collected_utc:
+                    raise ValueError("end cannot be before start")
+            except Exception as exc:
+                errors.append(
+                    {
+                        "index": index,
+                        "dedupe_key": record["dedupe_key"],
+                        "reason": str(exc),
+                    }
+                )
+                continue
+
+            record_payload = {
+                "type": record["type"],
+                "start": start_dt.isoformat(),
+                "end": end_dt.isoformat() if end_dt else None,
+                "fields": record["fields"],
+                "tz": tz_name,
+                "source_app": source_app,
+                "device_id": device_id,
+            }
+            try:
+                payload_json = json.dumps(record_payload)
+            except (TypeError, ValueError) as exc:
+                errors.append(
+                    {
+                        "index": index,
+                        "dedupe_key": record["dedupe_key"],
+                        "reason": f"Invalid fields payload: {exc}",
+                    }
+                )
+                continue
+
+            result = conn.execute(
+                insert_sql,
+                (
+                    user_id,
+                    source_id,
+                    collected_utc.isoformat(),
+                    now_iso,
+                    payload_json,
+                    record["dedupe_key"],
+                    now_iso,
+                ),
+            )
+            if result.rowcount:
+                accepted += 1
+            else:
+                duplicates += 1
+
+    logger.bind(
+        user_id=user_id,
+        source_app=source_app,
+        device_id=device_id,
+        records=len(records),
+        accepted=accepted,
+        duplicates=duplicates,
+        errors=len(errors),
+    ).info("wearable.ingest_batch")
+
+    status_code = 201 if accepted > 0 else 200
+    response_payload = {
+        "accepted": accepted,
+        "duplicates": duplicates,
+        "errors": errors,
+    }
+    return jsonify(response_payload), status_code
 
 
 @app.post("/import_csv")

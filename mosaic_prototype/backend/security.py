@@ -17,6 +17,7 @@ from schemas import (
     LoginPayload,
     RegisterPayload,
     UserUpdatePayload,
+    WearableBatchPayload,
 )
 
 
@@ -197,6 +198,19 @@ def validate_activity_update_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValidationError(message, details=details)
 
     return data.to_update_dict()
+
+
+def validate_wearable_batch_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValidationError("Invalid JSON payload", code="invalid_json")
+
+    try:
+        data = WearableBatchPayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        message, details = _extract_error_info(exc)
+        raise ValidationError(message, details=details)
+
+    return data.model_dump()
 
 
 def validate_csv_import_payload(files) -> Any:
