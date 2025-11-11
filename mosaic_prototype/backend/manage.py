@@ -113,5 +113,6 @@ def assign_user_data(username: str, make_admin: bool) -> None:
             )
 
 
+
 if __name__ == "__main__":
     cli()

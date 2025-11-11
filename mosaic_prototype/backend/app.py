@@ -505,6 +505,12 @@ def _is_admin_user() -> bool:
     return bool(user.get("is_admin"))
 
 
+def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
+    if include_unassigned:
+        return f"({column} = ? OR {column} IS NULL)"
+    return f"{column} = ?"
+
+
 def _cache_build_key(prefix: str, key_parts: Tuple) -> str:
     return prefix + "::" + "::".join(str(part) for part in key_parts)
 
@@ -776,15 +782,15 @@ def _set_export_headers(
 def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict], int, int]:
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         raise ValidationError("Missing user context", code="unauthorized", status=401)
 
     conn = get_db_connection()
     try:
         entry_params: list = []
         entry_where = ""
-        if not is_admin:
-            entry_where = "WHERE e.user_id = ?"
+        if user_id is not None:
+            entry_where = f"WHERE {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
             entry_params.append(user_id)
 
         entries_cursor = conn.execute(
@@ -811,8 +817,8 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
 
         activity_params: list = []
         activity_where = ""
-        if not is_admin:
-            activity_where = "WHERE a.user_id = ?"
+        if user_id is not None:
+            activity_where = f"WHERE {_user_scope_clause('a.user_id', include_unassigned=is_admin)}"
             activity_params.append(user_id)
 
         activities_cursor = conn.execute(
@@ -835,15 +841,15 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
             tuple(activity_params + [limit, offset]),
         )
 
-        if is_admin:
+        if user_id is None:
             total_entries_stmt = "SELECT COUNT(1) FROM entries"
             total_entries_params: Tuple = ()
             total_activities_stmt = "SELECT COUNT(1) FROM activities"
             total_activities_params: Tuple = ()
         else:
-            total_entries_stmt = "SELECT COUNT(1) FROM entries WHERE user_id = ?"
+            total_entries_stmt = f"SELECT COUNT(1) FROM entries WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             total_entries_params = (user_id,)
-            total_activities_stmt = "SELECT COUNT(1) FROM activities WHERE user_id = ?"
+            total_activities_stmt = f"SELECT COUNT(1) FROM activities WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             total_activities_params = (user_id,)
 
         total_entries = conn.execute(total_entries_stmt, total_entries_params).scalar_one()
@@ -1655,7 +1661,7 @@ def export_csv():
 def get_entries():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     start_date = (request.args.get("start_date") or "").strip() or None
@@ -1698,8 +1704,8 @@ def get_entries():
         if category_filter:
             clauses.append("COALESCE(a.category, e.activity_category, '') = ?")
             params.append(category_filter)
-        if not is_admin:
-            clauses.append("e.user_id = ?")
+        if user_id is not None:
+            clauses.append(_user_scope_clause("e.user_id", include_unassigned=is_admin))
             params.append(user_id)
 
         where_sql = ""
@@ -1866,7 +1872,7 @@ def add_entry():
 def delete_entry(entry_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     limits = app.config["RATE_LIMITS"]["delete_entry"]
@@ -1909,7 +1915,7 @@ def delete_entry(entry_id):
 def get_activities():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     show_all = request.args.get("all", "false").lower() in ("1", "true", "yes")
@@ -1918,8 +1924,8 @@ def get_activities():
         pagination = parse_pagination()
         params: list = []
         where_clauses = []
-        if not is_admin:
-            where_clauses.append("user_id = ?")
+        if user_id is not None:
+            where_clauses.append(_user_scope_clause("user_id", include_unassigned=is_admin))
             params.append(user_id)
         if not show_all:
             where_clauses.append("active = TRUE")
@@ -2040,7 +2046,7 @@ def add_activity():
 def update_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     limits = app.config["RATE_LIMITS"]["update_activity"]
@@ -2111,7 +2117,7 @@ def update_activity(activity_id):
 def deactivate_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     limits = app.config["RATE_LIMITS"]["activity_status"]
@@ -2141,7 +2147,7 @@ def deactivate_activity(activity_id):
 def activate_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     limits = app.config["RATE_LIMITS"]["activity_status"]
@@ -2179,7 +2185,7 @@ def get_progress_stats():
 
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     cache_scope = CacheScope(user_id, is_admin)
@@ -2201,8 +2207,8 @@ def get_progress_stats():
             WHERE active = TRUE
         """
         activity_goal_params: list = []
-        if not is_admin:
-            activity_goal_sql += " AND user_id = ?"
+        if user_id is not None:
+            activity_goal_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             activity_goal_params.append(user_id)
         activity_goal_sql += "\n            GROUP BY category"
         activity_goal_rows = conn.execute(activity_goal_sql, activity_goal_params).fetchall()
@@ -2231,8 +2237,8 @@ def get_progress_stats():
             WHERE date BETWEEN ? AND ?
         """
         daily_params: list = [window_30_start, today_str]
-        if not is_admin:
-            daily_sql += " AND user_id = ?"
+        if user_id is not None:
+            daily_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             daily_params.append(user_id)
         daily_sql += "\n            GROUP BY date"
         daily_rows = conn.execute(daily_sql, daily_params).fetchall()
@@ -2252,8 +2258,8 @@ def get_progress_stats():
             WHERE date BETWEEN ? AND ?
         """
         category_daily_params: list = [window_30_start, today_str]
-        if not is_admin:
-            category_daily_sql += " AND user_id = ?"
+        if user_id is not None:
+            category_daily_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             category_daily_params.append(user_id)
         category_daily_sql += "\n            GROUP BY date, category"
         category_daily_rows = conn.execute(category_daily_sql, category_daily_params).fetchall()
@@ -2294,8 +2300,8 @@ def get_progress_stats():
             WHERE date BETWEEN ? AND ?
         """
         distribution_params: list = [window_30_start, today_str]
-        if not is_admin:
-            distribution_sql += " AND user_id = ?"
+        if user_id is not None:
+            distribution_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             distribution_params.append(user_id)
         distribution_sql += """
             GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other')
@@ -2349,8 +2355,8 @@ def get_progress_stats():
             WHERE date BETWEEN ? AND ?
         """
         pos_neg_params: list = [window_30_start, today_str]
-        if not is_admin:
-            pos_neg_sql += " AND user_id = ?"
+        if user_id is not None:
+            pos_neg_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             pos_neg_params.append(user_id)
         pos_neg_row = conn.execute(pos_neg_sql, pos_neg_params).fetchone()
 
@@ -2372,8 +2378,8 @@ def get_progress_stats():
             WHERE date BETWEEN ? AND ?
         """
         consistent_params: list = [window_30_start, today_str]
-        if not is_admin:
-            consistent_sql += " AND user_id = ?"
+        if user_id is not None:
+            consistent_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             consistent_params.append(user_id)
         consistent_sql += """
             GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other'), activity
@@ -2443,7 +2449,7 @@ def get_progress_stats():
 def get_today():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     date = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
@@ -2457,16 +2463,16 @@ def get_today():
     try:
         join_clause = "LEFT JOIN entries e ON e.activity = a.name AND e.date = ?"
         join_params: list = [date]
-        if not is_admin:
-            join_clause += " AND e.user_id = ?"
+        if user_id is not None:
+            join_clause += f" AND {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
             join_params.append(user_id)
 
         where_conditions = [
             "(a.active = TRUE OR (a.deactivated_at IS NOT NULL AND ? < a.deactivated_at))"
         ]
         where_params: list = [date]
-        if not is_admin:
-            where_conditions.append("a.user_id = ?")
+        if user_id is not None:
+            where_conditions.append(_user_scope_clause("a.user_id", include_unassigned=is_admin))
             where_params.append(user_id)
 
         where_sql = "WHERE " + " AND ".join(where_conditions)
@@ -2509,7 +2515,7 @@ def get_today():
 def delete_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     limits = app.config["RATE_LIMITS"]["delete_activity"]
@@ -2544,7 +2550,7 @@ def delete_activity(activity_id):
 def finalize_day():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
-    if not is_admin and user_id is None:
+    if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
     limits = app.config["RATE_LIMITS"]["finalize_day"]
@@ -2564,14 +2570,14 @@ def finalize_day():
                OR (deactivated_at IS NOT NULL AND ? < deactivated_at)
         """
         active_params: list = [date]
-        if not is_admin:
-            active_query += " AND user_id = ?"
+        if user_id is not None:
+            active_query += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             active_params.append(user_id)
         active_activities = conn.execute(active_query, active_params).fetchall()
         existing_query = "SELECT activity FROM entries WHERE date = ?"
         existing_params: list = [date]
-        if not is_admin:
-            existing_query += " AND user_id = ?"
+        if user_id is not None:
+            existing_query += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
             existing_params.append(user_id)
         existing = conn.execute(existing_query, existing_params).fetchall()
         existing_names = {e["activity"] for e in existing}
@@ -2595,6 +2601,8 @@ def finalize_day():
 @app.post("/import_csv")
 def import_csv_endpoint():
     user_id = _current_user_id()
+    if user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
     limits = app.config["RATE_LIMITS"]["import_csv"]
     limited = rate_limit("import_csv", limits["limit"], limits["window"])
     if limited:
@@ -2609,7 +2617,7 @@ def import_csv_endpoint():
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             file.save(tmp.name)
             tmp_path = tmp.name
-        summary = run_import_csv(tmp_path)
+        summary = run_import_csv(tmp_path, user_id=user_id)
     except Exception as exc:  # pragma: no cover - defensive
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)

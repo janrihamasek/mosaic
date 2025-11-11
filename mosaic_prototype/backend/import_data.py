@@ -1,19 +1,23 @@
 import csv
-from typing import Dict, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 from flask import has_app_context
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from extensions import db
-from models import Activity, Entry
+from models import Activity, Entry, User
 from schemas import CSVImportRow
 
 
-def _ensure_activity(parsed: CSVImportRow) -> Activity:
+def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activity:
     session = db.session
     stmt = select(Activity).where(Activity.name == parsed.activity)
+    if user_id is not None:
+        stmt = stmt.where(or_(Activity.user_id == user_id, Activity.user_id.is_(None)))
+    else:
+        stmt = stmt.where(Activity.user_id.is_(None))
     activity = session.execute(stmt).scalar_one_or_none()
 
     if activity is None:
@@ -26,10 +30,14 @@ def _ensure_activity(parsed: CSVImportRow) -> Activity:
             frequency_per_day=parsed.frequency_per_day or 1,
             frequency_per_week=parsed.frequency_per_week or 1,
             deactivated_at=None,
+            user_id=user_id,
         )
         session.add(activity)
         session.flush()
         return activity
+
+    if user_id is not None and activity.user_id is None:
+        activity.user_id = user_id
 
     updated = False
 
@@ -59,9 +67,13 @@ def _ensure_activity(parsed: CSVImportRow) -> Activity:
     return activity
 
 
-def _upsert_entry(parsed: CSVImportRow, activity: Activity) -> str:
+def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional[int]) -> str:
     session = db.session
     stmt = select(Entry).where(Entry.date == parsed.date, Entry.activity == parsed.activity)
+    if user_id is not None:
+        stmt = stmt.where(or_(Entry.user_id == user_id, Entry.user_id.is_(None)))
+    else:
+        stmt = stmt.where(Entry.user_id.is_(None))
     entry = session.execute(stmt).scalar_one_or_none()
 
     activity_category = parsed.category or activity.category or ""
@@ -77,9 +89,13 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity) -> str:
             note=parsed.note,
             activity_category=activity_category,
             activity_goal=activity_goal,
+            user_id=user_id,
         )
         session.add(entry)
         return "created"
+
+    if user_id is not None and entry.user_id is None:
+        entry.user_id = user_id
 
     entry.value = float(parsed.value)
     entry.note = parsed.note
@@ -89,7 +105,7 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity) -> str:
     return "updated"
 
 
-def _import_csv_impl(csv_path: str, *, commit: bool = True) -> Dict[str, object]:
+def _import_csv_impl(csv_path: str, *, commit: bool = True, user_id: Optional[int] = None) -> Dict[str, object]:
     created = 0
     updated = 0
     skipped = 0
@@ -138,10 +154,10 @@ def _import_csv_impl(csv_path: str, *, commit: bool = True) -> Dict[str, object]
                     continue
                 seen_pairs.add(key)
 
-                activity = _ensure_activity(parsed)
-                status = _upsert_entry(parsed, activity)
+                activity = _ensure_activity(parsed, user_id=user_id)
+                status = _upsert_entry(parsed, activity, user_id=user_id)
                 if status == "created":
-                    _upsert_entry(parsed, activity)
+                    _upsert_entry(parsed, activity, user_id=user_id)
 
                 if status == "created":
                     created += 1
@@ -166,14 +182,14 @@ def _import_csv_impl(csv_path: str, *, commit: bool = True) -> Dict[str, object]
     return {"created": created, "updated": updated, "skipped": skipped, "details": details}
 
 
-def import_csv(csv_path: str, *, commit: bool = True) -> Dict[str, object]:
+def import_csv(csv_path: str, *, commit: bool = True, user_id: Optional[int] = None) -> Dict[str, object]:
     if has_app_context():
-        return _import_csv_impl(csv_path, commit=commit)
+        return _import_csv_impl(csv_path, commit=commit, user_id=user_id)
 
     from app import app  # type: ignore circular import
 
     with app.app_context():
-        return _import_csv_impl(csv_path, commit=commit)
+        return _import_csv_impl(csv_path, commit=commit, user_id=user_id)
 
 
 __all__ = ["import_csv"]
@@ -185,10 +201,16 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Import Mosaic activities and entries from CSV.")
     parser.add_argument("csv_path", help="Path to the CSV file.")
+    parser.add_argument("--username", help="Username that should own imported data.")
     args = parser.parse_args()
 
     with app.app_context():
-        result = import_csv(args.csv_path)
+        owner_id: Optional[int] = None
+        if args.username:
+            owner_id = db.session.execute(select(User.id).where(User.username == args.username)).scalar_one_or_none()
+            if owner_id is None:
+                raise SystemExit(f"User '{args.username}' not found")
+        result = import_csv(args.csv_path, user_id=owner_id)
     print(
         f"Import finished. Created: {result['created']}, "
         f"updated: {result['updated']}, skipped: {result['skipped']}"
