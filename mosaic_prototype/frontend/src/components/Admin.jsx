@@ -8,12 +8,14 @@ import AdminSettings from "./AdminSettings";
 import AdminNightMotion from "./AdminNightMotion";
 import AdminLogs from "./AdminLogs";
 import HealthPanel from "./HealthPanel";
+import AdminHealthConnectInspector from "./AdminHealthConnectInspector";
 import { selectAuth } from "../store/authSlice";
 
 const SECTIONS = [
   { id: "user", label: "User", Component: AdminUser },
   { id: "settings", label: "Settings", Component: AdminSettings },
   { id: "health", label: "Health", Component: HealthPanel },
+  { id: "inspector", label: "Inspector", Component: AdminHealthConnectInspector },
   { id: "logs", label: "Logs", Component: AdminLogs },
   { id: "nightMotion", label: "NightMotion", Component: AdminNightMotion },
 ];

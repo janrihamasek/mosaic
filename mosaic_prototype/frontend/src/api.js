@@ -112,6 +112,16 @@ export async function fetchWearableTrends() {
   return response.data;
 }
 
+export async function fetchWearableSummary(params = {}) {
+  const response = await apiClient.get('/wearable/summary', { params });
+  return response.data;
+}
+
+export async function fetchWearableRaw(params = {}) {
+  const response = await apiClient.get('/wearable/raw', { params });
+  return response.data;
+}
+
 // --- TODAY ---
 export async function fetchToday(dateStr) {
   const params = dateStr ? { date: dateStr } : {};

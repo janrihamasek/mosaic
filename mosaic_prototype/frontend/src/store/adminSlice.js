@@ -5,6 +5,8 @@ import {
   fetchHealth,
   fetchMetrics,
   fetchRuntimeLogs,
+  fetchWearableRaw,
+  fetchWearableSummary,
 } from "../api";
 
 const buildInitialSectionState = () => ({
@@ -19,6 +21,13 @@ const initialState = {
   metrics: buildInitialSectionState(),
   activityLogs: buildInitialSectionState(),
   runtimeLogs: buildInitialSectionState(),
+  wearableInspector: {
+    status: "idle",
+    error: null,
+    summary: null,
+    raw: [],
+    lastFetched: null,
+  },
 };
 
 const resolveErrorMessage = (action, fallback) =>
@@ -47,6 +56,14 @@ export const loadRuntimeLogs = createAsyncThunk(
   async (params = {}) => {
     const response = await fetchRuntimeLogs(params);
     return response;
+  }
+);
+
+export const loadWearableSummary = createAsyncThunk(
+  "admin/loadWearableSummary",
+  async (params = {}) => {
+    const [summary, raw] = await Promise.all([fetchWearableSummary(params), fetchWearableRaw(params)]);
+    return { summary, raw };
   }
 );
 
@@ -111,6 +128,21 @@ const adminSlice = createSlice({
       .addCase(loadRuntimeLogs.rejected, (state, action) => {
         state.runtimeLogs.status = "failed";
         state.runtimeLogs.error = resolveErrorMessage(action, "Failed to load runtime logs");
+      })
+      .addCase(loadWearableSummary.pending, (state) => {
+        state.wearableInspector.status = "loading";
+        state.wearableInspector.error = null;
+      })
+      .addCase(loadWearableSummary.fulfilled, (state, action) => {
+        state.wearableInspector.status = "succeeded";
+        state.wearableInspector.summary = action.payload.summary;
+        state.wearableInspector.raw = action.payload.raw;
+        state.wearableInspector.lastFetched = Date.now();
+        state.wearableInspector.error = null;
+      })
+      .addCase(loadWearableSummary.rejected, (state, action) => {
+        state.wearableInspector.status = "failed";
+        state.wearableInspector.error = resolveErrorMessage(action, "Failed to load wearable summary");
       });
   },
 });
@@ -119,5 +151,6 @@ export const selectHealthState = (state) => state.admin.health;
 export const selectMetricsState = (state) => state.admin.metrics;
 export const selectActivityLogsState = (state) => state.admin.activityLogs;
 export const selectRuntimeLogsState = (state) => state.admin.runtimeLogs;
+export const selectWearableInspectorState = (state) => state.admin.wearableInspector;
 
 export default adminSlice.reducer;
