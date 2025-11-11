@@ -1,0 +1,24 @@
+plugins {
+  id 'com.android.library'
+}
+
+android {
+  namespace 'com.mosaic.healthconnectagent'
+  compileSdk 34
+
+  defaultConfig {
+    minSdk 30
+    targetSdk 34
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+}
+
+dependencies {
+  implementation 'androidx.health.connect:health-connect-client:1.2.0'
+  implementation 'androidx.health.connect:health-connect-compat:1.2.0'
+  implementation 'com.getcapacitor:capacitor:5.0.0'
+}
