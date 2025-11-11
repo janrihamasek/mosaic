@@ -7,6 +7,7 @@ import backupReducer from "./backupSlice";
 import nightMotionReducer from "./nightMotionSlice";
 import adminReducer from "./adminSlice";
 import offlineReducer from "./offlineSlice";
+import wearableReducer from "./wearableSlice";
 import { subscribe as subscribeAuthChanges, getAuthState } from "../services/authService";
 import { initOfflineSync } from "../offline/syncManager";
 
@@ -19,6 +20,7 @@ export const store = configureStore({
     backup: backupReducer,
     admin: adminReducer,
     offline: offlineReducer,
+    wearable: wearableReducer,
   },
 });
 

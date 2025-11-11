@@ -8,6 +8,7 @@ import ActivityTable from "./components/ActivityTable";
 import EntryForm from "./components/EntryForm";
 import EntryTable from "./components/EntryTable";
 import Stats from "./components/Stats";
+import Wearables from "./components/Wearables";
 import Admin from "./components/Admin";
 import Notification from "./components/Notification";
 import LogoutButton from "./components/LogoutButton";
@@ -23,14 +24,16 @@ import {
 } from "./store/activitiesSlice";
 import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
 import { selectOfflineState } from "./store/offlineSlice";
+import { loadWearableDay, loadWearableTrends } from "./store/wearableSlice";
 
 const DEFAULT_TAB = "Today";
 const ADMIN_TAB = "Admin";
-const TABS = ["Today", "Activities", "Stats", "Entries", ADMIN_TAB];
+const TABS = ["Today", "Activities", "Stats", "Wearables", "Entries", ADMIN_TAB];
 const TAB_LABELS = {
   Today: "Today",
   Activities: "Activities",
   Stats: "Stats",
+  Wearables: "Wearables",
   Entries: "Entries",
   [ADMIN_TAB]: "Admin",
 };
@@ -346,7 +349,10 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         dispatch(setTodayDate(todayIso));
         dispatch(loadToday(todayIso));
         dispatch(loadStats({ date: todayIso }));
-      } else if (tabName === "Entries") {
+    } else if (tabName === "Wearables") {
+      dispatch(loadWearableDay());
+      dispatch(loadWearableTrends());
+    } else if (tabName === "Entries") {
         dispatch(
           loadEntries({
             startDate: null,
@@ -494,6 +500,12 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       {activeTab === "Stats" && (
         <div style={sectionWrapperStyle}>
           <Stats key={tabRenderKeys.Stats} onNotify={showNotification} />
+        </div>
+      )}
+
+      {activeTab === "Wearables" && (
+        <div style={sectionWrapperStyle}>
+          <Wearables key={`wearables-${tabRenderKeys.Wearables}`} />
         </div>
       )}
 
