@@ -33,6 +33,7 @@ from werkzeug.utils import secure_filename
 from backup_manager import BackupManager
 from import_data import import_csv as run_import_csv
 from https_utils import resolve_ssl_context
+from ingest import process_wearable_raw_by_dedupe_keys
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from security import (
     ValidationError,
@@ -2662,6 +2663,7 @@ def ingest_wearable_batch():
     accepted = 0
     duplicates = 0
     errors: list[dict] = []
+    accepted_dedupes: list[str] = []
     now_iso = _utcnow().isoformat()
     source_key = f"{user_id}:{source_app.lower()}:{device_id}"
     sync_metadata = json.dumps({"tz": tz_name})
@@ -2778,6 +2780,7 @@ def ingest_wearable_batch():
             )
             if result.rowcount:
                 accepted += 1
+                accepted_dedupes.append(record["dedupe_key"])
             else:
                 duplicates += 1
 
@@ -2792,10 +2795,19 @@ def ingest_wearable_batch():
     ).info("wearable.ingest_batch")
 
     status_code = 201 if accepted > 0 else 200
+    etl_summary = {"processed": 0, "skipped": 0, "errors": [], "aggregated": 0}
+    try:
+        etl_summary = process_wearable_raw_by_dedupe_keys(accepted_dedupes)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("wearable.ingest.etl_failed", error=str(exc))
+        errors.append({"reason": f"ETL failure: {exc}"})
+        status_code = 500
+
     response_payload = {
         "accepted": accepted,
         "duplicates": duplicates,
         "errors": errors,
+        "etl": etl_summary,
     }
     return jsonify(response_payload), status_code
 

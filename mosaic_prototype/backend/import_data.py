@@ -4,7 +4,7 @@ from typing import Dict, Optional, Set, Tuple
 from flask import has_app_context
 
 from pydantic import ValidationError
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
 from extensions import db
 from models import Activity, Entry, User
@@ -14,10 +14,6 @@ from schemas import CSVImportRow
 def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activity:
     session = db.session
     stmt = select(Activity).where(Activity.name == parsed.activity)
-    if user_id is not None:
-        stmt = stmt.where(or_(Activity.user_id == user_id, Activity.user_id.is_(None)))
-    else:
-        stmt = stmt.where(Activity.user_id.is_(None))
     activity = session.execute(stmt).scalar_one_or_none()
 
     if activity is None:
@@ -35,6 +31,9 @@ def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activit
         session.add(activity)
         session.flush()
         return activity
+
+    if user_id is not None and activity.user_id not in (None, user_id):
+        raise ValueError(f"Activity '{parsed.activity}' already belongs to another user")
 
     if user_id is not None and activity.user_id is None:
         activity.user_id = user_id
@@ -71,9 +70,7 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional
     session = db.session
     stmt = select(Entry).where(Entry.date == parsed.date, Entry.activity == parsed.activity)
     if user_id is not None:
-        stmt = stmt.where(or_(Entry.user_id == user_id, Entry.user_id.is_(None)))
-    else:
-        stmt = stmt.where(Entry.user_id.is_(None))
+        stmt = stmt.where(Entry.user_id == user_id)
     entry = session.execute(stmt).scalar_one_or_none()
 
     activity_category = parsed.category or activity.category or ""
@@ -134,7 +131,7 @@ def _import_csv_impl(csv_path: str, *, commit: bool = True, user_id: Optional[in
                             "row": index,
                             "status": "skipped",
                             "reason": message,
-                            "raw": row,
+                            "raw": {str(key or ""): value for key, value in row.items()},
                         }
                     )
                     continue
@@ -154,12 +151,24 @@ def _import_csv_impl(csv_path: str, *, commit: bool = True, user_id: Optional[in
                     continue
                 seen_pairs.add(key)
 
-                activity = _ensure_activity(parsed, user_id=user_id)
+                try:
+                    activity = _ensure_activity(parsed, user_id=user_id)
+                except ValueError as exc:
+                    skipped += 1
+                    details.append(
+                        {
+                            "row": index,
+                            "date": parsed.date,
+                            "activity": parsed.activity,
+                            "status": "skipped",
+                            "reason": str(exc),
+                        }
+                    )
+                    continue
+
                 status = _upsert_entry(parsed, activity, user_id=user_id)
                 if status == "created":
                     _upsert_entry(parsed, activity, user_id=user_id)
-
-                if status == "created":
                     created += 1
                 else:
                     updated += 1
