@@ -1,0 +1,19 @@
+{
+  "name": "mosaic-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Frontend build handled separately'",
+    "sync": "npx cap sync android",
+    "open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^5.0.1",
+    "@capacitor/core": "^5.0.0",
+    "@mosaic/healthconnect-agent": "file:./plugins/healthconnect-agent"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^5.2.0",
+    "typescript": "^5.5.2"
+  }
+}

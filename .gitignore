@@ -9,3 +9,8 @@ __pycache__/
 backups/
 mosaic.db
 certs/
+mobile/node_modules/
+mobile/android/
+mobile/.capacitor/
+mobile/capacitor.config.json
+mobile/plugins/**/node_modules/
