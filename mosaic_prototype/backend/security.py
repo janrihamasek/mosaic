@@ -99,6 +99,19 @@ def require_admin(fn):
     return wrapped
 
 
+def jwt_required():
+    def decorator(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            if not getattr(g, "current_user", None):
+                return error_response("unauthorized", "Missing or invalid access token", 401)
+            return fn(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
 class ValidationError(Exception):
     def __init__(
         self,

@@ -107,8 +107,8 @@ export async function fetchWearableDay() {
   return response.data;
 }
 
-export async function fetchWearableTrends() {
-  const response = await apiClient.get('/wearable/trends');
+export async function fetchWearableTrends(params = {}) {
+  const response = await apiClient.get('/wearable/trends', { params });
   return response.data;
 }
 

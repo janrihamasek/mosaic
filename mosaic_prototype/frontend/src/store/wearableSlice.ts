@@ -1,29 +1,34 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
-import { fetchWearableDay, fetchWearableTrends } from "../api";
+import { fetchWearableDay as fetchWearableDayApi, fetchWearableTrends as fetchWearableTrendsApi } from "../api";
 
-export const loadWearableDay = createAsyncThunk("wearable/loadDay", async () => {
-  const data = await fetchWearableDay();
-  return data;
+type FetchStatus = "idle" | "loading" | "succeeded" | "failed";
+
+export const fetchWearableDay = createAsyncThunk("wearable/fetchDay", async () => {
+  return await fetchWearableDayApi();
 });
 
-export const loadWearableTrends = createAsyncThunk("wearable/loadTrends", async () => {
-  const data = await fetchWearableTrends();
-  return data;
-});
+export const fetchWearableTrends = createAsyncThunk(
+  "wearable/fetchTrends",
+  async (params: { metric: string; window: number }) => {
+    return await fetchWearableTrendsApi(params);
+  }
+);
 
 type WearableState = {
-  day: Record<string, any> | null;
-  trends: Record<string, any> | null;
-  status: "idle" | "loading" | "succeeded" | "failed";
+  day: Record<string, unknown> | null;
+  trends: Record<string, any>;
+  status: FetchStatus;
   error: string | null;
 };
 
 const initialState: WearableState = {
   day: null,
-  trends: null,
+  trends: {},
   status: "idle",
   error: null,
 };
+
+const trendKey = (metric: string, window: number) => `${metric}:${window}`;
 
 const wearableSlice = createSlice({
   name: "wearable",
@@ -31,34 +36,36 @@ const wearableSlice = createSlice({
   reducers: {
     resetWearableState(state) {
       state.day = null;
-      state.trends = null;
+      state.trends = {};
       state.status = "idle";
       state.error = null;
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadWearableDay.pending, (state) => {
+      .addCase(fetchWearableDay.pending, (state) => {
         state.status = "loading";
         state.error = null;
       })
-      .addCase(loadWearableDay.fulfilled, (state, action) => {
+      .addCase(fetchWearableDay.fulfilled, (state, action) => {
         state.status = "succeeded";
         state.day = action.payload;
       })
-      .addCase(loadWearableDay.rejected, (state, action) => {
+      .addCase(fetchWearableDay.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error?.message || "Unable to load wearable day data";
       })
-      .addCase(loadWearableTrends.pending, (state) => {
+      .addCase(fetchWearableTrends.pending, (state) => {
         state.status = "loading";
         state.error = null;
       })
-      .addCase(loadWearableTrends.fulfilled, (state, action) => {
+      .addCase(fetchWearableTrends.fulfilled, (state, action) => {
         state.status = "succeeded";
-        state.trends = action.payload;
+        const payload = action.payload as { metric: string; window: number };
+        const key = trendKey(payload.metric, payload.window);
+        state.trends[key] = payload;
       })
-      .addCase(loadWearableTrends.rejected, (state, action) => {
+      .addCase(fetchWearableTrends.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error?.message || "Unable to load wearable trends";
       });
@@ -70,6 +77,12 @@ export const { resetWearableState } = wearableSlice.actions;
 export default wearableSlice.reducer;
 
 export const selectWearableDay = (state: { wearable: WearableState }) => state.wearable.day;
-export const selectWearableTrends = (state: { wearable: WearableState }) => state.wearable.trends;
+export const selectWearableTrend = (state: { wearable: WearableState }, metric: string, window: number) =>
+  state.wearable.trends[trendKey(metric, window)] as {
+    metric: string;
+    window: number;
+    values: Array<{ date: string; value: number | null }>;
+    average?: number | null;
+  } | null;
 export const selectWearableStatus = (state: { wearable: WearableState }) => state.wearable.status;
 export const selectWearableError = (state: { wearable: WearableState }) => state.wearable.error;

@@ -51,6 +51,7 @@ from security import (
     validate_user_update_payload,
     validate_wearable_batch_payload,
     require_admin,
+    jwt_required,
 )
 from extensions import db, migrate
 from sqlalchemy import text
@@ -81,6 +82,7 @@ configure_logging()
 
 from audit import install_runtime_log_handler, log_event  # noqa: E402
 from routes.logs import logs_bp  # noqa: E402
+from wearable_read import wearable_read_bp  # noqa: E402
 
 install_runtime_log_handler()
 
@@ -181,6 +183,7 @@ app.config["PUBLIC_ENDPOINTS"].update({"login", "register", "metrics", "health",
 db.init_app(app)
 migrate.init_app(app, db)
 app.register_blueprint(logs_bp)
+app.register_blueprint(wearable_read_bp)
 
 ERROR_CODE_BY_STATUS = {
     400: "bad_request",
@@ -733,19 +736,6 @@ def _serialize_user_row(row) -> dict:
         "is_admin": bool(_row_value(row, "is_admin", False)),
         "created_at": created_at_str,
     }
-
-
-def jwt_required():
-    def decorator(fn):
-        @wraps(fn)
-        def wrapped(*args, **kwargs):
-            if not getattr(g, "current_user", None):
-                return error_response("unauthorized", "Missing or invalid access token", 401)
-            return fn(*args, **kwargs)
-
-        return wrapped
-
-    return decorator
 
 
 def parse_pagination(default_limit: int = 100, max_limit: int = 500) -> Dict[str, int]:

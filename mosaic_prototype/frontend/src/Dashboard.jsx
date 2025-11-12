@@ -25,7 +25,7 @@ import {
 } from "./store/activitiesSlice";
 import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
 import { selectOfflineState } from "./store/offlineSlice";
-import { loadWearableDay, loadWearableTrends } from "./store/wearableSlice";
+import { fetchWearableDay, fetchWearableTrends } from "./store/wearableSlice";
 
 const DEFAULT_TAB = "Today";
 const ADMIN_TAB = "Admin";
@@ -351,8 +351,8 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         dispatch(loadToday(todayIso));
         dispatch(loadStats({ date: todayIso }));
     } else if (tabName === "Wearables") {
-      dispatch(loadWearableDay());
-      dispatch(loadWearableTrends());
+      dispatch(fetchWearableDay());
+      dispatch(fetchWearableTrends({ metric: "steps", window: 7 }));
     } else if (tabName === "Entries") {
         dispatch(
           loadEntries({
