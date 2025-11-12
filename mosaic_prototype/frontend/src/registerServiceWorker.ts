@@ -29,11 +29,43 @@ export function registerServiceWorker(): Workbox | null {
     console.info("[Mosaic] New version available; it will activate after all tabs close.");
   });
 
-  workbox.register().catch((error) => {
-    console.error("[Mosaic] Failed to register service worker", error);
-  });
+  workbox
+    .register()
+    .then((registration) => {
+      registration.addEventListener("updatefound", () => {
+        const newWorker = registration.installing;
+        if (!newWorker) {
+          return;
+        }
+        newWorker.addEventListener("statechange", () => {
+          if (newWorker.state === "installed" && navigator.serviceWorker?.controller) {
+            console.info("[Mosaic] New version available");
+          }
+        });
+      });
+    })
+    .catch((error) => {
+      console.error("[Mosaic] Failed to register service worker", error);
+    });
 
   return workbox;
+}
+
+export async function updatePWA(): Promise<void> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.update()));
+  } catch (error) {
+    console.error("[Mosaic] Failed to update service worker", error);
+  }
+
+  if (typeof window !== "undefined") {
+    window.location.reload();
+  }
 }
 
 export function unregisterServiceWorker(): void {

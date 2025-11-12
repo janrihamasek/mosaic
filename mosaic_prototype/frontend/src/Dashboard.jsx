@@ -12,6 +12,7 @@ import Wearables from "./components/Wearables";
 import Admin from "./components/Admin";
 import Notification from "./components/Notification";
 import LogoutButton from "./components/LogoutButton";
+import AppVersion from "./components/AppVersion";
 import { styles } from "./styles/common";
 import { useCompactLayout } from "./utils/useBreakpoints";
 import { fetchCurrentUserProfile, selectAuth, selectIsAuthenticated } from "./store/authSlice";
@@ -427,7 +428,6 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
           type={notification.type}
         />
       </div>
-
       <div style={headerStyle}>
         <div style={titleWrapperStyle}>
           <h1
@@ -463,6 +463,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
           </div>
         )}
       </div>
+      <AppVersion />
 
       <div style={tabBarStyle}>
         {availableTabs.map((tab) => (

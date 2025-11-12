@@ -1,16 +1,41 @@
 /* eslint-disable no-restricted-globals */
 import { clientsClaim } from "workbox-core";
-import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from "workbox-precaching";
+import { precacheAndRoute, createHandlerBoundToURL } from "workbox-precaching";
 import { registerRoute, NavigationRoute } from "workbox-routing";
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
+
+import { BUILD_VERSION } from "./buildVersion";
 
 self.__WB_DISABLE_DEV_LOGS = true;
 clientsClaim();
 self.skipWaiting();
 
-precacheAndRoute(self.__WB_MANIFEST || []);
-cleanupOutdatedCaches();
+const CACHE_VERSION = (self.__BUILD_VERSION__ || BUILD_VERSION || "mosaic-v0").toString();
+const CACHE_NAME = `${CACHE_VERSION}-cache`;
+const STATIC_CACHE = `mosaic-static-${CACHE_VERSION}`;
+const IMAGE_CACHE = `mosaic-images-${CACHE_VERSION}`;
+const API_CACHE = `mosaic-api-${CACHE_VERSION}`;
+const ALLOWED_CACHES = new Set([CACHE_NAME, STATIC_CACHE, IMAGE_CACHE, API_CACHE]);
+
+precacheAndRoute(self.__WB_MANIFEST || [], {
+  cacheName: CACHE_NAME,
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(
+        names.map((cacheName) => {
+          if (ALLOWED_CACHES.has(cacheName)) {
+            return Promise.resolve(true);
+          }
+          return caches.delete(cacheName);
+        })
+      )
+    )
+  );
+});
 
 const appShellHandler = createHandlerBoundToURL(`${process.env.PUBLIC_URL || ""}/index.html`);
 const navigationRoute = new NavigationRoute(appShellHandler, {
@@ -25,7 +50,7 @@ const staticAssetMatch = ({ request }) =>
 registerRoute(
   staticAssetMatch,
   new CacheFirst({
-    cacheName: "mosaic-static-v1",
+    cacheName: STATIC_CACHE,
     matchOptions: {
       ignoreSearch: true,
     },
@@ -43,7 +68,7 @@ const imageMatch = ({ request }) => request.destination === "image";
 registerRoute(
   imageMatch,
   new StaleWhileRevalidate({
-    cacheName: "mosaic-images-v1",
+    cacheName: IMAGE_CACHE,
     plugins: [
       new ExpirationPlugin({
         maxEntries: 60,
@@ -70,7 +95,7 @@ const sameOriginApiMatch = ({ url, request }) => {
 registerRoute(
   sameOriginApiMatch,
   new NetworkFirst({
-    cacheName: "mosaic-api-v1",
+    cacheName: API_CACHE,
     networkTimeoutSeconds: 5,
     plugins: [
       new ExpirationPlugin({

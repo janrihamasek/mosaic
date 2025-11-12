@@ -19,7 +19,9 @@
     "workbox-window": "^6.6.0"
   },
   "scripts": {
+    "prestart": "node scripts/generate-build-version.js",
     "start": "react-scripts start",
+    "prebuild": "node scripts/generate-build-version.js",
     "build": "react-scripts build",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
     "test": "jest"
