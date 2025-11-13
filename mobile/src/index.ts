@@ -1,16 +1,7 @@
 import { initHealthConnect, syncNow } from "./healthconnect_sync";
 
 const HEALTH_CONNECT_DEVICE_ID = "mosaic-healthconnect-device";
-
-function resolveBackendUrl() {
-  if (typeof window === "undefined") {
-    return "https://api.mosaic.local";
-  }
-  return (
-    (window as Window & { __MOSAIC_API_URL__?: string }).__MOSAIC_API_URL__ ||
-    `${window.location.origin}`
-  );
-}
+const BACKEND_URL = "https://10.0.1.31:5001";
 
 async function jwtProvider(): Promise<string> {
   if (typeof window === "undefined") {
@@ -69,7 +60,7 @@ function listenForConnectivity() {
 
 function bootstrap() {
   initHealthConnect({
-    backendUrl: resolveBackendUrl(),
+    backendUrl: BACKEND_URL,
     deviceId: window?.localStorage.getItem("mosaic_device_id") || HEALTH_CONNECT_DEVICE_ID,
     jwtProvider,
     autoSyncIntervalMs: 1000 * 60 * 5,
