@@ -1,5 +1,5 @@
-const DEFAULT_BASE_URL = "http://127.0.0.1:5000";
-const TEST_BASE_URL = "http://127.0.0.1:5000";
+const DEFAULT_BASE_URL = "https://10.0.1.31:5001";
+const TEST_BASE_URL = "https://10.0.1.31:5001";
 
 export function getBaseUrl() {
   const envUrl = process.env.REACT_APP_API_BASE_URL;

@@ -64,10 +64,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const auth = useSelector(selectAuth);
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const offlineState = useSelector(selectOfflineState);
-  const availableTabs = useMemo(
-    () => (auth.isAdmin ? TABS : TABS.filter((tab) => tab !== ADMIN_TAB)),
-    [auth.isAdmin]
-  );
+  const availableTabs = useMemo(() => TABS, []);
   const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab, availableTabs));
   const [tabRenderKeys, setTabRenderKeys] = useState(() =>
     Object.fromEntries(TABS.map((tab) => [tab, 0]))

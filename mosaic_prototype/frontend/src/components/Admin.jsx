@@ -20,11 +20,19 @@ const SECTIONS = [
   { id: "nightMotion", label: "NightMotion", Component: AdminNightMotion },
 ];
 
+const PUBLIC_SECTION_IDS = new Set(["user", "settings"]);
+
 export default function Admin({ onNotify }) {
   const auth = useSelector(selectAuth);
   const { isCompact } = useCompactLayout();
   const sections = useMemo(
-    () => (auth.isAdmin ? SECTIONS : SECTIONS.filter((section) => section.id === "user")),
+    () =>
+      SECTIONS.filter((section) => {
+        if (PUBLIC_SECTION_IDS.has(section.id)) {
+          return true;
+        }
+        return auth.isAdmin;
+      }),
     [auth.isAdmin]
   );
   const [activeSection, setActiveSection] = useState(sections[0]?.id ?? "user");

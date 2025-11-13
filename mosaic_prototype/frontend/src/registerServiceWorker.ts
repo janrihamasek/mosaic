@@ -17,6 +17,11 @@ export function registerServiceWorker(): Workbox | null {
     return null;
   }
 
+  if (typeof window !== "undefined" && window.location.protocol !== "https:" && !isLocalhost()) {
+    console.info("[Mosaic] Skipping service worker registration on non-HTTPS origin.");
+    return null;
+  }
+
   const workbox = new Workbox(SW_PATH, { scope: "/" });
 
   workbox.addEventListener("activated", (event) => {

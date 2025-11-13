@@ -138,6 +138,7 @@ export async function finalizeDay(dateStr) {
 export async function importEntriesCsv(file) {
   const formData = new FormData();
   formData.append('file', file);
+  // Backend limits imports to the signed-in user, so we never send user_id here.
   const response = await apiClient.post('/import_csv', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
