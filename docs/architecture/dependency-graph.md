@@ -8,24 +8,24 @@ This document complements `docs/architecture/dependency-map.md` with visual diag
 graph TD
   classDef hotspot fill:#ffe4e1,stroke:#d33,stroke-width:2px;
   subgraph Frontend
-    Components[React Components\n(Dashboard, Today, Stats, Admin, NightMotion)]
+    Components[React Components<br/>(Dashboard, Today, Stats, Admin, NightMotion)]
     ActivitiesSlice[activitiesSlice]
     EntriesSlice[entriesSlice]
     AuthSlice[authSlice]
     AdminSlice[adminSlice]
     BackupSlice[backupSlice]
     NightMotionSlice[nightMotionSlice]
-    AsyncThunks[Async Thunks\n(loadToday, saveDirtyTodayRows, loadStats,\nloadActivities, toggleBackup, loadHealth, startStream, ...)]
-    ApiHelpers[API Helpers\n(frontend/src/api.js)]
+    AsyncThunks[Async Thunks<br/>(loadToday, saveDirtyTodayRows, loadStats,<br/>loadActivities, toggleBackup, loadHealth, startStream, ...)]
+    ApiHelpers[API Helpers<br/>(frontend/src/api.js)]
   end
 
   subgraph Infrastructure
-    ApiClient[apiClient.js\n(Axios + auth headers)]
-    FlaskControllers[Flask Controllers\n(app.py endpoints)]
-    Services[Service Layer\n(BackupManager, Wearable ETL, import_csv,\nNightMotion proxy, audit/logging)]
-    Models[SQLAlchemy Models\n(Activities, Entries, Users, Wearable*, BackupSettings)]
-    Cache[(In-memory Cache\n(today, stats))]
-    Metrics[(Metrics / Logs\n(structlog + /metrics))]
+    ApiClient[apiClient.js<br/>(Axios + auth headers)]
+    FlaskControllers[Flask Controllers<br/>(app.py endpoints)]
+    Services[Service Layer<br/>(BackupManager, Wearable ETL, import_csv,<br/>NightMotion proxy, audit/logging)]
+    Models[SQLAlchemy Models<br/>(Activities, Entries, Users, Wearable*, BackupSettings)]
+    Cache[(In-memory Cache<br/>(today, stats))]
+    Metrics[(Metrics / Logs<br/>(structlog + /metrics))]
     Postgres[(PostgreSQL DB)]
   end
 
@@ -60,12 +60,12 @@ flowchart LR
     direction LR
     TodayUI[Today / Entries / Stats UI]
     EntriesSliceTES[entriesSlice]
-    TodayThunks[Thunks\n(loadToday, saveDirtyTodayRows, loadEntries, loadStats)]
-    ApiToday[api.js helpers\n(fetchToday, fetchEntries, fetchProgressStats, add_entry)]
+    TodayThunks[Thunks<br/>(loadToday, saveDirtyTodayRows, loadEntries, loadStats)]
+    ApiToday[api.js helpers<br/>(fetchToday, fetchEntries, fetchProgressStats, add_entry)]
     ApiClientTES[apiClient]
-    EndpointToday[/GET /today\nPOST /add_entry\nGET /entries\nGET /stats/progress/]
-    CacheToday[(Cache buckets\n today, stats )]
-    ControllerLogic[(Query builders +\nvalidation in app.py)]
+    EndpointToday[/GET /today<br/>POST /add_entry<br/>GET /entries<br/>GET /stats/progress/]
+    CacheToday[(Cache buckets<br/> today, stats )]
+    ControllerLogic[(Query builders +<br/>validation in app.py)]
     ModelsTES[(Activities + Entries models)]
     PostgresTES[(PostgreSQL)]
 
@@ -77,20 +77,20 @@ flowchart LR
 
   subgraph AdminFlows
     direction LR
-    AdminUI[Admin UI\n(Health, Logs, NightMotion, Backups)]
+    AdminUI[Admin UI<br/>(Health, Logs, NightMotion, Backups)]
     AdminSliceAF[adminSlice]
     BackupSliceAF[backupSlice]
     NightMotionSliceAF[nightMotionSlice]
-    AdminThunks[Thunks\n(loadHealth, loadMetrics, loadLogs)]
-    BackupThunks[Thunks\n(loadBackupStatus, toggleBackup, runBackupNow)]
-    NightMotionClient[Stream fetch\n(getStreamProxyUrl + fetch)]
-    ApiAdmin[api.js helpers\n(fetchHealth, fetchMetrics, fetchActivityLogs, fetchRuntimeLogs)]
-    ApiBackup[api.js helpers\n(fetchBackupStatus, toggleBackupSettings, runBackup, downloadBackupFile)]
-    AdminEndpoints[/GET /healthz\nGET /metrics\nGET /logs/*/]
-    BackupEndpoints[/GET /backup/status\nPOST /backup/toggle\nPOST /backup/run\nGET /backup/download/]
+    AdminThunks[Thunks<br/>(loadHealth, loadMetrics, loadLogs)]
+    BackupThunks[Thunks<br/>(loadBackupStatus, toggleBackup, runBackupNow)]
+    NightMotionClient[Stream fetch<br/>(getStreamProxyUrl + fetch)]
+    ApiAdmin[api.js helpers<br/>(fetchHealth, fetchMetrics, fetchActivityLogs, fetchRuntimeLogs)]
+    ApiBackup[api.js helpers<br/>(fetchBackupStatus, toggleBackupSettings, runBackup, downloadBackupFile)]
+    AdminEndpoints[/GET /healthz<br/>GET /metrics<br/>GET /logs/*/]
+    BackupEndpoints[/GET /backup/status<br/>POST /backup/toggle<br/>POST /backup/run<br/>GET /backup/download/]
     StreamProxy[/GET /api/stream-proxy/]
-    BackupManagerSvc[BackupManager\n(thread + ZIP writes)]
-    MetricsStore[(In-memory metrics +\nsql health checks)]
+    BackupManagerSvc[BackupManager<br/>(thread + ZIP writes)]
+    MetricsStore[(In-memory metrics +<br/>sql health checks)]
     BackupSettings[(backup_settings table)]
     BackupFiles[(backups/*.zip on disk)]
     NightMotionSvc[(FFmpeg proxy + RTSP feed)]
