@@ -198,6 +198,55 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
 - **`GET /export/csv`** — Streams a CSV attachment covering activities and entries.
 - **`POST /import_csv`** — Multipart upload (`file=@entries.csv`). Response summarises `{ "created": 5, "updated": 2, "skipped": 0 }`. CSV must include headers `date,activity,value,note,description,category,goal`.
 
+### Wearable Ingestion
+- **`POST /ingest/wearable/batch`**
+  ```json
+  {
+    "source_app": "Fitbit",
+    "device_id": "FA-123",
+    "tz": "Europe/Prague",
+    "records": [
+      {
+        "type": "steps",
+        "start": "2025-11-02T06:00:00+01:00",
+        "end": "2025-11-02T06:15:00+01:00",
+        "fields": { "steps": 880, "distance_m": 650 }
+      }
+    ]
+  }
+  ```
+  - Validates payload via `validate_wearable_batch_payload`.
+  - Deduplicates via `dedupe_key`, persists to `wearable_raw`, and kicks off ETL (`process_wearable_raw_by_dedupe_keys`) to normalize into canonical tables.
+  - Response contains `{ "accepted": N, "duplicates": M, "errors": [], "etl": { ... } }`.
+
+### NightMotion Stream Proxy
+- **`GET /api/stream-proxy`** — Proxies MJPEG/RTSP streams through the backend so the browser never sees camera credentials.
+  - Query params: `url=rtsp://host/stream`, `username`, `password`.
+  - Requires JWT + API key (if enabled). Rate limited (`2/min`).
+  - Response is `multipart/x-mixed-replace` MJPEG. Errors: `401` (invalid camera creds), `500` (FFmpeg failure), `400` (invalid URL).
+
+### Logs & Observability
+| Endpoint | Description |
+| --- | --- |
+| **`GET /logs/activity`** | Admin-only. Query params: `limit` (1–500, default 100), `offset`, `user_id`, `event_type`, `level`, `start`, `end` (ISO timestamps). Returns `{ items: [...], total, limit, offset }`. Errors when the `activity_logs` table is missing return `503 logs_unavailable`. |
+| **`GET /logs/runtime`** | Admin-only. Optional `limit`. Returns live in-memory Structlog events captured by the runtime log handler. |
+| **`GET /metrics`** | Public endpoint. `?format=json` returns structured counters (requests per endpoint, latency, errors, uptime). No query param returns Prometheus text format. |
+| **`GET /healthz`** | Public health check summarising uptime, DB connectivity, cache state, error rate, and req/min. Returns `503` if DB or cache probes fail. |
+
+---
+
+All endpoints above share the same error contract: failures return
+```json
+{
+  "error": {
+    "code": "invalid_query",
+    "message": "Human-friendly message",
+    "details": { ... }
+  }
+}
+```
+Refer to `docs/LOGGING.md` and `docs/METRICS.md` for field-level audit and telemetry semantics.
+
 ### Health & Metrics
 | Endpoint | Description |
 | --- | --- |

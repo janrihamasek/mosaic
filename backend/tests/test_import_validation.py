@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import Any, Dict, List, Sequence, cast
+
 import pytest
 from sqlalchemy import func, select
 
@@ -7,7 +10,7 @@ from import_data import import_csv
 from models import Activity, Entry
 
 
-def _write_csv(tmp_path, name, rows):
+def _write_csv(tmp_path, name: str, rows: Sequence[str]) -> Path:
     header = "date,activity,value,note,description,category,goal\n"
     content = header + "\n".join(rows) + "\n"
     path = tmp_path / name
@@ -26,11 +29,12 @@ def test_import_csv_skips_duplicate_rows(tmp_path):
         ],
     )
 
-    summary = import_csv(str(csv_path))
+    summary: Dict[str, Any] = import_csv(str(csv_path))
 
     assert summary["created"] == 1
     assert summary["skipped"] == 1
-    reasons = {detail.get("reason") for detail in summary["details"] if detail["status"] == "skipped"}
+    details = cast(List[Dict[str, Any]], summary["details"])
+    reasons = {detail.get("reason") for detail in details if detail["status"] == "skipped"}
     assert "duplicate_in_file" in reasons
 
     with app.app_context():
@@ -53,11 +57,12 @@ def test_import_csv_flags_missing_required_fields(tmp_path):
         ],
     )
 
-    summary = import_csv(str(csv_path))
+    summary = cast(Dict[str, Any], import_csv(str(csv_path)))
 
     assert summary["created"] == 0
     assert summary["skipped"] == 2
-    reasons = [detail.get("reason") for detail in summary["details"]]
+    details = cast(List[Dict[str, Any]], summary["details"])
+    reasons = [detail.get("reason") or "" for detail in details]
     assert any("date is required" in reason for reason in reasons)
     assert any("activity is required" in reason for reason in reasons)
 
@@ -69,27 +74,29 @@ def test_import_csv_flags_missing_required_fields(tmp_path):
 @pytest.mark.usefixtures("client")
 def test_import_csv_updates_existing_and_creates_new(tmp_path):
     with app.app_context():
-        activity = Activity(
-            name="Run",
-            category="Health",
-            goal=10.0,
-            description="Jogging",
-            active=True,
-            frequency_per_day=1,
-            frequency_per_week=7,
-            deactivated_at=None,
-        )
+        activity_payload: Dict[str, Any] = {
+            "name": "Run",
+            "category": "Health",
+            "goal": 10.0,
+            "description": "Jogging",
+            "active": True,
+            "frequency_per_day": 1,
+            "frequency_per_week": 7,
+            "deactivated_at": None,
+        }
+        activity = Activity(**activity_payload)
         db.session.add(activity)
         db.session.flush()
-        entry = Entry(
-            date="2024-03-01",
-            activity="Run",
-            description="Jogging",
-            value=5.0,
-            note="Existing note",
-            activity_category="Health",
-            activity_goal=10.0,
-        )
+        entry_payload: Dict[str, Any] = {
+            "date": "2024-03-01",
+            "activity": "Run",
+            "description": "Jogging",
+            "value": 5.0,
+            "note": "Existing note",
+            "activity_category": "Health",
+            "activity_goal": 10.0,
+        }
+        entry = Entry(**entry_payload)
         db.session.add(entry)
         db.session.commit()
 
@@ -102,7 +109,7 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
         ],
     )
 
-    summary = import_csv(str(csv_path))
+    summary = cast(Dict[str, Any], import_csv(str(csv_path)))
 
     assert summary["created"] == 1
     assert summary["updated"] == 1

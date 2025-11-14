@@ -1,4 +1,5 @@
 import itertools
+from typing import Any, Dict
 
 import pytest
 
@@ -14,7 +15,7 @@ def metrics_test_boom():
 app.config["PUBLIC_ENDPOINTS"].add("metrics_test_boom")
 
 
-def _find_endpoint_metrics(snapshot: dict, endpoint: str) -> dict:
+def _find_endpoint_metrics(snapshot: Dict[str, Any], endpoint: str) -> Dict[str, Any]:
     return next(entry for entry in snapshot["endpoints"] if entry["endpoint"] == endpoint)
 
 
@@ -30,7 +31,7 @@ def test_metrics_counts_and_latency(client, monkeypatch):
     assert client.get("/").status_code == 200
     assert client.get("/").status_code == 200
 
-    snapshot = get_metrics_json()
+    snapshot: Dict[str, Any] = get_metrics_json()
     assert snapshot["requests_total"] == 2
     home_metrics = _find_endpoint_metrics(snapshot, "home")
     assert home_metrics["count"] == 2
@@ -49,7 +50,7 @@ def test_metrics_error_counters(client):
     response = client.get("/__metrics_test__/boom")
     assert response.status_code == 500
 
-    snapshot = get_metrics_json()
+    snapshot: Dict[str, Any] = get_metrics_json()
     assert snapshot["errors_total"]["4xx"] == 1
     assert snapshot["errors_total"]["5xx"] == 1
     register_metrics = _find_endpoint_metrics(snapshot, "register")

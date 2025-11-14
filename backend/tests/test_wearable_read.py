@@ -1,7 +1,9 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, Tuple
 
 import pytest
+from flask.testing import FlaskClient
 
 from app import app
 from extensions import db
@@ -14,63 +16,67 @@ from models import (
 
 
 PASSWORD = "StrongPass123"
+Headers = Dict[str, str]
 
 
-def _register_and_login(client, username):
+def _register_and_login(client: FlaskClient, username: str) -> Tuple[Headers, int]:
     client.post("/register", json={"username": username, "password": PASSWORD})
     login = client.post("/login", json={"username": username, "password": PASSWORD})
     assert login.status_code == 200
     token = login.get_json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers: Headers = {"Authorization": f"Bearer {token}"}
     with app.app_context():
         user = db.session.query(User).filter_by(username=username).one()
-    return headers, user.id
+    return headers, int(user.id)
 
 
-def _insert_daily_agg(user_id: int, date_value: datetime.date, steps: int, resting: int, sleep_seconds: int):
+def _insert_daily_agg(user_id: int, date_value: date, steps: int, resting: int, sleep_seconds: int) -> None:
     day_start = datetime(date_value.year, date_value.month, date_value.day, tzinfo=timezone.utc)
-    agg = WearableDailyAgg(
-        user_id=user_id,
-        day_start_utc=day_start,
-        steps=steps,
-        resting_heart_rate=resting,
-        sleep_seconds=sleep_seconds,
-        dedupe_key=f"{user_id}:main:{date_value.isoformat()}",
-    )
+    payload: Dict[str, Any] = {
+        "user_id": user_id,
+        "day_start_utc": day_start,
+        "steps": steps,
+        "resting_heart_rate": resting,
+        "sleep_seconds": sleep_seconds,
+        "dedupe_key": f"{user_id}:main:{date_value.isoformat()}",
+    }
+    agg = WearableDailyAgg(**payload)
     db.session.add(agg)
 
 
-def _insert_sleep_session(user_id: int, start: datetime, duration: int, score: int):
-    session = WearableCanonicalSleepSession(
-        user_id=user_id,
-        start_time_utc=start,
-        end_time_utc=start + timedelta(seconds=duration),
-        duration_seconds=duration,
-        score=score,
-        dedupe_key=str(uuid.uuid4()),
-    )
+def _insert_sleep_session(user_id: int, start: datetime, duration: int, score: int) -> None:
+    payload: Dict[str, Any] = {
+        "user_id": user_id,
+        "start_time_utc": start,
+        "end_time_utc": start + timedelta(seconds=duration),
+        "duration_seconds": duration,
+        "score": score,
+        "dedupe_key": str(uuid.uuid4()),
+    }
+    session = WearableCanonicalSleepSession(**payload)
     db.session.add(session)
 
 
-def _insert_hr_sample(user_id: int, timestamp: datetime, bpm: int):
-    sample = WearableCanonicalHR(
-        user_id=user_id,
-        timestamp_utc=timestamp,
-        bpm=bpm,
-        dedupe_key=str(uuid.uuid4()),
-    )
+def _insert_hr_sample(user_id: int, timestamp: datetime, bpm: int) -> None:
+    payload: Dict[str, Any] = {
+        "user_id": user_id,
+        "timestamp_utc": timestamp,
+        "bpm": bpm,
+        "dedupe_key": str(uuid.uuid4()),
+    }
+    sample = WearableCanonicalHR(**payload)
     db.session.add(sample)
 
 
-def test_wearable_day_requires_auth(client):
+def test_wearable_day_requires_auth(client: FlaskClient):
     response = client.get("/wearable/day")
     assert response.status_code == 401
     assert response.get_json()["error"]["code"] == "unauthorized"
 
 
-def test_wearable_day_returns_user_data(client):
+def test_wearable_day_returns_user_data(client: FlaskClient):
     headers, user_id = _register_and_login(client, "wearable_user")
-    other_headers, other_user_id = _register_and_login(client, "other_user")
+    _other_headers, other_user_id = _register_and_login(client, "other_user")
 
     today = datetime.now(timezone.utc).date()
     earlier = today - timedelta(days=1)
@@ -97,7 +103,7 @@ def test_wearable_day_returns_user_data(client):
     assert round(payload["hr"]["avg"], 2) == 80.0
 
 
-def test_wearable_trends_returns_windowed_data(client):
+def test_wearable_trends_returns_windowed_data(client: FlaskClient):
     headers, user_id = _register_and_login(client, "trend_user")
     today = datetime.now(timezone.utc).date()
     previous = today - timedelta(days=1)
@@ -120,7 +126,7 @@ def test_wearable_trends_returns_windowed_data(client):
     assert payload["average"] == pytest.approx(sum(v["value"] for v in payload["values"]) / 7)
 
 
-def test_wearable_trends_requires_auth(client):
+def test_wearable_trends_requires_auth(client: FlaskClient):
     response = client.get("/wearable/trends?metric=steps&window=7")
     assert response.status_code == 401
     assert response.get_json()["error"]["code"] == "unauthorized"

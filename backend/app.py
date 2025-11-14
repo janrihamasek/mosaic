@@ -16,7 +16,7 @@ from pathlib import Path
 from functools import wraps
 from threading import Lock, Thread
 from time import perf_counter, sleep, time
-from typing import Dict, Iterator, List, NamedTuple, Optional, Tuple, cast
+from typing import Any, DefaultDict, Dict, Iterator, List, NamedTuple, Optional, Tuple, TypedDict, cast
 from urllib.parse import urlparse, urlunparse
 
 import click
@@ -239,29 +239,68 @@ _METRICS_LOG_INTERVAL_SECONDS = int(os.environ.get("METRICS_LOG_INTERVAL_SECONDS
 _metrics_lock = Lock()
 
 
-def _endpoint_bucket_factory() -> dict:
-    return {
-        "count": 0,
-        "total_latency_ms": 0.0,
-        "errors_4xx": 0,
-        "errors_5xx": 0,
-        "status_counts": defaultdict(int),
-    }
+class EndpointSnapshot(TypedDict):
+    method: str
+    endpoint: str
+    count: int
+    avg_latency_ms: float
+    total_latency_ms: float
+    errors_4xx: int
+    errors_5xx: int
+    status_counts: Dict[str, int]
 
 
-def _initialize_metrics_state() -> dict:
-    return {
-        "requests_total": 0,
-        "latency_total_ms": 0.0,
-        "errors_4xx": 0,
-        "errors_5xx": 0,
-        "status_counts": defaultdict(int),
-        "per_endpoint": defaultdict(_endpoint_bucket_factory),
-        "last_updated": None,
-    }
+class MetricsSnapshot(TypedDict):
+    requests_total: int
+    total_latency_ms: float
+    avg_latency_ms: float
+    errors_total: Dict[str, int]
+    status_counts: Dict[str, int]
+    endpoints: List[EndpointSnapshot]
+    last_updated: Optional[str]
 
 
-_metrics_state = _initialize_metrics_state()
+class EndpointBucket(TypedDict):
+    count: int
+    total_latency_ms: float
+    errors_4xx: int
+    errors_5xx: int
+    status_counts: Dict[int, int]
+
+
+class MetricsState(TypedDict):
+    requests_total: int
+    latency_total_ms: float
+    errors_4xx: int
+    errors_5xx: int
+    status_counts: Dict[int, int]
+    per_endpoint: DefaultDict[Tuple[str, str], EndpointBucket]
+    last_updated: Optional[float]
+
+
+def _endpoint_bucket_factory() -> EndpointBucket:
+    return EndpointBucket(
+        count=0,
+        total_latency_ms=0.0,
+        errors_4xx=0,
+        errors_5xx=0,
+        status_counts=defaultdict(int),
+    )
+
+
+def _initialize_metrics_state() -> MetricsState:
+    return MetricsState(
+        requests_total=0,
+        latency_total_ms=0.0,
+        errors_4xx=0,
+        errors_5xx=0,
+        status_counts=defaultdict(int),
+        per_endpoint=defaultdict(_endpoint_bucket_factory),
+        last_updated=None,
+    )
+
+
+_metrics_state: MetricsState = _initialize_metrics_state()
 _metrics_logger_thread: Optional[Thread] = None
 
 
@@ -324,46 +363,46 @@ def reset_metrics_state() -> None:
         _metrics_state = _initialize_metrics_state()
 
 
-def get_metrics_json() -> Dict[str, object]:
+def get_metrics_json() -> MetricsSnapshot:
     with _metrics_lock:
         requests_total = _metrics_state["requests_total"]
         total_latency_ms = _metrics_state["latency_total_ms"]
         avg_latency_ms = total_latency_ms / requests_total if requests_total else 0.0
         last_updated = _metrics_state.get("last_updated")
-        endpoints: List[Dict[str, object]] = []
+        endpoints: List[EndpointSnapshot] = []
         for (method, endpoint), bucket in _metrics_state["per_endpoint"].items():
             count = bucket["count"]
             avg_endpoint_latency = bucket["total_latency_ms"] / count if count else 0.0
             endpoints.append(
-                {
-                    "method": method,
-                    "endpoint": endpoint,
-                    "count": count,
-                    "avg_latency_ms": round(avg_endpoint_latency, 2),
-                    "total_latency_ms": round(bucket["total_latency_ms"], 2),
-                    "errors_4xx": bucket["errors_4xx"],
-                    "errors_5xx": bucket["errors_5xx"],
-                    "status_counts": {
+                EndpointSnapshot(
+                    method=method,
+                    endpoint=endpoint,
+                    count=count,
+                    avg_latency_ms=round(avg_endpoint_latency, 2),
+                    total_latency_ms=round(bucket["total_latency_ms"], 2),
+                    errors_4xx=bucket["errors_4xx"],
+                    errors_5xx=bucket["errors_5xx"],
+                    status_counts={
                         str(code): value for code, value in bucket["status_counts"].items()
                     },
-                }
+                )
             )
         endpoints.sort(key=lambda item: (item["endpoint"], item["method"]))
 
-        return {
-            "requests_total": requests_total,
-            "total_latency_ms": round(total_latency_ms, 2),
-            "avg_latency_ms": round(avg_latency_ms, 2),
-            "errors_total": {
+        return MetricsSnapshot(
+            requests_total=requests_total,
+            total_latency_ms=round(total_latency_ms, 2),
+            avg_latency_ms=round(avg_latency_ms, 2),
+            errors_total={
                 "4xx": _metrics_state["errors_4xx"],
                 "5xx": _metrics_state["errors_5xx"],
             },
-            "status_counts": {
+            status_counts={
                 str(code): value for code, value in _metrics_state["status_counts"].items()
             },
-            "endpoints": endpoints,
-            "last_updated": _format_timestamp(last_updated),
-        }
+            endpoints=endpoints,
+            last_updated=_format_timestamp(last_updated),
+        )
 
 
 def get_metrics_text() -> str:

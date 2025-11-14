@@ -125,7 +125,18 @@ def get_wearable_day():
     return jsonify(payload.model_dump())
 
 
-def _build_trend_map(user_id: int, query: WearableTrendsQuery, start_date: date, end_date: date) -> Dict[str, Optional[float]]:
+def _normalize_day_key(raw_value: object) -> date:
+    if isinstance(raw_value, datetime):
+        return raw_value.date()
+    if isinstance(raw_value, date):
+        return raw_value
+    if isinstance(raw_value, str):
+        candidate = raw_value[:10]
+        return date.fromisoformat(candidate)
+    raise ValueError("Unsupported day key type")
+
+
+def _build_trend_map(user_id: int, query: WearableTrendsQuery, start_date: date, end_date: date) -> Dict[date, Optional[float]]:
     day_start = _day_start_for(start_date)
     day_end = _day_start_for(end_date + timedelta(days=1))
     if query.metric in {"steps", "sleep"}:
@@ -146,8 +157,8 @@ def _build_trend_map(user_id: int, query: WearableTrendsQuery, start_date: date,
             .all()
         )
         if query.metric == "steps":
-            return {row[0]: float(row[1] or 0) for row in rows}
-        return {row[0]: float((row[1] or 0) / 60) for row in rows}
+            return {_normalize_day_key(row[0]): float(row[1] or 0) for row in rows}
+        return {_normalize_day_key(row[0]): float((row[1] or 0) / 60) for row in rows}
     day_expr = func.date(WearableCanonicalHR.timestamp_utc).label("day")
     rows = (
         db.session.query(day_expr, func.avg(WearableCanonicalHR.bpm).label("value"))
@@ -159,7 +170,7 @@ def _build_trend_map(user_id: int, query: WearableTrendsQuery, start_date: date,
         .group_by(day_expr)
         .all()
     )
-    return {row[0]: float(row[1]) for row in rows if row[1] is not None}
+    return {_normalize_day_key(row[0]): float(row[1]) for row in rows if row[1] is not None}
 
 
 @wearable_read_bp.route("/wearable/trends", methods=["GET"])
@@ -185,7 +196,7 @@ def get_wearable_trends():
     numeric_values = []
     while cursor <= today:
         iso_date = cursor.isoformat()
-        raw_value = value_map.get(iso_date)
+        raw_value = value_map.get(cursor)
         if raw_value is None and query.metric in {"steps", "sleep"}:
             raw_value = 0.0
         if raw_value is not None:

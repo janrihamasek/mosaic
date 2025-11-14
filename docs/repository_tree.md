@@ -2,9 +2,21 @@
 ```
 ├── .github
 │   └── workflows
+├── backend
+│   ├── .pytest_cache
+│   │   └── v
+│   │       └── cache
+│   ├── backups
+│   ├── database
+│   ├── migrations
+│   │   └── versions
+│   ├── routes
+│   └── tests
 ├── certs
 ├── docs
-│   └── architecture
+│   ├── architecture
+│   ├── changelog
+│   └── frontend_pages
 ├── frontend
 │   ├── public
 │   │   └── icons
@@ -120,35 +132,5 @@
 │   │       │                       └── healthconnectagent
 │   │       └── src
 │   └── src
-├── mosaic_prototype
-│   ├── backend
-│   │   ├── .pytest_cache
-│   │   │   └── v
-│   │   │       └── cache
-│   │   ├── backups
-│   │   ├── migrations
-│   │   │   └── versions
-│   │   ├── routes
-│   │   └── tests
-│   ├── database
-│   ├── docs
-│   │   ├── changelog
-│   │   └── frontend_pages
-│   └── frontend
-│       ├── public
-│       │   └── icons
-│       ├── scripts
-│       └── src
-│           ├── __tests__
-│           │   └── __snapshots__
-│           ├── components
-│           │   ├── __tests__
-│           │   └── shared
-│           ├── offline
-│           ├── services
-│           ├── store
-│           ├── styles
-│           ├── types
-│           └── utils
 └── scripts
 ```

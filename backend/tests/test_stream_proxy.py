@@ -1,6 +1,18 @@
 import uuid
+from typing import Protocol, cast
 
 from app import stream_rtsp
+
+
+class RTSPStream(Protocol):
+    def __iter__(self) -> "RTSPStream":
+        ...
+
+    def __next__(self) -> bytes:
+        ...
+
+    def close(self) -> None:
+        ...
 
 
 FAKE_FRAME_CHUNK = (
@@ -130,7 +142,7 @@ def test_stream_proxy_disconnect(monkeypatch):
 
     monkeypatch.setattr("app.subprocess.Popen", fake_popen)
 
-    generator = stream_rtsp("rtsp://camera.local/live")
+    generator = cast(RTSPStream, stream_rtsp("rtsp://camera.local/live"))
     first_chunk = next(generator)
     assert b"--frame" in first_chunk
 

@@ -9,7 +9,7 @@ Mosaic is a multi-tenant activity tracking platform that helps individuals captu
 - **Frontend:** React 18 with React Router v6, Redux Toolkit, react-hook-form, and Axios layered behind `apiClient.js`. The UI is gradually migrating to TypeScript (`tsconfig.json`, typed slices, and `types/` utilities) while retaining JSX components. A custom dark-mode design system in `styles/common.js` plus hooks such as `useBreakpoints` keep Admin, Health, and NightMotion views consistent. Jest 29 + React Testing Library (configured via `jest.config.js`, `jest.setup.ts`, and `setupTests.ts`) and ESLint (`npm run lint`) gate pull requests alongside TextEncoder/TextDecoder polyfills so NightMotion tests execute under Node 18.
 - **Backend:** A Flask 3 service (`backend/app.py`) with SQLAlchemy, Flask-Migrate, Pydantic-based validation helpers, PyJWT authentication, and Structlog 24.1 JSON logging. Request hooks attach `request_id`, user context, and feed a custom in-memory metrics registry surfaced through `/metrics` (text or JSON) and `/healthz`. Supporting modules include `backup_manager.py`, a NightMotion MJPEG proxy, and `manage.py` CLI commands (migrations plus `assign-user-data`).
 - **Database:** PostgreSQL powers Activity, Entry, User, and BackupSettings models with `user_id` foreign keys and cascading deletes to guarantee data isolation. `.env.dev`, `.env.prod`, `.env.staging`, and `.env.test` describe connection strings. `scripts/run_pytest.sh` provisions and tears down a disposable `mosaic_test` database inside Docker for reproducible integration tests.
-- **Tooling & Infrastructure:** Docker Compose spins up backend, frontend, and Postgres containers for dev, prod, test, and staging parity. GitHub Actions workflows (`ci.yml`, `tests.yml`, `backend-tests.yml`, `staging.yml`) install dependencies, run Pytest/Jest/ESLint, upload coverage and frontend build artifacts, and smoke-test `/metrics` in a staging-like environment. Operational references live in `docs/LOGGING.md`, `docs/METRICS.md`, and page-specs under `frontend/docs/frontend_pages/`.
+- **Tooling & Infrastructure:** Docker Compose spins up backend, frontend, and Postgres containers for dev, prod, test, and staging parity. GitHub Actions workflows (`ci.yml`, `tests.yml`, `backend-tests.yml`, `staging.yml`) install dependencies, run Pytest/Jest/ESLint, upload coverage and frontend build artifacts, and smoke-test `/metrics` in a staging-like environment. Operational references live in `docs/LOGGING.md`, `docs/METRICS.md`, and page-specs under `docs/frontend_pages/`.
 
 ### Development History and Direction
 Recent development (see `docs/changelog/2025-11-03-07_backend_frontend_admin_health_metrics.md`) delivered:
@@ -26,32 +26,19 @@ The current trajectory prioritises tenant isolation, production-grade observabil
 
 ### Repository Layout
 ```
-mosaic_prototype/
-├── backend/
-│   ├── app.py              # Flask app, REST endpoints, logging, metrics, NightMotion proxy
-│   ├── backup_manager.py   # ZIP backup orchestration + scheduling state
-│   ├── manage.py           # Flask-Migrate helpers + assign-user-data CLI
-│   ├── models.py           # SQLAlchemy models incl. user_id FKs and backup settings
-│   ├── db_utils.py         # Connection helpers + transactional context managers
-│   ├── tests/              # Pytest suites (auth, API, metrics, health, stream proxy, backups)
-│   └── migrations/         # Alembic revisions
-├── frontend/
-│   ├── src/
-│   │   ├── components/     # Dashboard, Today, Stats, Admin*, HealthPanel, NightMotion, BackupPanel
-│   │   ├── store/          # Typed Redux slices (auth, entries, activities, admin, backup, nightMotion)
-│   │   ├── __tests__/      # Jest + RTL suites (LoginForm, NightMotion, entriesSlice, toast, etc.)
-│   │   ├── services/       # Auth/user services, API helpers
-│   │   ├── styles/ & utils # Design tokens, animations, responsive hooks
-│   │   └── types/          # Shared TypeScript contracts
-│   ├── docs/frontend_pages # Page specifications for Today/Activities/Stats/Entries/NightMotion
-│   └── tsconfig.json       # TypeScript compiler config (extends CRA defaults)
-├── docs/
-│   ├── LOGGING.md          # Structlog + /metrics usage guide
-│   ├── METRICS.md          # Authoritative analytics formulas
-│   └── changelog/          # Daily change records
-├── scripts/run_pytest.sh   # Spins up mosaic_test DB, runs migrations + pytest, cleans up
-├── docker-compose.yml      # Dev/prod/test services incl. Postgres, frontend, backend
-└── mosaic_project_current_state.md
+.
+├── backend/                # Flask app (app.py), services, migrations, tests, backup + wearable modules
+│   ├── database/           # init-mosaic.sql mounted by docker-compose for Postgres bootstrap
+│   ├── routes/, security.py, backup_manager.py, ingest.py, wearable_service.py, etc.
+│   └── requirements.txt    # pip deps used by Docker + GitHub Actions
+├── frontend/               # React 18 + Redux Toolkit codebase (single canonical UI)
+│   ├── src/                # components, slices, pages, services, utils, tests, types
+│   ├── public/             # CRA assets
+│   └── Caddyfile           # served by Dockerfile.frontend runner
+├── docs/                   # merged architecture + product docs (API_DOCS, LOGGING, METRICS, frontend_pages, changelog)
+├── mobile/                 # Capacitor/Android client (ignored build artifacts)
+├── scripts/                # automation helpers (run_pytest.sh)
+└── docker-compose.yml      # backend/frontend/postgres stack for dev+staging
 ```
 
 ### Layer Interactions
@@ -138,7 +125,7 @@ Frontend CI now enforces:
 - Jest + React Testing Library suites in `frontend/src/__tests__/` (LoginForm validation, toast helpers, entries/nightMotion slices/components). Snapshots live under `__tests__/__snapshots__`.
 - ESLint with `--max-warnings=0`, covering `.js/.jsx/.ts/.tsx`.
 - CRA build as an end-to-end smoke test.
-Manual exploratory checklists remain for complex flows (Admin menu, Health panel, NightMotion streaming), and the new `frontend/docs/frontend_pages/*.md` files act as canonical specs for designers/devs during refactors.
+Manual exploratory checklists remain for complex flows (Admin menu, Health panel, NightMotion streaming), and the `docs/frontend_pages/*.md` files act as canonical specs for designers/devs during refactors.
 
 ### Continuous Integration
 - **`ci.yml`:** Parallel backend/frontend jobs with PostgreSQL 15 services, coverage upload, ESLint/Jest gates, and frontend build artifacts.
@@ -153,7 +140,7 @@ Manual exploratory checklists remain for complex flows (Admin menu, Health panel
 - **Analytics Accuracy:** `/stats/progress` now computes category baselines, active-day flags, seven/thirty-day averages, and top-consistency tables in lockstep with `docs/METRICS.md`, keeping the frontend and backend definitions aligned.
 - **Admin & Multi-Tenancy:** `user_id` ownership on activities/entries, JWT claims with `display_name`/`is_admin`, `/user` self-service endpoints, `/users` admin APIs, `assign-user-data` CLI, and new Admin UI tabs enforce tenant isolation while exposing operator tooling.
 - **DevOps & Staging Parity:** `.env.staging`, GitHub Actions `ci.yml` + `staging.yml`, and `scripts/run_pytest.sh` ensure migrations/tests run against PostgreSQL 15 with smoke tests for `/metrics`, and artifacts are ready for deployment.
-- **Frontend Documentation & Tests:** Page specs under `frontend/docs/frontend_pages/` codify layout/UX, while Jest suites cover Login, NightMotion, slices, and shared utilities with TextEncoder polyfills baked into the Jest environment.
+- **Frontend Documentation & Tests:** Page specs under `docs/frontend_pages/` codify layout/UX, while Jest suites cover Login, NightMotion, slices, and shared utilities with TextEncoder polyfills baked into the Jest environment.
 
 ### Open Work and TODOs
 - **Cache Namespacing:** `/today` and `/stats` cache keys omit `user_id`, so multi-tenant deployments risk data leakage if a process serves multiple users simultaneously.
