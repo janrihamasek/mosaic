@@ -12,7 +12,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./mosaic_prototype/database/init-mosaic.sql:/docker-entrypoint-initdb.d/init-mosaic.sql:ro
+      - ./backend/database/init-mosaic.sql:/docker-entrypoint-initdb.d/init-mosaic.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mosaic -d postgres"]
       interval: 10s
