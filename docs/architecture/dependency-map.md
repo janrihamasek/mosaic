@@ -1,6 +1,6 @@
 # Mosaic Dependency Map
 
-This map traces how Mosaic’s React/Redux frontend talks to the Flask backend, how API calls fan out into service modules and SQLAlchemy models, and where caches, storage, and events sit in between. Use it to reason about ownership of data, find where to plug new features, or understand which subsystems must be updated together.
+This map traces how Mosaic’s React/Redux frontend talks to the Flask backend, how API calls fan out into service modules and SQLAlchemy models, and where caches, storage, and events sit in between. Use it to reason about ownership of data, find where to plug new features, or understand which subsystems must be updated together. For supplemental views, see the [Dependency Graph](dependency-graph.md), [Redux Flow map](redux-flow.md), [Backend Call Tree](backend-call-tree.md), and [Dependency Matrix](dependency-matrix.md).
 
 ## Frontend Dependency Flows
 

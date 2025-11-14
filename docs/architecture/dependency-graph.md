@@ -1,6 +1,6 @@
 # Mosaic Dependency Graphs
 
-This document complements `docs/architecture/dependency-map.md` with visual diagrams that highlight the primary dependency paths across Mosaic’s frontend and backend. All diagrams use Mermaid syntax for easy inclusion in docs and code reviews.
+This document complements `docs/architecture/dependency-map.md` with visual diagrams that highlight the primary dependency paths across Mosaic’s frontend and backend. Pair it with the [Redux Flow map](redux-flow.md), [Backend Call Tree](backend-call-tree.md), and [Dependency Matrix](dependency-matrix.md) for text-first perspectives. All diagrams use Mermaid syntax for easy inclusion in docs and code reviews.
 
 ## Global Flow: Components → Redux → API → Backend
 
