@@ -1,5 +1,15 @@
 node_modules/
+frontend/node_modules/
+backend/node_modules/
+mobile/node_modules/
+**/node_modules/
 dist/
+**/dist/
+.gradle/
+**/.gradle/
+**/build/
+.idea/
+**/.idea/
 .env
 .vscode/
 .venv/
@@ -9,8 +19,9 @@ __pycache__/
 backups/
 mosaic.db
 certs/
-mobile/node_modules/
 mobile/android/
 mobile/.capacitor/
 mobile/capacitor.config.json
-mobile/plugins/**/node_modules/
+mobile/android/.gradle/
+mobile/android/.idea/
+mobile/android/app/build/

@@ -24,7 +24,7 @@ jobs:
           --health-retries 5
     defaults:
       run:
-        working-directory: mosaic_prototype/backend
+        working-directory: backend
     env:
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/mosaic_test
       POSTGRES_USER: postgres
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: mosaic_prototype/frontend
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js

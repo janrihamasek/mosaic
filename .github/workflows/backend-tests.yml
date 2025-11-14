@@ -3,11 +3,11 @@ name: Backend Tests
 on:
   push:
     paths:
-      - "mosaic_prototype/backend/**"
+      - "backend/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
     paths:
-      - "mosaic_prototype/backend/**"
+      - "backend/**"
       - ".github/workflows/backend-tests.yml"
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
           --health-retries 5
     defaults:
       run:
-        working-directory: mosaic_prototype/backend
+        working-directory: backend
     env:
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/mosaic_test
       POSTGRES_USER: postgres
