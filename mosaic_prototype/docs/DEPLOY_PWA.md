@@ -11,7 +11,7 @@ The React frontend now ships as an installable Progressive Web App (PWA). This g
 ## Build Steps
 
 ```bash
-cd mosaic_prototype/frontend
+cd frontend
 npm install
 npm run build
 ```

@@ -2,7 +2,7 @@
 
 ## Identification
 - Route: `/` tab `Stats` within `Dashboard`
-- Primary component: `mosaic_prototype/frontend/src/components/Stats.jsx`
+- Primary component: `frontend/src/components/Stats.jsx`
 - Redux slice: `entriesSlice.stats`
 - API endpoint: `/stats/progress` via `fetchProgressStats`
 

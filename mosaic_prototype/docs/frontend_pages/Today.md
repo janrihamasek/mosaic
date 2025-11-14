@@ -2,7 +2,7 @@
 
 ## Identification
 - Route: `/` default tab inside `Dashboard` when authenticated
-- Primary component: `mosaic_prototype/frontend/src/components/Today.jsx`
+- Primary component: `frontend/src/components/Today.jsx`
 - Supporting components: `Loading`, `ErrorState`
 - Redux slice: `entriesSlice.today`
 - Related async thunks: `loadToday`, `saveDirtyTodayRows`, `finalizeToday`

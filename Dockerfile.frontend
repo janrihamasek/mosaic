@@ -2,10 +2,10 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
-COPY mosaic_prototype/frontend/package*.json ./
+COPY frontend/package*.json ./
 RUN npm install
 
-COPY mosaic_prototype/frontend ./
+COPY frontend ./
 
 ARG REACT_APP_API_URL=http://localhost:5000
 ARG REACT_APP_API_KEY=
@@ -24,7 +24,7 @@ WORKDIR /srv
 
 COPY --from=build /app/build /srv
 COPY --chmod=644 certs/ /certs/
-COPY --chmod=644 mosaic_prototype/frontend/Caddyfile /etc/caddy/Caddyfile
+COPY --chmod=644 frontend/Caddyfile /etc/caddy/Caddyfile
 
 ENV FRONTEND_LISTEN=:3000
 
