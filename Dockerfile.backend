@@ -12,10 +12,10 @@ RUN apt-get update \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY mosaic_prototype/backend/requirements.txt /tmp/requirements.txt
+COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY mosaic_prototype/backend /app
+COPY backend /app
 
 EXPOSE 5000
 

@@ -71,7 +71,7 @@ Mosaic is a small full-stack prototype for keeping track of daily activities and
    ```
 3. Copy the backend environment template and adjust credentials as needed:
    ```bash
-   cd mosaic_prototype/backend
+   cd backend
    cp .env.example .env
   ```
   Configure at least `DATABASE_URL` (or the individual `POSTGRES_*` variables) along with `MOSAIC_API_KEY` and `MOSAIC_JWT_SECRET`. The backend otherwise falls back to

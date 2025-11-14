@@ -30,7 +30,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./mosaic_prototype/backend:/app
+      - ./backend:/app
       - ./certs:/certs:ro
     depends_on:
       postgres:

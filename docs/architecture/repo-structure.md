@@ -2,7 +2,7 @@
 
 To reinforce Mosaic’s layering rules and make navigation easier, reorganize the repo into clear frontend/backed layer folders with shared documentation. Each section below lists the proposed tree, highlighted responsibilities, and how current files map over.
 
-## Backend (`mosaic_prototype/backend/`)
+## Backend (`backend/`)
 ```
 backend/
   controllers/

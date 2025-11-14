@@ -43,7 +43,7 @@ Many thunks dispatch other slice thunks to keep the UI in sync after mutations. 
 
 ## Backend Dependency Flows
 
-All HTTP controllers live in `mosaic_prototype/backend/app.py`. Each endpoint validates input (`security.py`), enforces API keys/JWTs and admin roles (`@before_request`, `@require_admin`), records metrics, and delegates to either inline SQL helpers (`db_utils.transactional_connection`) or dedicated service modules (`backup_manager.py`, `wearable_service.py`, `import_data.py`). SQLAlchemy models in `models.py` define tables (`activities`, `entries`, `users`, `backup_settings`, wearable tables, etc.), but controllers mostly run raw SQL for predictability.
+All HTTP controllers live in `backend/app.py`. Each endpoint validates input (`security.py`), enforces API keys/JWTs and admin roles (`@before_request`, `@require_admin`), records metrics, and delegates to either inline SQL helpers (`db_utils.transactional_connection`) or dedicated service modules (`backup_manager.py`, `wearable_service.py`, `import_data.py`). SQLAlchemy models in `models.py` define tables (`activities`, `entries`, `users`, `backup_settings`, wearable tables, etc.), but controllers mostly run raw SQL for predictability.
 
 | Area | Endpoint(s) | Service / helper path | Model / storage | Dependency type | Notes |
 | --- | --- | --- | --- | --- | --- |
