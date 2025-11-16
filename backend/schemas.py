@@ -52,6 +52,9 @@ class EntryPayload(BaseModel):
             raise ValueError("value must be a number")
 
 
+ALLOWED_ACTIVITY_TYPES = {"positive", "negative"}
+
+
 class ActivityCreatePayload(BaseModel):
     name: str
     category: str
@@ -59,6 +62,7 @@ class ActivityCreatePayload(BaseModel):
     frequency_per_week: int
     description: str = ""
     goal: Optional[float] = None
+    activity_type: str = Field(default="positive")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +92,15 @@ class ActivityCreatePayload(BaseModel):
         value = (value or "").strip()
         if len(value) > 180:
             raise ValueError("description must be at most 180 characters")
+        return value
+
+    @field_validator("activity_type")
+    @classmethod
+    def validate_activity_type(cls, value: str) -> str:
+        value = (value or "").strip().lower()
+        if value not in ALLOWED_ACTIVITY_TYPES:
+            allowed = ", ".join(sorted(ALLOWED_ACTIVITY_TYPES))
+            raise ValueError(f"activity_type must be one of: {allowed}")
         return value
 
     @field_validator("goal", mode="before")
@@ -136,6 +149,7 @@ class ActivityUpdatePayload(BaseModel):
     description: Optional[str] = None
     frequency_per_day: Optional[int] = None
     frequency_per_week: Optional[int] = None
+    activity_type: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -160,6 +174,17 @@ class ActivityUpdatePayload(BaseModel):
         if len(value) > 180:
             raise ValueError("description must be at most 180 characters")
         return value
+
+    @field_validator("activity_type")
+    @classmethod
+    def validate_activity_type(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_ACTIVITY_TYPES:
+            allowed = ", ".join(sorted(ALLOWED_ACTIVITY_TYPES))
+            raise ValueError(f"activity_type must be one of: {allowed}")
+        return normalized
 
     @field_validator("goal", mode="before")
     @classmethod

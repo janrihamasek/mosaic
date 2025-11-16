@@ -869,6 +869,7 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
                 a.id AS activity_id,
                 a.name,
                 a.category,
+                a.activity_type,
                 a.goal,
                 a.description AS activity_description,
                 a.active,
@@ -1663,6 +1664,7 @@ def export_csv():
             "activity_id",
             "name",
             "category",
+            "activity_type",
             "goal",
             "activity_description",
             "active",
@@ -1678,6 +1680,7 @@ def export_csv():
                 activity.get("activity_id"),
                 activity.get("name"),
                 activity.get("category"),
+                activity.get("activity_type"),
                 activity.get("goal"),
                 activity.get("activity_description"),
                 activity.get("active"),
@@ -1840,6 +1843,7 @@ def add_entry():
                         INSERT INTO activities (
                             name,
                             category,
+                            activity_type,
                             goal,
                             description,
                             active,
@@ -1848,11 +1852,12 @@ def add_entry():
                             deactivated_at,
                             user_id
                         )
-                        VALUES (?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
+                        VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
                         """,
                         (
                             activity,
                             activity_category or "",
+                            "positive",
                             float(activity_goal or 0),
                             description or "",
                             1,
@@ -2052,6 +2057,7 @@ def add_activity():
     payload = validate_activity_create_payload(data)
     name = payload["name"]
     category = payload["category"]
+    activity_type = payload["activity_type"]
     goal = payload["goal"]
     description = payload["description"]
     frequency_per_day = payload["frequency_per_day"]
@@ -2061,10 +2067,30 @@ def add_activity():
         with db_transaction() as conn:
             conn.execute(
                 """
-                INSERT INTO activities (name, category, goal, description, active, frequency_per_day, frequency_per_week, deactivated_at, user_id)
-                VALUES (?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
+                INSERT INTO activities (
+                    name,
+                    category,
+                    activity_type,
+                    goal,
+                    description,
+                    active,
+                    frequency_per_day,
+                    frequency_per_week,
+                    deactivated_at,
+                    user_id
+                )
+                VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
                 """,
-                (name, category, goal, description, frequency_per_day, frequency_per_week, user_id)
+                (
+                    name,
+                    category,
+                    activity_type,
+                    goal,
+                    description,
+                    frequency_per_day,
+                    frequency_per_week,
+                    user_id,
+                ),
             )
         invalidate_cache("today")
         invalidate_cache("stats")
@@ -2087,10 +2113,19 @@ def add_activity():
                 cur = conn.execute(
                     """
                     UPDATE activities
-                    SET category = ?, goal = ?, description = ?, frequency_per_day = ?, frequency_per_week = ?, active = TRUE, deactivated_at = NULL
+                    SET category = ?, activity_type = ?, goal = ?, description = ?, frequency_per_day = ?, frequency_per_week = ?, active = TRUE, deactivated_at = NULL
                     WHERE name = ? AND user_id = ?
                     """,
-                    (category, goal, description, frequency_per_day, frequency_per_week, name, user_id),
+                    (
+                        category,
+                        activity_type,
+                        goal,
+                        description,
+                        frequency_per_day,
+                        frequency_per_week,
+                        name,
+                        user_id,
+                    ),
                 )
             if cur.rowcount > 0:
                 invalidate_cache("today")
@@ -2144,7 +2179,14 @@ def update_activity(activity_id):
 
         update_clauses = []
         params = []
-        for key in ("category", "goal", "description", "frequency_per_day", "frequency_per_week"):
+        for key in (
+            "category",
+            "activity_type",
+            "goal",
+            "description",
+            "frequency_per_day",
+            "frequency_per_week",
+        ):
             if key in payload:
                 update_clauses.append(f"{key} = ?")
                 params.append(payload[key])
@@ -2555,6 +2597,7 @@ def get_today():
                 a.id AS activity_id,
                 a.name,
                 a.category,
+                a.activity_type,
                 a.description,
                 a.active,
                 a.deactivated_at,
