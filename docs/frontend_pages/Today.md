@@ -15,7 +15,7 @@
 ## Layout
 - High-level structure (desktop)
   - Summary grid with date navigation, progress meter, and save status indicator
-  - Activity table (`<table>`) with columns Activity | Value | Note; rows highlight when value > 0
+  - Activity table (`<table>`) with columns Activity | Value | Note; rows highlight when `value > 0` and tint green for `activity_type === 'positive'` or red for `activity_type === 'negative'`
 - High-level structure (compact/mobile)
   - Summary grid remains stacked; navigation buttons expand to full width
   - Activities rendered as stacked cards with inline select/input controls
@@ -44,16 +44,17 @@
   - `row.value` → select current value
   - `row.note` → note input value
   - `row.goal` contributes to aggregate `progressStats`
+  - `row.activity_type` drives green/red row tinting when the entry has `value > 0`
 - Progress summary pulls from derived totals: `totalValue`, `totalGoal`, `percentLabel`, `ratioLabel`
 - Debounced autosave pipeline uses `saveDirtyTodayRows` thunk ➜ `/add_entry`; success triggers `loadToday`, `loadEntries`, `loadStats`
 - Midnight finalization hits `/finalize_day` via `finalizeToday`
 - Initial and subsequent loads call `/today` through `loadToday`
 
 ## Styles
-- Shared tokens from `styles/common.js` (`styles.button`, `styles.input`, `styles.card`, `styles.highlightRow`)
+- Shared tokens from `styles/common.js` (`styles.button`, `styles.input`, `styles.card`, `styles.positiveRow`, `styles.negativeRow`)
 - Responsive adjustments via `useCompactLayout` toggling grids, padding, and layout direction
 - Progress meter uses inline style computed color (`styles.highlightRow.backgroundColor` when ≥50%)
-- Table alternates `styles.table`/`styles.tableRow`; cards reuse `styles.card` with conditional background for completed activities
+- Table alternates `styles.table`/`styles.tableRow`; cards reuse `styles.card` with conditional background for completed activities (green positive, red negative)
 
 ## Notes
 - Autosave debounce clears on component unmount and when manually flushing to prevent stale timers

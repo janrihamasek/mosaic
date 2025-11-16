@@ -1764,7 +1764,8 @@ def get_entries():
             SELECT e.*,
                    COALESCE(a.category, e.activity_category, '') AS category,
                    COALESCE(a.goal, e.activity_goal, 0) AS goal,
-                   COALESCE(a.description, e.description, '') AS activity_description
+                   COALESCE(a.description, e.description, '') AS activity_description,
+                   COALESCE(a.activity_type, e.activity_type, 'positive') AS activity_type
             FROM entries e
             LEFT JOIN activities a
               ON a.name = e.activity

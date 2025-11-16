@@ -43,7 +43,7 @@
 ## Styles
 - Shared palette and control styles from `styles/common.js`
 - `FormWrapper` standardises form header, submit/cancel area, and padding
-- `DataTable` provides consistent header, empty state, and loading skeleton behaviour
+- `DataTable` provides consistent header, empty state, and loading skeleton behaviour; row `background-color` reflects `activity_type` (green for positive, red for negative)
 
 ## Notes
 - Filter form autodetects month range by checking start/end boundaries; ensure backend keeps inclusive semantics

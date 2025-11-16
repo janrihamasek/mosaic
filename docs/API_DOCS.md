@@ -106,10 +106,11 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
     "category": "Learning",
     "description": "Read 30 minutes",
     "frequency_per_day": 1,
-    "frequency_per_week": 7
+    "frequency_per_week": 7,
+    "activity_type": "positive"
   }
   ```
-  Backend derives `goal = (frequency_per_day * frequency_per_week) / 7` and snapshots metadata into existing entries.
+  Backend derives `goal = (frequency_per_day * frequency_per_week) / 7` (unless `activity_type = "negative"`, in which case the goal is always stored as `0`). Activities default to `positive` when the field is omitted.
 - **Update** — `PUT /activities/<id>` accepts the same shape as create. When toggling cadence, include both `frequency_per_day` and `frequency_per_week` so the server can recompute goals.
 - **Activate / Deactivate** — `PATCH /activities/<id>/activate` or `/deactivate` flips state. Both endpoints invalidate `/today` + `/stats` caches.
 - **Delete** — `DELETE /activities/<id>` removes an inactive activity.
@@ -130,7 +131,8 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
         "note": "Evening session",
         "category": "Learning",
         "goal": 1.0,
-        "activity_description": "Read 30 minutes"
+        "activity_description": "Read 30 minutes",
+        "activity_type": "positive"
       }
     ]
     ```
@@ -150,7 +152,7 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
 ### Today
 - **`GET /today`** — Returns the per-activity grid for a selected date (default today).
   - Query: `date`, `limit` (default 200), `offset`.
-  - Returns `activity` metadata plus the day’s entry (`value`, `note`, `activity_goal`). Cached for ~60s.
+  - Returns `activity` metadata plus the day’s entry (`value`, `note`, `activity_goal`, `activity_type`). Cached for ~60s. Client surfaces the `activity_type` to tint “negative” activities red and “positive” activities green when they have logged value.
 
 ### Finalize Day
 - **`POST /finalize_day`**
@@ -184,6 +186,7 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
   }
   ```
 - Calculations follow `docs/METRICS.md` (category ratios `R₍d,c₎`, active-day threshold 0.5, seven/thirty-day averages excluding the current day for category breakdowns). Cached for ~5 minutes per user/date.
+  - Negative activities are ignored across every metric (goal sums, per-category splits, “positive vs negative” counts, streak tracking).
 
 ### Backups
 | Endpoint | Description |

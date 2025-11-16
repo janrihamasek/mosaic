@@ -776,3 +776,75 @@ def test_stats_cache_invalidation(client, auth_headers):
     )
     assert resp.status_code == 201
     assert cache_key not in _cache_storage
+def test_negative_activity_entries_and_today(client, auth_headers):
+    target_date = "2024-07-02"
+    resp = client.post(
+        "/add_activity",
+        json={
+            "name": "Mindful Break",
+            "category": "Calm",
+            "frequency_per_day": 1,
+            "frequency_per_week": 1,
+            "description": "Pause and breathe",
+            "activity_type": "negative",
+            "goal": 0,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+
+    activities = client.get("/activities", headers=auth_headers).get_json()
+    assert activities
+    neg = next(item for item in activities if item["name"] == "Mindful Break")
+    assert neg["activity_type"] == "negative"
+    assert float(neg["goal"]) == pytest.approx(0.0)
+
+    entry_resp = client.post(
+        "/add_entry",
+        json={"date": target_date, "activity": "Mindful Break", "value": 2, "note": "counted as negative"},
+        headers=auth_headers,
+    )
+    assert entry_resp.status_code in {200, 201}
+
+    entries = client.get("/entries", headers=auth_headers).get_json()
+    assert entries
+    entry = next(item for item in entries if item["activity"] == "Mindful Break")
+    assert entry["activity_type"] == "negative"
+    assert float(entry["goal"]) == pytest.approx(0.0)
+
+    today = client.get(f"/today?date={target_date}", headers=auth_headers).get_json()
+    today_row = next(item for item in today if item["name"] == "Mindful Break")
+    assert today_row["activity_type"] == "negative"
+    assert float(today_row["goal"]) == pytest.approx(0.0)
+
+
+def test_negative_activity_ignored_in_stats(client, auth_headers):
+    target_date = "2024-08-15"
+    resp = client.post(
+        "/add_activity",
+        json={
+            "name": "Skip Sugar",
+            "category": "Health",
+            "frequency_per_day": 1,
+            "frequency_per_week": 1,
+            "description": "Note sugar-free days",
+            "activity_type": "negative",
+            "goal": 0,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+
+    save_resp = client.post(
+        "/add_entry",
+        json={"date": target_date, "activity": "Skip Sugar", "value": 5, "note": "Great streak"},
+        headers=auth_headers,
+    )
+    assert save_resp.status_code in {200, 201}
+
+    stats_resp = client.get(f"/stats/progress?date={target_date}", headers=auth_headers)
+    assert stats_resp.status_code == 200
+    payload = stats_resp.get_json()
+    assert payload["goal_completion_today"] == pytest.approx(0.0)
+    assert payload["positive_vs_negative"]["positive"] == 0
+    assert payload["positive_vs_negative"]["negative"] == 0

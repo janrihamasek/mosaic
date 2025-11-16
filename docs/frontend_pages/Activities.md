@@ -16,7 +16,7 @@
 - Component hierarchy
   - `Dashboard` ➜ `ActivityForm` | `ActivityDetail?` | `ActivityTable`
     - `ActivityForm`
-      - `FormWrapper` shell with stacked inputs for name/category/description and frequency selectors
+      - `FormWrapper` shell with stacked inputs for name/category/description plus an `activity_type` selector (`positive` or `negative`). Goal-frequency selectors only render when `activity_type === 'positive'`.
     - `ActivityDetail`
       - `ModalForm` overlay with editable frequency/category/description
     - `ActivityTable`
@@ -27,6 +27,7 @@
 ## Interactive Elements
 - Create form uses `react-hook-form`
   - Validates min/max lengths, frequency ranges before dispatching `createActivity`
+  - Selecting `Negative` hides goal inputs, pins cadence to 1×1, and dispatches `goal: 0`
   - Submit button disabled until `isValid`; label changes to `Saving...`
 - Table row interactions
   - Activity name acts as detail trigger (calls `onOpenDetail`, dispatches `selectActivity`)
@@ -43,7 +44,7 @@
   - `status === 'loading'` drives table-level `Loading` banner
   - `error` triggers `ErrorState` with `loadActivities` retry
 - `selectAllActivities` populates table rows; entries sorted active-first then by category/name
-  - Columns bind to `activity.name`, `activity.category`, `activity.goal` (formatted), `activity.active`
+  - Columns bind to `activity.name`, `activity.category`, `activity.goal` (formatted), `activity.activity_type`, `activity.active`
   - Action column uses `activity.id` for dispatch and disabled states
 - `ActivityForm` dispatches `createActivity` payload matching backend schema (frequency fields in snake_case)
 - `ActivityDetail` initialises state from selected activity; on submit calls `updateActivityDetails`
@@ -56,7 +57,8 @@
 - Modal inherits `ModalForm` base with overlay dimming and stacked layout
 
 ## Notes
-- Backend computes `goal` from frequency inputs; client intentionally omits sending `goal` on create
+- Backend computes `goal` from frequency inputs; client intentionally omits sending `goal` on create unless the user selects a negative activity, in which case it forces `goal: 0`
+- Negative activities always render with a red row tint and automatically keep their cadence at 1×1; positive activities keep the historic green tint
 - Table currently lacks pagination; rely on backend default until dataset grows—consider virtualisation if counts spike
 - `mutationStatus` can be used to surface global error banner in future (currently only toasts)
 - When deleting an activity that is selected in modal, reducer clears `selectedActivityId` to close detail safely
