@@ -107,7 +107,8 @@ class WearableETLService:
         payload = row.payload
         if isinstance(payload, str):
             payload = json.loads(payload)
-        record_type = (payload.get("type") or "").lower()
+        raw_type = payload.get("type") or ""
+        record_type = raw_type.lower() if isinstance(raw_type, str) else ""
         if not record_type:
             raise WearableNormalizationError("Missing record type")
         if "fields" not in payload or not isinstance(payload["fields"], dict):

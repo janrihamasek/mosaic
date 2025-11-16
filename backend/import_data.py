@@ -17,17 +17,18 @@ def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activit
     activity = session.execute(stmt).scalar_one_or_none()
 
     if activity is None:
-        activity = Activity(
-            name=parsed.activity,
-            category=parsed.category or "",
-            goal=parsed.goal,
-            description=parsed.description or "",
-            active=True,
-            frequency_per_day=parsed.frequency_per_day or 1,
-            frequency_per_week=parsed.frequency_per_week or 1,
-            deactivated_at=None,
-            user_id=user_id,
-        )
+        payload: Dict[str, object] = {
+            "name": parsed.activity,
+            "category": parsed.category or "",
+            "goal": parsed.goal,
+            "description": parsed.description or "",
+            "active": True,
+            "frequency_per_day": parsed.frequency_per_day or 1,
+            "frequency_per_week": parsed.frequency_per_week or 1,
+            "deactivated_at": None,
+            "user_id": user_id,
+        }
+        activity = Activity(**payload)
         session.add(activity)
         session.flush()
         return activity
@@ -78,16 +79,17 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional
     description = parsed.description or activity.description or ""
 
     if entry is None:
-        entry = Entry(
-            date=parsed.date,
-            activity=parsed.activity,
-            description=description,
-            value=float(parsed.value),
-            note=parsed.note,
-            activity_category=activity_category,
-            activity_goal=activity_goal,
-            user_id=user_id,
-        )
+        payload: Dict[str, object] = {
+            "date": parsed.date,
+            "activity": parsed.activity,
+            "description": description,
+            "value": float(parsed.value),
+            "note": parsed.note,
+            "activity_category": activity_category,
+            "activity_goal": activity_goal,
+            "user_id": user_id,
+        }
+        entry = Entry(**payload)
         session.add(entry)
         return "created"
 

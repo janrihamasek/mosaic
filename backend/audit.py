@@ -75,16 +75,15 @@ def _persist_log(
 ) -> None:
     session = db.session
     try:
-        session.add(
-            ActivityLog(
-                timestamp=timestamp,
-                user_id=user_id,
-                event_type=event_type,
-                message=message,
-                context=context,
-                level=level,
-            )
-        )
+        payload: Dict[str, Any] = {
+            "timestamp": timestamp,
+            "user_id": user_id,
+            "event_type": event_type,
+            "message": message,
+            "context": context,
+            "level": level,
+        }
+        session.add(ActivityLog(**payload))
         session.commit()
     except SQLAlchemyError as exc:
         session.rollback()

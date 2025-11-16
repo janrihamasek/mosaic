@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Mapping, Optional, Sequence, Tuple
+from typing import Iterator, Mapping, Optional, Sequence, Tuple, cast
 
 from sqlalchemy import text
-from sqlalchemy.engine import Connection, Engine, Result
+from sqlalchemy.engine import Connection, Engine, Result, RowMapping
 
 
 def _prepare_statement(sql: str, params: Sequence[object] | Mapping[str, object] | None) -> Tuple[str, dict]:
@@ -35,14 +35,14 @@ class ResultWrapper:
 
     def fetchone(self) -> Optional[Mapping[str, object]]:
         row = self._result.fetchone()
-        return None if row is None else row._mapping
+        return None if row is None else cast(Mapping[str, object], row._mapping)
 
     def fetchall(self) -> list[Mapping[str, object]]:
-        return [row._mapping for row in self._result.fetchall()]
+        return [cast(Mapping[str, object], row._mapping) for row in self._result.fetchall()]
 
     def first(self) -> Optional[Mapping[str, object]]:
         row = self._result.first()
-        return None if row is None else row._mapping
+        return None if row is None else cast(Mapping[str, object], row._mapping)
 
     def mappings(self):
         return self._result.mappings()
@@ -61,7 +61,8 @@ class ResultWrapper:
 
     @property
     def rowcount(self) -> int:
-        return self._result.rowcount
+        raw = getattr(self._result, "rowcount", None)
+        return int(raw or 0)
 
 
 class SQLAlchemyConnectionWrapper:
@@ -82,7 +83,7 @@ class SQLAlchemyConnectionWrapper:
 
 
 @contextmanager
-def transactional_connection(engine: Engine) -> SQLAlchemyConnectionWrapper:
+def transactional_connection(engine: Engine) -> Iterator[SQLAlchemyConnectionWrapper]:
     connection = engine.connect()
     transaction = connection.begin()
     wrapper = SQLAlchemyConnectionWrapper(connection)

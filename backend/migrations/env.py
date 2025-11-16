@@ -30,7 +30,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    configuration["sqlalchemy.url"] = current_app.config.get("SQLALCHEMY_DATABASE_URI") or ""
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
