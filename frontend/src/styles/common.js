@@ -287,8 +287,14 @@ export const styles = {
       justifyContent: "flex-start",
     }),
   },
+  positiveRow: {
+    backgroundColor: "#243528",
+  },
+  negativeRow: {
+    backgroundColor: "#3b2325",
+  },
   highlightRow: {
-    backgroundColor: "#29442f",
+    boxShadow: "inset 0 0 0 1px rgba(111, 221, 133, 0.65)",
   },
   successMessage: {
     color: "#7cd992",

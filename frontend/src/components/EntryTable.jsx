@@ -35,11 +35,16 @@ export default function EntryTable({ onNotify }) {
     }),
     []
   );
+  const resolveRowStyle = useCallback(
+    (entry) => (entry.activity_type === "negative" ? styles.negativeRow : styles.positiveRow),
+    []
+  );
 
   const tableData = useMemo(
     () =>
       entries.map((entry, index) => ({
         ...entry,
+        activity_type: entry.activity_type === "negative" ? "negative" : "positive",
         _rowIndex: index,
       })),
     [entries]
@@ -143,6 +148,7 @@ export default function EntryTable({ onNotify }) {
         isLoading={isInitialLoading}
         loadingMessage="Loading entries…"
         emptyMessage="No entries to display."
+        rowStyle={resolveRowStyle}
       />
     </div>
   );

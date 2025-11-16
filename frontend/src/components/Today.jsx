@@ -270,17 +270,24 @@ export default function Today({ onNotify }) {
     if (isCompact) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {rows.map((r, idx) => (
-            <div
-              key={r.activity_id ?? idx}
-              style={{
-                ...styles.card,
-                margin: 0,
-                padding: "1rem",
-                gap: "0.75rem",
-                backgroundColor: r.value > 0 ? styles.highlightRow.backgroundColor : styles.card.backgroundColor,
-              }}
-            >
+          {rows.map((r, idx) => {
+            const highlightStyle =
+              Number(r.value) > 0
+                ? r.activity_type === "negative"
+                  ? styles.negativeRow
+                  : styles.positiveRow
+                : {};
+            return (
+              <div
+                key={r.activity_id ?? idx}
+                style={{
+                  ...styles.card,
+                  margin: 0,
+                  padding: "1rem",
+                  gap: "0.75rem",
+                  ...highlightStyle,
+                }}
+              >
               <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "0.5rem" }}>
                 <span style={{ ...styles.textHeading, fontSize: "1.125rem" }}>{r.name}</span>
                 <span style={{ ...styles.textMuted, fontSize: "0.8125rem" }}>
@@ -322,7 +329,8 @@ export default function Today({ onNotify }) {
                 </label>
               </div>
             </div>
-          ))}
+            );
+          })}
           {!loading && rows.length === 0 && (
             <div style={{ ...styles.card, margin: 0, padding: "1rem", color: "#9ba3af", fontStyle: "italic" }}>
               No activities for the selected day.
@@ -342,14 +350,21 @@ export default function Today({ onNotify }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, idx) => (
-            <tr
-              key={r.activity_id ?? idx}
-              style={{
-                ...styles.tableRow,
-                ...(r.value > 0 ? styles.highlightRow : {}),
-              }}
-            >
+          {rows.map((r, idx) => {
+            const highlightStyle =
+              Number(r.value) > 0
+                ? r.activity_type === "negative"
+                  ? styles.negativeRow
+                  : styles.positiveRow
+                : {};
+            return (
+              <tr
+                key={r.activity_id ?? idx}
+                style={{
+                  ...styles.tableRow,
+                  ...highlightStyle,
+                }}
+              >
               <td title={r.category ? `Category: ${r.category}` : "Category: N/A"}>{r.name}</td>
               <td style={{ width: "12rem" }}>
                 <select
@@ -382,7 +397,8 @@ export default function Today({ onNotify }) {
                 />
               </td>
             </tr>
-          ))}
+            );
+          })}
           {!loading && rows.length === 0 && (
             <tr>
               <td colSpan={3} style={{ padding: "0.75rem", color: "#9ba3af", fontStyle: "italic" }}>

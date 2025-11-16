@@ -27,6 +27,7 @@ def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activit
             "frequency_per_week": parsed.frequency_per_week or 1,
             "deactivated_at": None,
             "user_id": user_id,
+            "activity_type": "positive",
         }
         activity = Activity(**payload)
         session.add(activity)
@@ -77,6 +78,7 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional
     activity_category = parsed.category or activity.category or ""
     activity_goal = parsed.goal if parsed.goal is not None else activity.goal or 0.0
     description = parsed.description or activity.description or ""
+    entry_activity_type = getattr(activity, "activity_type", None) or "positive"
 
     if entry is None:
         payload: Dict[str, object] = {
@@ -87,6 +89,7 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional
             "note": parsed.note,
             "activity_category": activity_category,
             "activity_goal": activity_goal,
+            "activity_type": entry_activity_type,
             "user_id": user_id,
         }
         entry = Entry(**payload)
@@ -101,6 +104,7 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional
     entry.description = description
     entry.activity_category = activity_category
     entry.activity_goal = activity_goal
+    entry.activity_type = entry_activity_type
     return "updated"
 
 

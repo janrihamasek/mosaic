@@ -21,6 +21,10 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
   const [actionId, setActionId] = useState(null);
   const loading = status === 'loading';
   const refreshing = loading && activities.length > 0;
+  const resolveRowStyle = useCallback(
+    (activity) => (activity.activity_type === 'negative' ? styles.negativeRow : styles.positiveRow),
+    []
+  );
 
   const sortedActivities = useMemo(() => {
     return [...activities].sort((a, b) => {
@@ -93,9 +97,17 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
         label: 'Goal',
         width: '15%',
         render: (activity) =>
-          typeof activity.goal === 'number'
-            ? activity.goal.toFixed(2)
-            : Number(activity.goal ?? 0).toFixed(2),
+          activity.activity_type === 'negative'
+            ? '0.00'
+            : typeof activity.goal === 'number'
+              ? activity.goal.toFixed(2)
+              : Number(activity.goal ?? 0).toFixed(2),
+      },
+      {
+        key: 'activity_type',
+        label: 'Type',
+        width: '10%',
+        render: (activity) => (activity.activity_type === 'negative' ? 'Negative' : 'Positive'),
       },
       {
         key: 'status',
@@ -190,6 +202,7 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
         isLoading={isInitialLoading}
         loadingMessage="Loading activities…"
         emptyMessage="No activities to display."
+        rowStyle={resolveRowStyle}
       />
     </div>
   );

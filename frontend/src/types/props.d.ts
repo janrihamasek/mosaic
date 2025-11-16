@@ -1,5 +1,6 @@
 import type {
   ButtonHTMLAttributes,
+  CSSProperties,
   FormEvent,
   FormHTMLAttributes,
   ReactNode,
@@ -66,6 +67,7 @@ export interface DataTableProps {
   loadingMessage?: string;
   errorLabel?: string;
   onRowClick?: (row: any) => void;
+  rowStyle?: (row: any) => CSSProperties | undefined;
 }
 
 export {};

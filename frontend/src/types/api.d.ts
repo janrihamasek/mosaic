@@ -1,3 +1,5 @@
+export type ActivityType = "positive" | "negative";
+
 export interface ApiResponse<T> {
   data: T;
   status: number;
@@ -16,6 +18,11 @@ export interface Activity {
   category: string;
   goal: number;
   active: boolean;
+  activity_type: ActivityType;
+  description?: string;
+  frequency_per_day?: number;
+  frequency_per_week?: number;
+  deactivated_at?: string | null;
 }
 
 export interface Entry {
@@ -24,6 +31,9 @@ export interface Entry {
   activity: string;
   value: number;
   note?: string;
+  category?: string;
+  goal?: number;
+  activity_type?: ActivityType;
 }
 
 export interface ActivityDistributionBucket {

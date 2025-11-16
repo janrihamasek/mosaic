@@ -245,7 +245,17 @@ class BackupManager:
     ) -> None:
         with csv_path.open("w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
-            writer.writerow(["dataset", "id", "date", "activity", "value", "note", "category", "goal"])
+            writer.writerow([
+                "dataset",
+                "id",
+                "date",
+                "activity",
+                "value",
+                "note",
+                "category",
+                "goal",
+                "activity_type",
+            ])
             for row in entries:
                 writer.writerow(
                     [
@@ -257,11 +267,23 @@ class BackupManager:
                         row.get("note"),
                         row.get("activity_category"),
                         row.get("activity_goal"),
+                        row.get("activity_type"),
                     ]
                 )
             writer.writerow([])
             writer.writerow(
-                ["dataset", "id", "name", "category", "goal", "description", "active", "frequency_per_day", "frequency_per_week"]
+                [
+                    "dataset",
+                    "id",
+                    "name",
+                    "category",
+                    "activity_type",
+                    "goal",
+                    "description",
+                    "active",
+                    "frequency_per_day",
+                    "frequency_per_week",
+                ]
             )
             for row in activities:
                 writer.writerow(
@@ -270,6 +292,7 @@ class BackupManager:
                         row.get("id"),
                         row.get("name"),
                         row.get("category"),
+                        row.get("activity_type"),
                         row.get("goal"),
                         row.get("description"),
                         row.get("active"),

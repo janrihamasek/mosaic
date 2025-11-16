@@ -1,4 +1,4 @@
-import type { Activity, Entry, StatsSnapshot } from "./api";
+import type { Activity, Entry, StatsSnapshot, ActivityType } from "./api";
 
 export type AsyncRequestStatus = "idle" | "loading" | "succeeded" | "failed";
 
@@ -44,6 +44,7 @@ export interface TodayRow {
   value: number;
   note: string;
   goal: number;
+  activity_type: ActivityType;
   [key: string]: unknown;
 }
 

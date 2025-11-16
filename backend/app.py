@@ -845,7 +845,8 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
                 e.value,
                 e.note,
                 e.activity_category,
-                e.activity_goal
+                e.activity_goal,
+                e.activity_type
             FROM entries e
             LEFT JOIN activities a
               ON a.name = e.activity
@@ -1640,6 +1641,7 @@ def export_csv():
             "note",
             "activity_category",
             "activity_goal",
+            "activity_type",
         ]
     )
     for entry in entries:
@@ -1654,6 +1656,7 @@ def export_csv():
                 entry.get("note"),
                 entry.get("activity_category"),
                 entry.get("activity_goal"),
+                entry.get("activity_type"),
             ]
         )
 
@@ -1808,26 +1811,27 @@ def add_entry():
     try:
         with db_transaction() as conn:
             activity_row = conn.execute(
-                "SELECT category, goal, description FROM activities WHERE name = ? AND user_id = ?",
+                "SELECT category, goal, description, activity_type FROM activities WHERE name = ? AND user_id = ?",
                 (activity, user_id),
             ).fetchone()
             if not activity_row:
                 activity_row = conn.execute(
-                    "SELECT category, goal, description FROM activities WHERE name = ? AND user_id IS NULL",
+                    "SELECT category, goal, description, activity_type FROM activities WHERE name = ? AND user_id IS NULL",
                     (activity,),
                 ).fetchone()
 
             description = activity_row["description"] if activity_row else ""
             activity_category = activity_row["category"] if activity_row else ""
             activity_goal = activity_row["goal"] if activity_row else 0
+            activity_type_value = (activity_row["activity_type"] if activity_row else None) or "positive"
 
             existing_entry = conn.execute(
-                "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ? AND user_id = ?",
+                "SELECT activity_category, activity_goal, activity_type FROM entries WHERE date = ? AND activity = ? AND user_id = ?",
                 (date, activity, user_id),
             ).fetchone()
             if not existing_entry:
                 existing_entry = conn.execute(
-                    "SELECT activity_category, activity_goal FROM entries WHERE date = ? AND activity = ? AND user_id IS NULL",
+                    "SELECT activity_category, activity_goal, activity_type FROM entries WHERE date = ? AND activity = ? AND user_id IS NULL",
                     (date, activity),
                 ).fetchone()
             if not activity_row and existing_entry:
@@ -1835,6 +1839,7 @@ def add_entry():
                 activity_goal = (
                     existing_entry["activity_goal"] if existing_entry["activity_goal"] is not None else activity_goal
                 )
+                activity_type_value = existing_entry["activity_type"] or activity_type_value
             if not activity_row:
                 # ensure activity exists so that /today and other queries include the new entry
                 try:
@@ -1877,6 +1882,7 @@ def add_entry():
                     description = ?,
                     activity_category = ?,
                     activity_goal = ?,
+                    activity_type = ?,
                     user_id = ?
                 WHERE date = ? AND activity = ? AND user_id = ?
                 """,
@@ -1886,6 +1892,7 @@ def add_entry():
                     description,
                     activity_category,
                     activity_goal,
+                    activity_type_value,
                     user_id,
                     date,
                     activity,
@@ -1906,6 +1913,7 @@ def add_entry():
                         description = ?,
                         activity_category = ?,
                         activity_goal = ?,
+                        activity_type = ?,
                         user_id = ?
                     WHERE date = ? AND activity = ? AND user_id IS NULL
                     """,
@@ -1915,6 +1923,7 @@ def add_entry():
                         description,
                         activity_category,
                         activity_goal,
+                        activity_type_value,
                         user_id,
                         date,
                         activity,
@@ -1928,10 +1937,30 @@ def add_entry():
                 else:
                     conn.execute(
                         """
-                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal, user_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                        (date, activity, description, float_value, note, activity_category, activity_goal, user_id),
+                        INSERT INTO entries (
+                            date,
+                            activity,
+                            description,
+                            value,
+                            note,
+                            activity_category,
+                            activity_goal,
+                            activity_type,
+                            user_id
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            date,
+                            activity,
+                            description,
+                            float_value,
+                            note,
+                            activity_category,
+                            activity_goal,
+                            activity_type_value,
+                            user_id,
+                        ),
                     )
                     response_payload = {"message": "Záznam uložen"}
                     status_code = 201
@@ -2209,6 +2238,9 @@ def update_activity(activity_id):
         if "category" in payload:
             entry_update_clauses.append("activity_category = ?")
             entry_params.append(payload["category"])
+        if "activity_type" in payload:
+            entry_update_clauses.append("activity_type = ?")
+            entry_params.append(payload["activity_type"])
         if "goal" in payload:
             entry_update_clauses.append("activity_goal = ?")
             entry_params.append(payload["goal"])
@@ -2320,6 +2352,7 @@ def get_progress_stats():
                 COALESCE(SUM(goal), 0) AS total_goal
             FROM activities
             WHERE active = TRUE
+              AND activity_type = 'positive'
         """
         activity_goal_params: list = []
         if user_id is not None:
@@ -2350,6 +2383,7 @@ def get_progress_stats():
                 COUNT(*) AS entry_count
             FROM entries
             WHERE date BETWEEN ? AND ?
+              AND activity_type = 'positive'
         """
         daily_params: list = [window_30_start, today_str]
         if user_id is not None:
@@ -2371,6 +2405,7 @@ def get_progress_stats():
                 COALESCE(SUM(activity_goal), 0) AS total_goal
             FROM entries
             WHERE date BETWEEN ? AND ?
+              AND activity_type = 'positive'
         """
         category_daily_params: list = [window_30_start, today_str]
         if user_id is not None:
@@ -2413,6 +2448,7 @@ def get_progress_stats():
                 COUNT(*) AS entry_count
             FROM entries
             WHERE date BETWEEN ? AND ?
+              AND activity_type = 'positive'
         """
         distribution_params: list = [window_30_start, today_str]
         if user_id is not None:
@@ -2468,6 +2504,7 @@ def get_progress_stats():
                 SUM(CASE WHEN COALESCE(value, 0) = 0 THEN 1 ELSE 0 END) AS negative_count
             FROM entries
             WHERE date BETWEEN ? AND ?
+              AND activity_type = 'positive'
         """
         pos_neg_params: list = [window_30_start, today_str]
         if user_id is not None:
@@ -2491,6 +2528,7 @@ def get_progress_stats():
                 COUNT(DISTINCT date) AS active_days
             FROM entries
             WHERE date BETWEEN ? AND ?
+              AND activity_type = 'positive'
         """
         consistent_params: list = [window_30_start, today_str]
         if user_id is not None:
@@ -2620,6 +2658,10 @@ def get_today():
             item = dict(r)
             if "active" in item:
                 item["active"] = 1 if bool(item["active"]) else 0
+            if item.get("activity_type") == "negative":
+                item["goal"] = 0
+                if "activity_goal" in item:
+                    item["activity_goal"] = 0
             data.append(item)
     finally:
         conn.close()
@@ -2680,7 +2722,7 @@ def finalize_day():
     with db_transaction() as conn:
         # získej všechny aktivní aktivity
         active_query = """
-            SELECT name, description, category, goal
+            SELECT name, description, category, goal, activity_type
             FROM activities
             WHERE active = TRUE
                OR (deactivated_at IS NOT NULL AND ? < deactivated_at)
@@ -2701,12 +2743,23 @@ def finalize_day():
         created = 0
         for a in active_activities:
             if a["name"] not in existing_names:
+                activity_type_value = (a["activity_type"] or "positive") if "activity_type" in a.keys() else "positive"
                 conn.execute(
                     """
-                    INSERT INTO entries (date, activity, description, value, note, activity_category, activity_goal, user_id)
-                    VALUES (?, ?, ?, 0, '', ?, ?, ?)
+                    INSERT INTO entries (
+                        date,
+                        activity,
+                        description,
+                        value,
+                        note,
+                        activity_category,
+                        activity_goal,
+                        activity_type,
+                        user_id
+                    )
+                    VALUES (?, ?, ?, 0, '', ?, ?, ?, ?)
                     """,
-                    (date, a["name"], a["description"], a["category"], a["goal"], user_id),
+                    (date, a["name"], a["description"], a["category"], a["goal"], activity_type_value, user_id),
                 )
                 created += 1
     invalidate_cache("today")

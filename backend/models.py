@@ -55,6 +55,12 @@ class Entry(db.Model):
     note: Mapped[Optional[str]] = mapped_column(db.Text, nullable=True)
     activity_category: Mapped[str] = mapped_column(db.String(120), nullable=False, default="")
     activity_goal: Mapped[float] = mapped_column(db.Float, nullable=False, default=0.0)
+    activity_type: Mapped[str] = mapped_column(
+        db.String(16),
+        nullable=False,
+        default="positive",
+        server_default="positive",
+    )
     user_id: Mapped[Optional[int]] = mapped_column(
         db.Integer,
         db.ForeignKey("users.id", ondelete="CASCADE"),

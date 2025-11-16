@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useForm } from 'react-hook-form';
 import { styles } from '../styles/common';
@@ -20,6 +20,7 @@ const defaultValues = {
   frequencyPerDay: 1,
   frequencyPerWeek: 1,
   description: '',
+  activityType: 'positive',
 };
 
 export default function ActivityForm({ onNotify }) {
@@ -41,6 +42,7 @@ export default function ActivityForm({ onNotify }) {
     handleSubmit,
     watch,
     reset,
+    setValue,
     formState: { errors, isValid, isSubmitting },
   } = useForm({
     mode: 'onChange',
@@ -49,6 +51,7 @@ export default function ActivityForm({ onNotify }) {
 
   const frequencyPerDay = watch('frequencyPerDay');
   const frequencyPerWeek = watch('frequencyPerWeek');
+  const activityType = watch('activityType');
 
   const avgGoalPerDay = useMemo(() => {
     const perDay = Number(frequencyPerDay) || 0;
@@ -56,21 +59,31 @@ export default function ActivityForm({ onNotify }) {
     return (perDay * perWeek) / 7;
   }, [frequencyPerDay, frequencyPerWeek]);
 
+  useEffect(() => {
+    if (activityType === 'negative') {
+      setValue('frequencyPerDay', 1, { shouldDirty: false, shouldValidate: true });
+      setValue('frequencyPerWeek', 1, { shouldDirty: false, shouldValidate: true });
+    }
+  }, [activityType, setValue]);
+
   const onSubmit = async (data) => {
     if (isSaving) return;
     try {
+      const payload = {
+        name: data.name.trim(),
+        category: data.category.trim(),
+        frequency_per_day: Number(data.frequencyPerDay),
+        frequency_per_week: Number(data.frequencyPerWeek),
+        description: data.description.trim(),
+        activity_type: data.activityType,
+      };
+      if (data.activityType === 'negative') {
+        payload.goal = 0;
+      }
       // Backend derives `goal` server-side; avoid sending it because the schema forbids extra fields.
-      await dispatch(
-        createActivity({
-          name: data.name.trim(),
-          category: data.category.trim(),
-          frequency_per_day: Number(data.frequencyPerDay),
-          frequency_per_week: Number(data.frequencyPerWeek),
-          description: data.description.trim(),
-        })
-      ).unwrap();
+      await dispatch(createActivity(payload)).unwrap();
       onNotify?.('Activity was created', 'success');
-      reset(defaultValues);
+      reset({ ...defaultValues });
     } catch (err) {
       onNotify?.(`Failed to create activity: ${formatError(err)}`, 'error');
     }
@@ -145,6 +158,20 @@ export default function ActivityForm({ onNotify }) {
           />
           {errors.category && <span style={errorTextStyle}>{errors.category.message}</span>}
         </div>
+        <div style={fieldWrapperStyle}>
+          <label style={{ fontSize: 13, fontWeight: 600 }}>Activity type</label>
+          <select
+            {...register('activityType', {
+              validate: (value) => (value === 'positive' || value === 'negative') || 'Select a valid activity type.',
+            })}
+            style={buildInputStyle(!!errors.activityType)}
+            aria-invalid={errors.activityType ? 'true' : 'false'}
+          >
+            <option value="positive">Positive</option>
+            <option value="negative">Negative</option>
+          </select>
+          {errors.activityType && <span style={errorTextStyle}>{errors.activityType.message}</span>}
+        </div>
 
         <div style={fieldWrapperStyle}>
           <input
@@ -160,54 +187,60 @@ export default function ActivityForm({ onNotify }) {
         </div>
       </div>
 
-      <div style={frequencySectionStyle}>
-        <label style={{ ...fieldWrapperStyle, fontSize: 13 }}>
-          <span>Per day</span>
-          <select
-            {...register('frequencyPerDay', {
-              valueAsNumber: true,
-              required: 'Select frequency per day.',
-              min: { value: 1, message: 'Minimum is 1 per day.' },
-              max: { value: 3, message: 'Maximum is 3 per day.' },
-            })}
-            style={buildInputStyle(!!errors.frequencyPerDay, { width: '100%' })}
-            aria-invalid={errors.frequencyPerDay ? 'true' : 'false'}
-          >
-            {[1, 2, 3].map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-          {errors.frequencyPerDay && <span style={errorTextStyle}>{errors.frequencyPerDay.message}</span>}
-        </label>
+      {activityType === 'positive' ? (
+        <div style={frequencySectionStyle}>
+          <label style={{ ...fieldWrapperStyle, fontSize: 13 }}>
+            <span>Per day</span>
+            <select
+              {...register('frequencyPerDay', {
+                valueAsNumber: true,
+                required: 'Select frequency per day.',
+                min: { value: 1, message: 'Minimum is 1 per day.' },
+                max: { value: 3, message: 'Maximum is 3 per day.' },
+              })}
+              style={buildInputStyle(!!errors.frequencyPerDay, { width: '100%' })}
+              aria-invalid={errors.frequencyPerDay ? 'true' : 'false'}
+            >
+              {[1, 2, 3].map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            {errors.frequencyPerDay && <span style={errorTextStyle}>{errors.frequencyPerDay.message}</span>}
+          </label>
 
-        <label style={{ ...fieldWrapperStyle, fontSize: 13 }}>
-          <span>Per week</span>
-          <select
-            {...register('frequencyPerWeek', {
-              valueAsNumber: true,
-              required: 'Select frequency per week.',
-              min: { value: 1, message: 'Minimum is 1 per week.' },
-              max: { value: 7, message: 'Maximum is 7 per week.' },
-            })}
-            style={buildInputStyle(!!errors.frequencyPerWeek, { width: '100%' })}
-            aria-invalid={errors.frequencyPerWeek ? 'true' : 'false'}
-          >
-            {[1, 2, 3, 4, 5, 6, 7].map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-          {errors.frequencyPerWeek && <span style={errorTextStyle}>{errors.frequencyPerWeek.message}</span>}
-        </label>
+          <label style={{ ...fieldWrapperStyle, fontSize: 13 }}>
+            <span>Per week</span>
+            <select
+              {...register('frequencyPerWeek', {
+                valueAsNumber: true,
+                required: 'Select frequency per week.',
+                min: { value: 1, message: 'Minimum is 1 per week.' },
+                max: { value: 7, message: 'Maximum is 7 per week.' },
+              })}
+              style={buildInputStyle(!!errors.frequencyPerWeek, { width: '100%' })}
+              aria-invalid={errors.frequencyPerWeek ? 'true' : 'false'}
+            >
+              {[1, 2, 3, 4, 5, 6, 7].map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            {errors.frequencyPerWeek && <span style={errorTextStyle}>{errors.frequencyPerWeek.message}</span>}
+          </label>
 
-        <div style={{ ...fieldWrapperStyle, justifyContent: 'flex-end', fontSize: 13 }}>
-          <span style={{ fontWeight: 600 }}>Avg/day</span>
-          <span>{avgGoalPerDay.toFixed(2)}</span>
+          <div style={{ ...fieldWrapperStyle, justifyContent: 'flex-end', fontSize: 13 }}>
+            <span style={{ fontWeight: 600 }}>Avg/day</span>
+            <span>{avgGoalPerDay.toFixed(2)}</span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div style={{ ...fieldWrapperStyle, fontSize: 13, color: '#9ba3af' }}>
+          <span>Negative activities do not track a goal. Progress is optional.</span>
+        </div>
+      )}
     </FormWrapper>
   );
 }

@@ -3,7 +3,7 @@ import { fetchActivities } from "../api";
 import { loadEntries, loadToday } from "./entriesSlice";
 import type { RootState, AppDispatch } from "./index";
 import type { ActivitiesState, FriendlyError } from "../types/store";
-import type { Activity } from "../types/api";
+import type { Activity, ActivityType } from "../types/api";
 import { submitOfflineMutation } from "../offline/queue";
 import { readActivitiesSnapshot, saveActivitiesSnapshot } from "../offline/snapshots";
 
@@ -43,6 +43,8 @@ const cloneLists = (state: ActivitiesState): ActivityLists => ({
 });
 
 const tempId = () => -Math.floor(Math.random() * 1_000_000 + Date.now());
+const toActivityType = (value: unknown): ActivityType =>
+  value === "negative" ? "negative" : "positive";
 
 async function applyAndPersistActivitiesSnapshot(
   getState: () => RootState,
@@ -74,13 +76,29 @@ export const loadActivities = createAsyncThunk<
       fetchActivities({ all: false }),
       fetchActivities({ all: true }),
     ]);
-    const payload = { active: (active || []) as Activity[], all: (all || []) as Activity[] };
+    const normalize = (items: Activity[] = []): Activity[] =>
+      items.map((item) => ({
+        ...item,
+        activity_type: toActivityType(item.activity_type),
+      }));
+    const payload = {
+      active: normalize((active || []) as Activity[]),
+      all: normalize((all || []) as Activity[]),
+    };
     await saveActivitiesSnapshot(payload.active, payload.all);
     return payload;
   } catch (error) {
     const cached = await readActivitiesSnapshot();
     if (cached) {
-      return cached;
+      const normalize = (items: Activity[] = []): Activity[] =>
+        items.map((item) => ({
+          ...item,
+          activity_type: toActivityType(item.activity_type),
+        }));
+      return {
+        active: normalize(cached.active),
+        all: normalize(cached.all),
+      };
     }
     return rejectWithValue(normaliseReject(error));
   }
@@ -106,6 +124,7 @@ export const createActivity = createAsyncThunk<
           category: String(payload.category ?? ""),
           goal: Number(payload.goal ?? 0),
           active: true,
+          activity_type: toActivityType(payload.activity_type),
         };
         const nextAll = [...lists.all.filter((item) => item.name !== activity.name), activity];
         const nextActive = activity.active === false ? lists.active : [...lists.active, activity];

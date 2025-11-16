@@ -16,7 +16,7 @@ import type {
   FriendlyError,
   TodayRow,
 } from "../types/store";
-import type { Entry, StatsSnapshot } from "../types/api";
+import type { ActivityType, Entry, StatsSnapshot } from "../types/api";
 
 type FiltersInput = Partial<EntriesFilters> | undefined;
 
@@ -80,9 +80,13 @@ function serialiseError(error: unknown): FriendlyError | null {
   };
 }
 
+const toActivityType = (value: unknown): ActivityType =>
+  value === "negative" ? "negative" : "positive";
+
 type TodayRowInput = Partial<TodayRow> & {
   activity_goal?: number;
   name: string;
+  activity_type?: string;
 };
 
 function normalizeTodayRows(list: TodayRowInput[]): TodayRow[] {
@@ -95,6 +99,7 @@ function normalizeTodayRows(list: TodayRowInput[]): TodayRow[] {
         value: Number(row.value ?? 0),
         note: row.note ?? "",
         goal: goalValue,
+        activity_type: toActivityType(row.activity_type),
       } as TodayRow;
     })
   );
@@ -128,7 +133,11 @@ export const loadEntries = createAsyncThunk<
   const effectiveFilters = normalizeFilters(filters ?? state.entries.filters);
   try {
     const items = (await fetchEntries(effectiveFilters)) as Entry[];
-    return { filters: effectiveFilters, items };
+    const normalizedItems = (items || []).map((entry) => ({
+      ...entry,
+      activity_type: toActivityType(entry.activity_type),
+    }));
+    return { filters: effectiveFilters, items: normalizedItems };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
   }

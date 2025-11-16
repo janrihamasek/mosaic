@@ -11,6 +11,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
   const [frequencyPerDay, setFrequencyPerDay] = useState(activity.frequency_per_day || 1);
   const [frequencyPerWeek, setFrequencyPerWeek] = useState(activity.frequency_per_week || 1);
   const [description, setDescription] = useState(activity.description || "");
+  const [activityType, setActivityType] = useState(activity.activity_type || "positive");
   const [isSaving, setIsSaving] = useState(false);
 
   const initialState = useMemo(
@@ -20,6 +21,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
       frequency_per_week: activity.frequency_per_week || 1,
       description: activity.description || "",
       goal: activity.goal ?? 0,
+      activity_type: activity.activity_type || "positive",
     }),
     [activity]
   );
@@ -29,7 +31,15 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
     setFrequencyPerDay(initialState.frequency_per_day);
     setFrequencyPerWeek(initialState.frequency_per_week);
     setDescription(initialState.description);
+    setActivityType(initialState.activity_type);
   }, [initialState]);
+
+  useEffect(() => {
+    if (activityType === "negative") {
+      setFrequencyPerDay(1);
+      setFrequencyPerWeek(1);
+    }
+  }, [activityType]);
 
   const avgGoalPerDay = useMemo(() => {
     return ((Number(frequencyPerDay) || 0) * (Number(frequencyPerWeek) || 0)) / 7;
@@ -39,7 +49,8 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
     category !== initialState.category ||
     frequencyPerDay !== initialState.frequency_per_day ||
     frequencyPerWeek !== initialState.frequency_per_week ||
-    description !== initialState.description;
+    description !== initialState.description ||
+    activityType !== initialState.activity_type;
 
   const handleSave = async () => {
     if (isSaving) return;
@@ -59,15 +70,17 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
         throw new Error("Frequency per week must be between 1 and 7");
       }
 
+      const goalPayload = activityType === "negative" ? 0 : avgGoalPerDay;
       await dispatch(
         updateActivityDetails({
           id: activity.id,
           payload: {
             category: category.trim(),
-            frequency_per_day: perDay,
-            frequency_per_week: perWeek,
-            goal: avgGoalPerDay,
+            frequency_per_day: activityType === "negative" ? 1 : perDay,
+            frequency_per_week: activityType === "negative" ? 1 : perWeek,
+            goal: goalPayload,
             description: description.trim(),
+            activity_type: activityType,
           },
         })
       ).unwrap();
@@ -140,42 +153,61 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
             />
           </label>
         </div>
+        <div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontWeight: 600 }}>Activity type</span>
+            <select
+              value={activityType}
+              onChange={(e) => setActivityType(e.target.value)}
+              style={styles.input}
+            >
+              <option value="positive">Positive</option>
+              <option value="negative">Negative</option>
+            </select>
+          </label>
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ fontWeight: 600 }}>Goal</span>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
-              <span>Per day</span>
-              <select
-                value={frequencyPerDay}
-                onChange={(e) => setFrequencyPerDay(Number(e.target.value))}
-                style={{ ...styles.input, width: 120 }}
-              >
-                {[1, 2, 3].map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
-              <span>Per week</span>
-              <select
-                value={frequencyPerWeek}
-                onChange={(e) => setFrequencyPerWeek(Number(e.target.value))}
-                style={{ ...styles.input, width: 120 }}
-              >
-                {[1, 2, 3, 4, 5, 6, 7].map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", fontSize: 13 }}>
-              <span style={{ fontWeight: 600 }}>Avg/day</span>
-              <span>{avgGoalPerDay.toFixed(2)}</span>
+          {activityType === "positive" ? (
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
+                <span>Per day</span>
+                <select
+                  value={frequencyPerDay}
+                  onChange={(e) => setFrequencyPerDay(Number(e.target.value))}
+                  style={{ ...styles.input, width: 120 }}
+                >
+                  {[1, 2, 3].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
+                <span>Per week</span>
+                <select
+                  value={frequencyPerWeek}
+                  onChange={(e) => setFrequencyPerWeek(Number(e.target.value))}
+                  style={{ ...styles.input, width: 120 }}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>Avg/day</span>
+                <span>{avgGoalPerDay.toFixed(2)}</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ color: "#9ba3af", fontSize: 13 }}>
+              Negative activities always have a goal of 0. Frequency is ignored.
+            </div>
+          )}
         </div>
         <div>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>

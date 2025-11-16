@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import type { CSSProperties } from "react";
 
 import ErrorState from "../ErrorState";
 import Loading from "../Loading";
@@ -32,6 +33,7 @@ const DataTable: React.FC<DataTableProps> = ({
   emptyMessage = "No records to display.",
   loadingMessage = "Loading…",
   errorLabel = "Unable to load records.",
+  rowStyle,
 }) => {
   const { isCompact } = useCompactLayout();
   const hasData = Array.isArray(data) && data.length > 0;
@@ -69,6 +71,9 @@ const DataTable: React.FC<DataTableProps> = ({
     );
   }
 
+  const resolveRowStyle = (row: Record<string, unknown>): CSSProperties | undefined =>
+    typeof rowStyle === "function" ? rowStyle(row) : undefined;
+
   if (isCompact) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -83,6 +88,7 @@ const DataTable: React.FC<DataTableProps> = ({
               flexDirection: "column",
               gap: "0.5rem",
               ...baseRowStyle,
+              ...(resolveRowStyle(row) ?? {}),
             }}
             onClick={() => onRowClick?.(row)}
             role={onRowClick ? "button" : undefined}
@@ -133,7 +139,7 @@ const DataTable: React.FC<DataTableProps> = ({
         {data.map((row, rowIndex) => (
           <tr
             key={row.id ?? rowIndex}
-            style={{ ...styles.tableRow, ...baseRowStyle }}
+            style={{ ...styles.tableRow, ...baseRowStyle, ...(resolveRowStyle(row) ?? {}) }}
             onClick={() => onRowClick?.(row)}
           >
             {columnMeta.map((column) => (
