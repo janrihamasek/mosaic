@@ -195,6 +195,9 @@ export default function Today({ onNotify }) {
       (acc, row) => {
         const value = Number(row.value) || 0;
         const goal = Number(row.goal) || 0;
+        if (row.activity_type === "negative") {
+          return acc;
+        }
         return {
           totalValue: acc.totalValue + value,
           totalGoal: acc.totalGoal + goal,

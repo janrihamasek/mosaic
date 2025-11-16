@@ -827,6 +827,10 @@ def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict],
     if user_id is None:
         raise ValidationError("Missing user context", code="unauthorized", status=401)
 
+    stats_include_unassigned = False
+
+    stats_include_unassigned = False
+
     conn = get_db_connection()
     try:
         entry_params: list = []
@@ -2344,6 +2348,7 @@ def get_progress_stats():
 
     today_str = target_date.strftime("%Y-%m-%d")
     window_30_start = (target_date - timedelta(days=29)).strftime("%Y-%m-%d")
+    stats_include_unassigned = False
 
     conn = get_db_connection()
     try:
@@ -2357,7 +2362,7 @@ def get_progress_stats():
         """
         activity_goal_params: list = []
         if user_id is not None:
-            activity_goal_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            activity_goal_sql += f" AND {_user_scope_clause('user_id', include_unassigned=stats_include_unassigned)}"
             activity_goal_params.append(user_id)
         activity_goal_sql += "\n            GROUP BY category"
         activity_goal_rows = conn.execute(activity_goal_sql, activity_goal_params).fetchall()
@@ -2388,7 +2393,7 @@ def get_progress_stats():
         """
         daily_params: list = [window_30_start, today_str]
         if user_id is not None:
-            daily_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            daily_sql += f" AND {_user_scope_clause('user_id', include_unassigned=stats_include_unassigned)}"
             daily_params.append(user_id)
         daily_sql += "\n            GROUP BY date"
         daily_rows = conn.execute(daily_sql, daily_params).fetchall()
@@ -2410,7 +2415,7 @@ def get_progress_stats():
         """
         category_daily_params: list = [window_30_start, today_str]
         if user_id is not None:
-            category_daily_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            category_daily_sql += f" AND {_user_scope_clause('user_id', include_unassigned=stats_include_unassigned)}"
             category_daily_params.append(user_id)
         category_daily_sql += "\n            GROUP BY date, category"
         category_daily_rows = conn.execute(category_daily_sql, category_daily_params).fetchall()
@@ -2453,7 +2458,7 @@ def get_progress_stats():
         """
         distribution_params: list = [window_30_start, today_str]
         if user_id is not None:
-            distribution_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            distribution_sql += f" AND {_user_scope_clause('user_id', include_unassigned=stats_include_unassigned)}"
             distribution_params.append(user_id)
         distribution_sql += """
             GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other')
@@ -2509,7 +2514,7 @@ def get_progress_stats():
         """
         pos_neg_params: list = [window_30_start, today_str]
         if user_id is not None:
-            pos_neg_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            pos_neg_sql += f" AND {_user_scope_clause('user_id', include_unassigned=stats_include_unassigned)}"
             pos_neg_params.append(user_id)
         pos_neg_row = conn.execute(pos_neg_sql, pos_neg_params).fetchone()
 
@@ -2533,7 +2538,7 @@ def get_progress_stats():
         """
         consistent_params: list = [window_30_start, today_str]
         if user_id is not None:
-            consistent_sql += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            consistent_sql += f" AND {_user_scope_clause('user_id', include_unassigned=stats_include_unassigned)}"
             consistent_params.append(user_id)
         consistent_sql += """
             GROUP BY COALESCE(NULLIF(activity_category, ''), 'Other'), activity
