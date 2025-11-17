@@ -1,51 +1,29 @@
-import json
-import os
-import secrets
-import tempfile
 import logging
+import os
 import sys
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from functools import wraps
-from typing import Any, Dict, Iterator, List, Optional, Tuple, cast
+from typing import Optional
 
 import click
-import structlog
 import jwt  # type: ignore[import]
-from flask import Flask, Response, jsonify, request, g
-from flask_cors import CORS
+import structlog
+from flask import Flask, Response, g, jsonify, request
 from flask.cli import with_appcontext
-from werkzeug.datastructures import FileStorage
+from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
-from werkzeug.security import check_password_hash, generate_password_hash
-from werkzeug.utils import secure_filename
 
-from backup_manager import BackupManager
-from import_data import import_csv as run_import_csv
 from https_utils import resolve_ssl_context
+from infra import health_service, metrics_manager
 from models import Activity, Entry  # noqa: F401 - ensure models registered
-from services import auth_service, admin_service, activities_service, nightmotion_service
-from controllers.helpers import current_user_id as _current_user_id, is_admin_user as _is_admin_user, parse_pagination
-from infra.cache_manager import cache_get, cache_set, invalidate_cache, CacheScope, TODAY_CACHE_TTL, STATS_CACHE_TTL
-from infra import metrics_manager, health_service
+from services import nightmotion_service
 
 # Expose streaming helper for legacy callers/tests
 stream_rtsp = nightmotion_service.stream_rtsp
 from security import (
     ValidationError,
     error_response,
-    rate_limit,
     require_api_key,
-    limit_request,
-    validate_csv_import_payload,
-    require_admin,
-    jwt_required,
 )
 from extensions import db, migrate
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from db_utils import connection as sa_connection, transactional_connection
 
 
 def configure_logging() -> None:
@@ -69,7 +47,7 @@ def configure_logging() -> None:
 
 configure_logging()
 
-from audit import install_runtime_log_handler, log_event  # noqa: E402
+from audit import install_runtime_log_handler  # noqa: E402
 from routes.logs import logs_bp  # noqa: E402
 from wearable_read import wearable_read_bp  # noqa: E402
 
@@ -197,33 +175,6 @@ ERROR_CODE_BY_STATUS = {
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
-def _create_access_token(
-    user_id: int,
-    username: str,
-    *,
-    is_admin: bool = False,
-    display_name: Optional[str] = None,
-) -> tuple[str, str]:
-    csrf_token = secrets.token_hex(16)
-    now = datetime.now(timezone.utc)
-    exp_minutes = app.config.get("JWT_EXP_MINUTES", 60)
-    payload = {
-        "sub": str(user_id),
-        "username": username,
-        "csrf": csrf_token,
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=int(exp_minutes))).timestamp()),
-        "is_admin": bool(is_admin),
-        "display_name": (display_name or "").strip(),
-    }
-    token = jwt.encode(
-        payload,
-        app.config["JWT_SECRET"],
-        algorithm=app.config.get("JWT_ALGORITHM", "HS256"),
-    )
-    return token, csrf_token
-
-
 def _decode_access_token(token: str) -> dict:
     return jwt.decode(
         token,
@@ -242,86 +193,6 @@ def _is_public_endpoint(endpoint: Optional[str]) -> bool:
         return True
     endpoint_name = endpoint.split(".", 1)[-1]
     return endpoint_name in public
-
-
-def _row_value(row, key, default=None):
-    if hasattr(row, "_mapping"):
-        return row._mapping.get(key, default)
-    if isinstance(row, dict):
-        return row.get(key, default)
-    return getattr(row, key, default)
-
-
-def _serialize_user_row(row) -> dict:
-    username = _row_value(row, "username", "")
-    display_name = _row_value(row, "display_name", "") or username
-    created_at_value = _row_value(row, "created_at")
-    if isinstance(created_at_value, datetime):
-        created_at_str = created_at_value.replace(
-            tzinfo=created_at_value.tzinfo or timezone.utc
-        ).isoformat()
-    elif created_at_value:
-        created_at_str = str(created_at_value)
-    else:
-        created_at_str = None
-
-    return {
-        "id": _row_value(row, "id"),
-        "username": username,
-        "display_name": display_name,
-        "is_admin": bool(_row_value(row, "is_admin", False)),
-        "created_at": created_at_str,
-    }
-
-
-def _build_export_filename(extension: str) -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    return f"mosaic-export-{timestamp}.{extension}"
-
-
-def get_current_user_profile():
-    current_user = getattr(g, "current_user", None)
-    if not current_user:
-        return error_response("unauthorized", "Unauthorized", 401)
-    user_id = current_user["id"]
-    payload = auth_service.get_user_profile(user_id)
-    return jsonify(payload)
-
-
-def update_current_user():
-    current_user = getattr(g, "current_user", None)
-    if not current_user:
-        return error_response("unauthorized", "Unauthorized", 401)
-
-    data = request.get_json(silent=True) or {}
-    result, status = auth_service.update_user_profile(current_user["id"], data)
-    return jsonify(result), status
-
-
-def delete_current_user():
-    current_user = getattr(g, "current_user", None)
-    if not current_user:
-        return error_response("unauthorized", "Unauthorized", 401)
-    user_id = current_user["id"]
-
-    result, status = auth_service.delete_user(user_id, invalidate_cache_cb=invalidate_cache)
-
-    return jsonify(result), status
-
-
-def list_users():
-    users = admin_service.list_users()
-    return jsonify(users)
-
-
-def admin_delete_user(user_id: int):
-    current_user = getattr(g, "current_user", None)
-    result, status = admin_service.delete_user(
-        user_id,
-        requester_id=current_user.get("id") if current_user else None,
-        invalidate_cache_cb=invalidate_cache,
-    )
-    return jsonify(result), status
 
 
 @app.before_request
@@ -450,89 +321,10 @@ def handle_http_exception(exc: HTTPException):
     return error_response(code, message, status)
 
 
-def stream_proxy():
-    limited = limit_request("stream_proxy", per_minute=2)
-    if limited:
-        return limited
-
-    rtsp_url = request.args.get("url", type=str)
-    if not rtsp_url:
-        return jsonify({"error": "Missing RTSP URL"}), 400
-
-    cam_user = request.args.get("username", "", type=str) or ""
-    cam_pass = request.args.get("password", "", type=str) or ""
-    if cam_user and cam_pass and "@" not in rtsp_url:
-        rtsp_url = rtsp_url.replace("rtsp://", f"rtsp://{cam_user}:{cam_pass}@", 1)
-
-    logger.bind(stream="nightmotion", rtsp_url=rtsp_url).info("nightmotion.proxy_start")
-
-    try:
-        response = Response(
-            mimetype="multipart/x-mixed-replace; boundary=frame",
-        )
-        response.headers["Cache-Control"] = "no-store"
-        return response
-    except ValidationError as exc:
-        return error_response(exc.code, exc.message, exc.status, exc.details)
-    except PermissionError:
-        return error_response("unauthorized", "Unauthorized", 401)
-    except RuntimeError as exc:
-        logger.bind(stream="nightmotion").exception("nightmotion.stream_error", error=str(exc))
-        return error_response("internal_error", "Stream nelze navázat", 500)
-    except Exception as exc:
-        logger.bind(stream="nightmotion").exception("nightmotion.stream_error_unexpected", error=str(exc))
-        return error_response("internal_error", "Stream nelze navázat", 500)
-
-
 @app.errorhandler(Exception)
 def handle_unexpected_exception(exc: Exception):
     logger.bind(status_code=500).exception("request.unhandled_exception", error=str(exc))
     return error_response("internal_error", "An unexpected error occurred", 500)
-
-
-def import_csv_endpoint():
-    user_id = _current_user_id()
-    if user_id is None:
-        return error_response("unauthorized", "Missing user context", 401)
-    limits = app.config["RATE_LIMITS"]["import_csv"]
-    limited = rate_limit("import_csv", limits["limit"], limits["window"])
-    if limited:
-        return limited
-
-    file = cast(FileStorage, validate_csv_import_payload(request.files))
-    filename_input = file.filename or "import.csv"
-    filename = secure_filename(filename_input)
-    suffix = os.path.splitext(filename)[1] or ".csv"
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
-        summary = run_import_csv(tmp_path, user_id=user_id)
-    except Exception as exc:  # pragma: no cover - defensive
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        log_event(
-            "import.csv_failed",
-            "CSV import failed",
-            user_id=user_id,
-            level="error",
-            context={"error": str(exc), "filename": filename},
-        )
-        return error_response("import_failed", f"Failed to import CSV: {exc}", 500)
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-    invalidate_cache("today")
-    invalidate_cache("stats")
-    log_event(
-        "import.csv",
-        "CSV import completed",
-        user_id=user_id,
-        context={"summary": summary, "filename": filename},
-    )
-    return jsonify({"message": "CSV import completed", "summary": summary}), 200
 
 
 @app.cli.command("health")
