@@ -5,7 +5,7 @@ import pytest
 from app import app
 from extensions import db
 from sqlalchemy import text
-from security import rate_limiter
+from infra import rate_limiter
 
 
 @pytest.fixture()
@@ -38,7 +38,7 @@ def client():
     except Exception as exc:  # pragma: no cover - skip if database unavailable
         pytest.skip(f"PostgreSQL database not available: {exc}")
 
-    rate_limiter._calls.clear()  # type: ignore[attr-defined]
+    rate_limiter.reset()
 
     with app.test_client() as client:
         yield client

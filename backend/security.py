@@ -1,10 +1,9 @@
-from collections import defaultdict, deque
 from datetime import datetime, UTC
-from threading import Lock
 from typing import Any, Dict, Optional
 from functools import wraps
 
 from flask import current_app, jsonify, request, g
+from infra import rate_limiter
 from pydantic import ValidationError as PydanticValidationError
 from werkzeug.datastructures import FileStorage
 
@@ -21,30 +20,8 @@ from schemas import (
 )
 
 
-class SimpleRateLimiter:
-    """Very small in-memory rate limiter suitable for a single-process dev setup."""
-
-    def __init__(self):
-        self._calls = defaultdict(deque)
-        self._lock = Lock()
-
-    def allow(self, key: str, limit: int, window_seconds: int) -> bool:
-        now = datetime.now(UTC).timestamp()
-        with self._lock:
-            q = self._calls[key]
-            while q and q[0] <= now - window_seconds:
-                q.popleft()
-            if len(q) >= limit:
-                return False
-            q.append(now)
-            return True
-
-
-rate_limiter = SimpleRateLimiter()
-
-
 def rate_limit(endpoint_name: str, limit: int, window_seconds: int):
-    """Check and enforce per-endpoint rate limiting."""
+    """Wrapper for the infra rate limiter to be used in controllers."""
     user_obj = getattr(g, "current_user", None)
     if user_obj:
         identifier = f"user:{user_obj['id']}"
@@ -54,9 +31,9 @@ def rate_limit(endpoint_name: str, limit: int, window_seconds: int):
             or request.remote_addr
             or "anonymous"
         )
-    key = f"{identifier}:{endpoint_name}"
-    if not rate_limiter.allow(key, limit, window_seconds):
-        return error_response("too_many_requests", "Too many requests", 429)
+    is_limited = rate_limiter.check_rate_limit(endpoint_name, identifier, limit, window_seconds)
+    if is_limited:
+        return error_response("too_many_requests", "Rate limit exceeded", 429)
     return None
 
 
