@@ -4,15 +4,21 @@ from flask import Blueprint, jsonify, request, g, current_app
 
 from security import rate_limit, ValidationError, error_response
 from services import activities_service
-from app import parse_pagination, _current_user_id, _is_admin_user, invalidate_cache, _header_truthy
+from controllers.helpers import (
+    parse_pagination,
+    current_user_id,
+    is_admin_user,
+    header_truthy,
+)
+from infra.cache_manager import invalidate_cache
 
 activities_bp = Blueprint("activities", __name__)
 
 
 @activities_bp.get("/activities")
 def get_activities():
-    user_id = _current_user_id()
-    is_admin = _is_admin_user()
+    user_id = current_user_id()
+    is_admin = is_admin_user()
     if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
@@ -48,7 +54,7 @@ def add_activity():
         return limited
 
     idempotency_key = request.headers.get("X-Idempotency-Key")
-    overwrite_requested = _header_truthy(request.headers.get("X-Overwrite-Existing"))
+    overwrite_requested = header_truthy(request.headers.get("X-Overwrite-Existing"))
 
     data: Dict[str, Any] = request.get_json() or {}
     try:
