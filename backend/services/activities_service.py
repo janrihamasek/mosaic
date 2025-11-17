@@ -16,8 +16,6 @@ from security import (
     validate_activity_update_payload,
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-
-from .common import db_transaction
 from .idempotency import lookup as idempotency_lookup
 from .idempotency import store_response as idempotency_store_response
 
@@ -127,43 +125,42 @@ def update_activity(
 ) -> Tuple[Dict[str, Any], int]:
     validated = validate_activity_update_payload(payload or {})
 
-    with db_transaction():
-        row = activities_repo.get_activity_by_id(activity_id, user_id, is_admin)
-        if not row:
-            raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
+    row = activities_repo.get_activity_by_id(activity_id, user_id, is_admin)
+    if not row:
+        raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
 
-        updates: Dict[str, Any] = {}
-        for key in (
-            "category",
-            "activity_type",
-            "goal",
-            "description",
-            "frequency_per_day",
-            "frequency_per_week",
-        ):
-            if key in validated:
-                updates[key] = validated[key]
+    updates: Dict[str, Any] = {}
+    for key in (
+        "category",
+        "activity_type",
+        "goal",
+        "description",
+        "frequency_per_day",
+        "frequency_per_week",
+    ):
+        if key in validated:
+            updates[key] = validated[key]
 
-        if updates:
-            activities_repo.update_activity(activity_id, updates, user_id, is_admin)
-        else:
-            return {"message": "No changes detected"}, 200
+    if updates:
+        activities_repo.update_activity(activity_id, updates, user_id, is_admin)
+    else:
+        return {"message": "No changes detected"}, 200
 
-        entry_updates: Dict[str, Any] = {}
-        if "description" in validated:
-            entry_updates["description"] = validated["description"]
-        if "category" in validated:
-            entry_updates["category"] = validated["category"]
-        if "activity_type" in validated:
-            entry_updates["activity_type"] = validated["activity_type"]
-        if "goal" in validated:
-            entry_updates["goal"] = validated["goal"]
-        if entry_updates:
-            activities_repo.update_entries_for_activity(
-                row["name"],
-                entry_updates,
-                row["user_id"],
-            )
+    entry_updates: Dict[str, Any] = {}
+    if "description" in validated:
+        entry_updates["description"] = validated["description"]
+    if "category" in validated:
+        entry_updates["category"] = validated["category"]
+    if "activity_type" in validated:
+        entry_updates["activity_type"] = validated["activity_type"]
+    if "goal" in validated:
+        entry_updates["goal"] = validated["goal"]
+    if entry_updates:
+        activities_repo.update_entries_for_activity(
+            row["name"],
+            entry_updates,
+            row["user_id"],
+        )
 
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
@@ -214,18 +211,17 @@ def delete_activity(
     is_admin: bool,
     invalidate_cache_cb=None,
 ) -> Tuple[Dict[str, str], int]:
-    with db_transaction():
-        row = activities_repo.get_activity_by_id(activity_id, user_id, is_admin)
-        if not row:
-            raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
-        if row.get("active"):
-            raise ValidationError(
-                "Aktivita musí být deaktivována před smazáním",
-                code="invalid_state",
-                status=400,
-            )
+    row = activities_repo.get_activity_by_id(activity_id, user_id, is_admin)
+    if not row:
+        raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
+    if row.get("active"):
+        raise ValidationError(
+            "Aktivita musí být deaktivována před smazáním",
+            code="invalid_state",
+            status=400,
+        )
 
-        rowcount = activities_repo.delete_activity(activity_id, user_id, is_admin)
+    rowcount = activities_repo.delete_activity(activity_id, user_id, is_admin)
 
     if rowcount == 0:
         raise ValidationError("Aktivita nenalezena", code="not_found", status=404)

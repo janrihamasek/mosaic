@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from db_utils import connection as sa_connection
 from db_utils import transactional_connection
-from extensions import db
+from extensions import db, db_transaction
 
 
 def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
@@ -156,7 +156,7 @@ def update_activity(
         where_clause += " AND user_id = ?"
         params.append(user_id)
 
-    with transactional_connection(db.engine) as conn:
+    with db_transaction() as conn:
         result = conn.execute(
             f"UPDATE activities SET {', '.join(assignments)} WHERE {where_clause}",
             params,
@@ -243,7 +243,7 @@ def delete_activity(activity_id: int, user_id: Optional[int], is_admin: bool) ->
         where_clause += " AND user_id = ?"
         params.append(user_id)
 
-    with transactional_connection(db.engine) as conn:
+    with db_transaction() as conn:
         result = conn.execute(
             f"DELETE FROM activities WHERE {where_clause}",
             params,
