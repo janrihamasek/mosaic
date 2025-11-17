@@ -10,17 +10,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import jwt  # type: ignore[import]
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from audit import log_event
+from repositories import users_repo
 from security import (
     ValidationError,
     validate_login_payload,
     validate_register_payload,
     validate_user_update_payload,
 )
-from .common import db_transaction, get_db_connection
 
 
 def _serialize_user_row(row) -> dict:
@@ -53,17 +53,12 @@ def register_user(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
 
     new_user_id: Optional[int] = None
     try:
-        with db_transaction() as conn:
-            conn.execute(
-                "INSERT INTO users (username, password_hash, created_at, display_name, is_admin) VALUES (?, ?, ?, ?, FALSE)",
-                (username, password_hash, datetime.now(timezone.utc).isoformat(), display_name),
-            )
-            new_row = conn.execute(
-                "SELECT id FROM users WHERE username = ?",
-                (username,),
-            ).fetchone()
-            if new_row:
-                new_user_id = new_row["id"]
+        new_user_id = users_repo.create_user(
+            username,
+            password_hash,
+            display_name,
+            datetime.now(timezone.utc).isoformat(),
+        )
     except IntegrityError:
         log_event(
             "auth.register_failed",
@@ -116,42 +111,10 @@ def authenticate_user(
 ) -> Tuple[Dict[str, Any], int]:
     data = validate_login_payload(payload or {})
 
-    conn = get_db_connection()
     row = None
     is_admin_flag = False
     display_name = None
-    try:
-        try:
-            row = conn.execute(
-                """
-                SELECT
-                    id,
-                    password_hash,
-                    COALESCE(is_admin, FALSE) AS is_admin,
-                    COALESCE(NULLIF(display_name, ''), username) AS display_name
-                FROM users
-                WHERE username = ?
-                """,
-                (data["username"],),
-            ).fetchone()
-        except SQLAlchemyError as exc:
-            error_message = str(exc).lower()
-            if "is_admin" not in error_message:
-                raise
-            row = conn.execute(
-                """
-                SELECT
-                    id,
-                    password_hash,
-                    FALSE AS is_admin,
-                    username AS display_name
-                FROM users
-                WHERE username = ?
-                """,
-                (data["username"],),
-            ).fetchone()
-    finally:
-        conn.close()
+    row = users_repo.get_user_by_username(data["username"])
 
     if not row or not check_password_hash(row["password_hash"], data["password"]):
         log_event(
@@ -197,23 +160,7 @@ def authenticate_user(
 
 
 def get_user_profile(user_id: int) -> Dict[str, Any]:
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                COALESCE(NULLIF(display_name, ''), username) AS display_name,
-                COALESCE(is_admin, FALSE) AS is_admin,
-                created_at
-            FROM users
-            WHERE id = ?
-            """,
-            (user_id,),
-        ).fetchone()
-    finally:
-        conn.close()
+    row = users_repo.get_user_by_id(user_id)
     if not row:
         raise ValidationError("User not found", code="not_found", status=404)
     return _serialize_user_row(row)
@@ -222,38 +169,17 @@ def get_user_profile(user_id: int) -> Dict[str, Any]:
 def update_user_profile(user_id: int, payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
     data = validate_user_update_payload(payload or {})
 
-    updates = []
-    params: list = []
+    updates: Dict[str, Any] = {}
     if "display_name" in data:
-        updates.append("display_name = ?")
-        params.append(data["display_name"].strip())
+        updates["display_name"] = data["display_name"].strip()
     if "password" in data:
-        updates.append("password_hash = ?")
-        params.append(generate_password_hash(data["password"]))
+        updates["password_hash"] = generate_password_hash(data["password"])
 
     if not updates:
         return {"message": "No changes detected"}, 200
 
-    params.append(user_id)
-
-    with db_transaction() as conn:
-        conn.execute(
-            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
-            params,
-        )
-        row = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                COALESCE(NULLIF(display_name, ''), username) AS display_name,
-                COALESCE(is_admin, FALSE) AS is_admin,
-                created_at
-            FROM users
-            WHERE id = ?
-            """,
-            (user_id,),
-        ).fetchone()
+    users_repo.update_user(user_id, updates)
+    row = users_repo.get_user_by_id(user_id)
 
     if not row:
         raise ValidationError("User not found", code="not_found", status=404)
@@ -262,9 +188,8 @@ def update_user_profile(user_id: int, payload: Dict[str, Any]) -> Tuple[Dict[str
 
 
 def delete_user(user_id: int, *, invalidate_cache_cb=None) -> Tuple[Dict[str, Any], int]:
-    with db_transaction() as conn:
-        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    if cur.rowcount == 0:
+    rowcount = users_repo.delete_user(user_id)
+    if rowcount == 0:
         raise ValidationError("User not found", code="not_found", status=404)
 
     if invalidate_cache_cb:

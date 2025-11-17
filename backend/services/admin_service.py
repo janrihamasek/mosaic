@@ -7,28 +7,13 @@ rules while keeping Flask types out of this layer.
 
 from typing import Dict, List, Optional, Tuple
 
+from repositories import users_repo
 from security import ValidationError
-from .common import db_transaction, get_db_connection
 from .auth_service import _serialize_user_row
 
 
 def list_users() -> List[Dict]:
-    conn = get_db_connection()
-    try:
-        rows = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                COALESCE(NULLIF(display_name, ''), username) AS display_name,
-                COALESCE(is_admin, FALSE) AS is_admin,
-                created_at
-            FROM users
-            ORDER BY LOWER(username) ASC
-            """
-        ).fetchall()
-    finally:
-        conn.close()
+    rows = users_repo.list_all_users()
     return [_serialize_user_row(row) for row in rows]
 
 
@@ -44,10 +29,9 @@ def delete_user(
             code="invalid_operation",
             status=400,
         )
-    with db_transaction() as conn:
-        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    rowcount = users_repo.delete_user(user_id)
 
-    if cur.rowcount == 0:
+    if rowcount == 0:
         raise ValidationError("User not found", code="not_found", status=404)
 
     if invalidate_cache_cb:
