@@ -35,6 +35,8 @@ from import_data import import_csv as run_import_csv
 from https_utils import resolve_ssl_context
 from ingest import process_wearable_raw_by_dedupe_keys
 from models import Activity, Entry  # noqa: F401 - ensure models registered
+from services import auth_service, admin_service, activities_service
+from services import auth_service, admin_service
 from security import (
     ValidationError,
     error_response,
@@ -1106,40 +1108,8 @@ def register():
         return limited
 
     data = request.get_json() or {}
-    payload = validate_register_payload(data)
-    username = payload["username"]
-    password_hash = generate_password_hash(payload["password"])
-    display_name = payload.get("display_name") or username
-
-    new_user_id: Optional[int] = None
-    try:
-        with db_transaction() as conn:
-            conn.execute(
-                "INSERT INTO users (username, password_hash, created_at, display_name, is_admin) VALUES (?, ?, ?, ?, FALSE)",
-                (username, password_hash, datetime.now(timezone.utc).isoformat(), display_name),
-            )
-            new_row = conn.execute(
-                "SELECT id FROM users WHERE username = ?",
-                (username,),
-            ).fetchone()
-            if new_row:
-                new_user_id = new_row["id"]
-    except IntegrityError:
-        log_event(
-            "auth.register_failed",
-            "Username already exists",
-            level="warning",
-            context={"username": username},
-        )
-        return error_response("conflict", "Username already exists", 409)
-
-    log_event(
-        "auth.register",
-        "User registered",
-        user_id=new_user_id,
-        context={"username": username},
-    )
-    return jsonify({"message": "User registered"}), 201
+    result, status = auth_service.register_user(data)
+    return jsonify(result), status
 
 
 def login():
@@ -1149,82 +1119,13 @@ def login():
         return limited
 
     data = request.get_json() or {}
-    payload = validate_login_payload(data)
-
-    conn = get_db_connection()
-    row = None
-    is_admin_flag = False
-    display_name = None
-    try:
-        try:
-            row = conn.execute(
-                """
-                SELECT
-                    id,
-                    password_hash,
-                    COALESCE(is_admin, FALSE) AS is_admin,
-                    COALESCE(NULLIF(display_name, ''), username) AS display_name
-                FROM users
-                WHERE username = ?
-                """,
-                (payload["username"],),
-            ).fetchone()
-        except SQLAlchemyError as exc:
-            error_message = str(exc).lower()
-            if "is_admin" not in error_message:
-                raise
-            row = conn.execute(
-                """
-                SELECT
-                    id,
-                    password_hash,
-                    FALSE AS is_admin,
-                    username AS display_name
-                FROM users
-                WHERE username = ?
-                """,
-                (payload["username"],),
-            ).fetchone()
-    finally:
-        conn.close()
-
-    if not row or not check_password_hash(row["password_hash"], payload["password"]):
-        log_event(
-            "auth.login_failed",
-            "Invalid username or password",
-            user_id=row["id"] if row else None,
-            level="warning",
-            context={"username": payload["username"]},
-        )
-        return error_response("invalid_credentials", "Invalid username or password", 401)
-
-    if row and "is_admin" in row.keys():
-        is_admin_flag = bool(row["is_admin"])
-    if row and "display_name" in row.keys():
-        display_name = row["display_name"]
-
-    access_token, csrf_token = _create_access_token(
-        row["id"],
-        payload["username"],
-        is_admin=is_admin_flag,
-        display_name=display_name,
+    result, status = auth_service.authenticate_user(
+        data,
+        jwt_secret=app.config.get("JWT_SECRET", ""),
+        jwt_algorithm=app.config.get("JWT_ALGORITHM", "HS256"),
+        jwt_exp_minutes=int(app.config.get("JWT_EXP_MINUTES", 60)),
     )
-    log_event(
-        "auth.login",
-        "User logged in",
-        user_id=row["id"],
-        context={"username": payload["username"], "is_admin": is_admin_flag},
-    )
-    return jsonify(
-        {
-            "access_token": access_token,
-            "csrf_token": csrf_token,
-            "token_type": "Bearer",
-            "expires_in": int(app.config.get("JWT_EXP_MINUTES", 60)) * 60,
-            "display_name": display_name,
-            "is_admin": is_admin_flag,
-        }
-    )
+    return jsonify(result), status
 
 
 def get_current_user_profile():
@@ -1232,26 +1133,8 @@ def get_current_user_profile():
     if not current_user:
         return error_response("unauthorized", "Unauthorized", 401)
     user_id = current_user["id"]
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                COALESCE(NULLIF(display_name, ''), username) AS display_name,
-                COALESCE(is_admin, FALSE) AS is_admin,
-                created_at
-            FROM users
-            WHERE id = ?
-            """,
-            (user_id,),
-        ).fetchone()
-    finally:
-        conn.close()
-    if not row:
-        return error_response("not_found", "User not found", 404)
-    return jsonify(_serialize_user_row(row))
+    payload = auth_service.get_user_profile(user_id)
+    return jsonify(payload)
 
 
 def update_current_user():
@@ -1260,50 +1143,8 @@ def update_current_user():
         return error_response("unauthorized", "Unauthorized", 401)
 
     data = request.get_json(silent=True) or {}
-    payload = validate_user_update_payload(data)
-
-    updates = []
-    params: list = []
-    if "display_name" in payload:
-        updates.append("display_name = ?")
-        params.append(payload["display_name"].strip())
-    if "password" in payload:
-        updates.append("password_hash = ?")
-        params.append(generate_password_hash(payload["password"]))
-
-    if not updates:
-        return jsonify({"message": "No changes detected"}), 200
-
-    params.append(current_user["id"])
-
-    with db_transaction() as conn:
-        conn.execute(
-            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
-            params,
-        )
-        row = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                COALESCE(NULLIF(display_name, ''), username) AS display_name,
-                COALESCE(is_admin, FALSE) AS is_admin,
-                created_at
-            FROM users
-            WHERE id = ?
-            """,
-            (current_user["id"],),
-        ).fetchone()
-
-    if not row:
-        return error_response("not_found", "User not found", 404)
-
-    return jsonify(
-        {
-            "message": "Profile updated",
-            "user": _serialize_user_row(row),
-        }
-    )
+    result, status = auth_service.update_user_profile(current_user["id"], data)
+    return jsonify(result), status
 
 
 def delete_current_user():
@@ -1312,51 +1153,24 @@ def delete_current_user():
         return error_response("unauthorized", "Unauthorized", 401)
     user_id = current_user["id"]
 
-    with db_transaction() as conn:
-        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    if cur.rowcount == 0:
-        return error_response("not_found", "User not found", 404)
+    result, status = auth_service.delete_user(user_id, invalidate_cache_cb=invalidate_cache)
 
-    invalidate_cache("today")
-    invalidate_cache("stats")
-
-    return jsonify({"message": "Account deleted"}), 200
+    return jsonify(result), status
 
 
 def list_users():
-    conn = get_db_connection()
-    try:
-        rows = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                COALESCE(NULLIF(display_name, ''), username) AS display_name,
-                COALESCE(is_admin, FALSE) AS is_admin,
-                created_at
-            FROM users
-            ORDER BY LOWER(username) ASC
-            """
-        ).fetchall()
-    finally:
-        conn.close()
-    return jsonify([_serialize_user_row(row) for row in rows])
+    users = admin_service.list_users()
+    return jsonify(users)
 
 
 def admin_delete_user(user_id: int):
     current_user = getattr(g, "current_user", None)
-    if current_user and current_user.get("id") == user_id:
-        return error_response("invalid_operation", "Admins cannot delete their own account", 400)
-
-    with db_transaction() as conn:
-        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-
-    if cur.rowcount == 0:
-        return error_response("not_found", "User not found", 404)
-
-    invalidate_cache("today")
-    invalidate_cache("stats")
-    return jsonify({"message": f"User {user_id} deleted"}), 200
+    result, status = admin_service.delete_user(
+        user_id,
+        requester_id=current_user.get("id") if current_user else None,
+        invalidate_cache_cb=invalidate_cache,
+    )
+    return jsonify(result), status
 
 
 @app.before_request
@@ -1990,302 +1804,6 @@ def delete_entry(entry_id):
         return jsonify({"message": "Záznam smazán"}), 200
     except SQLAlchemyError as exc:
         return error_response("database_error", str(exc), 500)
-
-
-def get_activities():
-    user_id = _current_user_id()
-    is_admin = _is_admin_user()
-    if user_id is None:
-        return error_response("unauthorized", "Missing user context", 401)
-
-    show_all = request.args.get("all", "false").lower() in ("1", "true", "yes")
-    conn = get_db_connection()
-    try:
-        pagination = parse_pagination()
-        params: list = []
-        where_clauses = []
-        if user_id is not None:
-            where_clauses.append(_user_scope_clause("user_id", include_unassigned=is_admin))
-            params.append(user_id)
-        if not show_all:
-            where_clauses.append("active = TRUE")
-
-        where_sql = ""
-        if where_clauses:
-            where_sql = "WHERE " + " AND ".join(where_clauses)
-
-        params.extend([pagination["limit"], pagination["offset"]])
-        query = f"""
-            SELECT *
-            FROM activities
-            {where_sql}
-            ORDER BY active DESC, category ASC, name ASC
-            LIMIT ? OFFSET ?
-        """
-        rows = conn.execute(query, params).fetchall()
-        payload = []
-        for row in rows:
-            item = dict(row)
-            if "active" in item:
-                item["active"] = 1 if bool(item["active"]) else 0
-            payload.append(item)
-        return jsonify(payload)
-    except SQLAlchemyError as exc:
-        return error_response("database_error", str(exc), 500)
-    finally:
-        conn.close()
-
-
-def add_activity():
-    user_id = _current_user_id()
-    if user_id is None:
-        return error_response("unauthorized", "Missing user context", 401)
-
-    limits = app.config["RATE_LIMITS"]["add_activity"]
-    limited = rate_limit("add_activity", limits["limit"], limits["window"])
-    if limited:
-        return limited
-
-    idempotency_key = request.headers.get("X-Idempotency-Key")
-    cached_response = _idempotency_lookup(user_id, idempotency_key)
-    if cached_response:
-        payload, status_code = cached_response
-        return jsonify(payload), status_code
-
-    overwrite_requested = _header_truthy(request.headers.get("X-Overwrite-Existing"))
-
-    data = request.get_json() or {}
-    payload = validate_activity_create_payload(data)
-    name = payload["name"]
-    category = payload["category"]
-    activity_type = payload["activity_type"]
-    goal = payload["goal"]
-    description = payload["description"]
-    frequency_per_day = payload["frequency_per_day"]
-    frequency_per_week = payload["frequency_per_week"]
-
-    try:
-        with db_transaction() as conn:
-            conn.execute(
-                """
-                INSERT INTO activities (
-                    name,
-                    category,
-                    activity_type,
-                    goal,
-                    description,
-                    active,
-                    frequency_per_day,
-                    frequency_per_week,
-                    deactivated_at,
-                    user_id
-                )
-                VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
-                """,
-                (
-                    name,
-                    category,
-                    activity_type,
-                    goal,
-                    description,
-                    frequency_per_day,
-                    frequency_per_week,
-                    user_id,
-                ),
-            )
-        invalidate_cache("today")
-        invalidate_cache("stats")
-        log_event(
-            "activity.create",
-            "Activity created",
-            user_id=user_id,
-            context={
-                "name": name,
-                "category": category,
-            },
-        )
-        response_payload = {"message": "Kategorie přidána"}
-        if idempotency_key:
-            _idempotency_store_response(user_id, idempotency_key, response_payload, 201)
-        return jsonify(response_payload), 201
-    except IntegrityError as exc:
-        if overwrite_requested:
-            with db_transaction() as conn:
-                cur = conn.execute(
-                    """
-                    UPDATE activities
-                    SET category = ?, activity_type = ?, goal = ?, description = ?, frequency_per_day = ?, frequency_per_week = ?, active = TRUE, deactivated_at = NULL
-                    WHERE name = ? AND user_id = ?
-                    """,
-                    (
-                        category,
-                        activity_type,
-                        goal,
-                        description,
-                        frequency_per_day,
-                        frequency_per_week,
-                        name,
-                        user_id,
-                    ),
-                )
-            if cur.rowcount > 0:
-                invalidate_cache("today")
-                invalidate_cache("stats")
-                response_payload = {"message": "Kategorie aktualizována", "overwrite": True}
-                if idempotency_key:
-                    _idempotency_store_response(user_id, idempotency_key, response_payload, 200)
-                return jsonify(response_payload), 200
-        logger.exception("activities.insert_conflict", error=str(exc))
-        log_event(
-            "activity.create_failed",
-            "Activity creation failed",
-            user_id=user_id,
-            level="warning",
-            context={"name": name, "error": "duplicate"},
-        )
-        return error_response(
-            "conflict",
-            "Kategorie s tímto názvem již existuje",
-            409,
-            details={"reason": str(getattr(exc.orig, "diag", "")) or str(exc.orig) if getattr(exc, "orig", None) else str(exc)},
-        )
-
-
-def update_activity(activity_id):
-    user_id = _current_user_id()
-    is_admin = _is_admin_user()
-    if user_id is None:
-        return error_response("unauthorized", "Missing user context", 401)
-
-    limits = app.config["RATE_LIMITS"]["update_activity"]
-    limited = rate_limit("update_activity", limits["limit"], limits["window"])
-    if limited:
-        return limited
-
-    data = request.get_json() or {}
-    payload = validate_activity_update_payload(data)
-
-    with db_transaction() as conn:
-        select_query = "SELECT name, user_id FROM activities WHERE id = ?"
-        select_params: list = [activity_id]
-        if not is_admin:
-            select_query += " AND user_id = ?"
-            select_params.append(user_id)
-        row = conn.execute(select_query, select_params).fetchone()
-        if not row:
-            return error_response("not_found", "Aktivita nenalezena", 404)
-
-        owner_user_id = row["user_id"]
-
-        update_clauses = []
-        params = []
-        for key in (
-            "category",
-            "activity_type",
-            "goal",
-            "description",
-            "frequency_per_day",
-            "frequency_per_week",
-        ):
-            if key in payload:
-                update_clauses.append(f"{key} = ?")
-                params.append(payload[key])
-
-        if not update_clauses:
-            return jsonify({"message": "No changes detected"}), 200
-
-        params.append(activity_id)
-        update_where = "id = ?"
-        if not is_admin:
-            update_where += " AND user_id = ?"
-            params.append(user_id)
-        conn.execute(f"UPDATE activities SET {', '.join(update_clauses)} WHERE {update_where}", params)
-
-        entry_update_clauses = []
-        entry_params = []
-        if "description" in payload:
-            entry_update_clauses.append("description = ?")
-            entry_params.append(payload["description"])
-        if "category" in payload:
-            entry_update_clauses.append("activity_category = ?")
-            entry_params.append(payload["category"])
-        if "activity_type" in payload:
-            entry_update_clauses.append("activity_type = ?")
-            entry_params.append(payload["activity_type"])
-        if "goal" in payload:
-            entry_update_clauses.append("activity_goal = ?")
-            entry_params.append(payload["goal"])
-        if entry_update_clauses:
-            entry_params.append(row["name"])
-            entry_where = "activity = ?"
-            if owner_user_id is not None:
-                entry_where += " AND user_id = ?"
-                entry_params.append(owner_user_id)
-            conn.execute(
-                f"UPDATE entries SET {', '.join(entry_update_clauses)} WHERE {entry_where}",
-                entry_params,
-            )
-
-    invalidate_cache("today")
-    invalidate_cache("stats")
-    return jsonify({"message": "Aktivita aktualizována"}), 200
-
-
-def deactivate_activity(activity_id):
-    user_id = _current_user_id()
-    is_admin = _is_admin_user()
-    if user_id is None:
-        return error_response("unauthorized", "Missing user context", 401)
-
-    limits = app.config["RATE_LIMITS"]["activity_status"]
-    limited = rate_limit("activities_deactivate", limits["limit"], limits["window"])
-    if limited:
-        return limited
-    deactivation_date = datetime.now().strftime("%Y-%m-%d")
-
-    with db_transaction() as conn:
-        params = [deactivation_date, activity_id]
-        where_clause = "id = ?"
-        if not is_admin:
-            where_clause += " AND user_id = ?"
-            params.append(user_id)
-        cur = conn.execute(
-            f"UPDATE activities SET active = FALSE, deactivated_at = ? WHERE {where_clause}",
-            params,
-        )
-        if cur.rowcount == 0:
-            return error_response("not_found", "Aktivita nenalezena", 404)
-    invalidate_cache("today")
-    invalidate_cache("stats")
-    return jsonify({"message": "Aktivita deaktivována"}), 200
-
-
-def activate_activity(activity_id):
-    user_id = _current_user_id()
-    is_admin = _is_admin_user()
-    if user_id is None:
-        return error_response("unauthorized", "Missing user context", 401)
-
-    limits = app.config["RATE_LIMITS"]["activity_status"]
-    limited = rate_limit("activities_activate", limits["limit"], limits["window"])
-    if limited:
-        return limited
-
-    with db_transaction() as conn:
-        params = [activity_id]
-        where_clause = "id = ?"
-        if not is_admin:
-            where_clause += " AND user_id = ?"
-            params.append(user_id)
-        cur = conn.execute(
-            f"UPDATE activities SET active = TRUE, deactivated_at = NULL WHERE {where_clause}",
-            params,
-        )
-        if cur.rowcount == 0:
-            return error_response("not_found", "Aktivita nenalezena", 404)
-    invalidate_cache("today")
-    invalidate_cache("stats")
-    return jsonify({"message": "Aktivita aktivována"}), 200
 
 
 def get_progress_stats():
