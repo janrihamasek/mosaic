@@ -1,24 +1,31 @@
-import app as app_module
 from flask import Blueprint, g, jsonify
+
 from security import jwt_required, require_admin, error_response
 from services import admin_service
+from infra.cache_manager import invalidate_cache
 
 admin_bp = Blueprint("admin", __name__)
 
 
 @admin_bp.get("/")
 def home():
-    return app_module.home()
+    from app import home as app_home  # local import to avoid circular import at module load
+
+    return app_home()
 
 
 @admin_bp.get("/metrics")
 def metrics():
-    return app_module.metrics()
+    from app import metrics as app_metrics  # local import to avoid circular import at module load
+
+    return app_metrics()
 
 
 @admin_bp.get("/healthz")
 def health():
-    return app_module.health()
+    from app import health as app_health  # local import to avoid circular import at module load
+
+    return app_health()
 
 
 @admin_bp.get("/users")
@@ -36,9 +43,6 @@ def admin_delete_user(user_id: int):
     current_user = getattr(g, "current_user", None)
     if not current_user:
         return error_response("unauthorized", "Unauthorized", 401)
-
-    # Lazy import to avoid circulars during app setup
-    from app import invalidate_cache  # type: ignore
 
     result, status = admin_service.delete_user(
         user_id,

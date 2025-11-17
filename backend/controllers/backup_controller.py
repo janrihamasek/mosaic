@@ -1,8 +1,6 @@
-from flask import Blueprint, jsonify, request, send_file, Response
+from flask import Blueprint, Response, jsonify, request, send_file
 
 from controllers.helpers import current_user_id, is_admin_user, parse_pagination
-from infra.cache_manager import invalidate_cache
-from app import _set_export_headers, backup_manager
 from security import jwt_required, ValidationError, error_response
 from services import backup_service
 
@@ -12,6 +10,8 @@ backup_bp = Blueprint("backup", __name__)
 @backup_bp.get("/backup/status")
 @jwt_required()
 def backup_status():
+    from app import backup_manager  # local import to avoid circular init
+
     try:
         status = backup_service.get_backup_status(backup_manager)
     except ValidationError as exc:
@@ -23,6 +23,8 @@ def backup_status():
 @jwt_required()
 def backup_run():
     operator_id = current_user_id()
+    from app import backup_manager  # local import to avoid circular init
+
     try:
         result, status = backup_service.run_backup(backup_manager, operator_id=operator_id)
     except ValidationError as exc:
@@ -35,6 +37,8 @@ def backup_run():
 def backup_toggle():
     operator_id = current_user_id()
     payload = request.get_json(silent=True) or {}
+    from app import backup_manager  # local import to avoid circular init
+
     try:
         result, status = backup_service.toggle_backup(backup_manager, operator_id=operator_id, payload=payload)
     except ValidationError as exc:
@@ -45,6 +49,8 @@ def backup_toggle():
 @backup_bp.get("/backup/download/<path:filename>")
 @jwt_required()
 def backup_download(filename: str):
+    from app import backup_manager  # local import to avoid circular init
+
     try:
         path = backup_service.resolve_backup_path(backup_manager, filename)
     except ValidationError as exc:
@@ -59,6 +65,8 @@ def export_json():
     is_admin = is_admin_user()
     if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
+
+    from app import backup_manager  # local import to avoid circular init
 
     pagination = parse_pagination(default_limit=500, max_limit=2000)
     limit = pagination["limit"]
@@ -93,6 +101,8 @@ def export_csv():
     if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
+    from app import backup_manager  # local import to avoid circular init
+
     pagination = parse_pagination(default_limit=500, max_limit=2000)
     limit = pagination["limit"]
     offset = pagination["offset"]
@@ -117,3 +127,21 @@ def export_csv():
         total_entries=meta["total_entries"],
         total_activities=meta["total_activities"],
     )
+
+
+def _set_export_headers(
+    response: Response,
+    extension: str,
+    *,
+    limit: int,
+    offset: int,
+    total_entries: int,
+    total_activities: int,
+) -> Response:
+    response.headers["Content-Disposition"] = f'attachment; filename="mosaic-export.{extension}"'
+    response.headers["X-Limit"] = str(limit)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Total-Entries"] = str(total_entries)
+    response.headers["X-Total-Activities"] = str(total_activities)
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response

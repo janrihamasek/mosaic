@@ -44,7 +44,7 @@ def get_activities():
 
 @activities_bp.post("/add_activity")
 def add_activity():
-    user_id = _current_user_id()
+    user_id = current_user_id()
     if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 

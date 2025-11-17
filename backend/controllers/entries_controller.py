@@ -1,16 +1,23 @@
 from typing import Any, Dict
 
-from flask import Blueprint, jsonify, request, current_app, g
+import os
+import tempfile
+from typing import Any, Dict
 
-from security import rate_limit, ValidationError, error_response
-from controllers.helpers import (
-    current_user_id,
-    is_admin_user,
-    parse_pagination,
+from audit import log_event
+from flask import Blueprint, current_app, g, jsonify, request
+from import_data import import_csv as run_import_csv
+from security import (
+    ValidationError,
+    error_response,
+    rate_limit,
+    validate_csv_import_payload,
 )
-from infra.cache_manager import cache_get, cache_set, invalidate_cache, TODAY_CACHE_TTL
-from app import import_csv_endpoint as import_csv_handler
 from services import entries_service
+from werkzeug.utils import secure_filename
+
+from controllers.helpers import current_user_id, is_admin_user, parse_pagination
+from infra.cache_manager import TODAY_CACHE_TTL, cache_get, cache_set, invalidate_cache
 
 entries_bp = Blueprint("entries", __name__)
 
@@ -162,4 +169,45 @@ def finalize_day():
 
 @entries_bp.post("/import_csv")
 def import_csv_endpoint():
-    return import_csv_handler()
+    user_id = current_user_id()
+    if user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+    limits = current_app.config["RATE_LIMITS"]["import_csv"]
+    limited = rate_limit("import_csv", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    file = validate_csv_import_payload(request.files)
+    filename_input = file.filename or "import.csv"
+    filename = secure_filename(filename_input)
+    suffix = os.path.splitext(filename)[1] or ".csv"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+        summary = run_import_csv(tmp_path, user_id=user_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        log_event(
+            "import.csv_failed",
+            "CSV import failed",
+            user_id=user_id,
+            level="error",
+            context={"error": str(exc), "filename": filename},
+        )
+        return error_response("import_failed", f"Failed to import CSV: {exc}", 500)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    invalidate_cache("today")
+    invalidate_cache("stats")
+    log_event(
+        "import.csv",
+        "CSV import completed",
+        user_id=user_id,
+        context={"summary": summary, "filename": filename},
+    )
+    return jsonify({"message": "CSV import completed", "summary": summary}), 200

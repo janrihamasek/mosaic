@@ -1,8 +1,6 @@
-import copy
 import json
 import os
 import secrets
-import subprocess
 import tempfile
 import logging
 import sys
@@ -14,12 +12,11 @@ from functools import wraps
 from threading import Lock, Thread
 from time import perf_counter, sleep, time
 from typing import Any, DefaultDict, Dict, Iterator, List, Optional, Tuple, TypedDict, cast
-from urllib.parse import urlparse, urlunparse
 
 import click
 import structlog
 import jwt  # type: ignore[import]
-from flask import Flask, Response, jsonify, request, g, stream_with_context, send_file
+from flask import Flask, Response, jsonify, request, g
 from flask_cors import CORS
 from flask.cli import with_appcontext
 from werkzeug.datastructures import FileStorage
@@ -32,6 +29,7 @@ from import_data import import_csv as run_import_csv
 from https_utils import resolve_ssl_context
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from services import auth_service, admin_service, activities_service, nightmotion_service
+from controllers.helpers import current_user_id as _current_user_id, is_admin_user as _is_admin_user, parse_pagination
 from infra.cache_manager import (
     cache_get,
     cache_set,
@@ -202,7 +200,7 @@ ERROR_CODE_BY_STATUS = {
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
-# Metrics state
+# Metrics state and helpers
 class EndpointSnapshot(TypedDict):
     method: str
     endpoint: str
@@ -267,11 +265,214 @@ def _initialize_metrics_state() -> MetricsState:
 _metrics_state: MetricsState = _initialize_metrics_state()
 _metrics_lock = Lock()
 _metrics_logger_thread: Optional[Thread] = None
+_SERVER_START_TIME = time()
+_METRICS_LOG_INTERVAL_SECONDS = int(os.environ.get("METRICS_LOG_INTERVAL_SECONDS", "60"))
 
-def _header_truthy(value: Optional[str]) -> bool:
-    if value is None:
-        return False
-    return value.strip().lower() in ("1", "true", "yes", "force", "overwrite")
+
+def _resolve_metrics_dimensions() -> Tuple[str, str]:
+    method = (getattr(g, "metrics_method", None) or getattr(request, "method", "GET") or "GET").upper()
+    endpoint = getattr(g, "metrics_endpoint", None)
+    if not endpoint:
+        endpoint = request.endpoint
+    if not endpoint:
+        rule = getattr(request, "url_rule", None)
+        endpoint = getattr(rule, "rule", None) if rule else None
+    if not endpoint:
+        endpoint = request.path or "<unmatched>"
+    return method, endpoint
+
+
+def _record_request_metrics(status_code: int, duration_ms: float, *, is_error: bool = False) -> None:
+    method, endpoint = _resolve_metrics_dimensions()
+    is_client_error = 400 <= status_code < 500
+    is_server_error = status_code >= 500
+    now = time()
+
+    with _metrics_lock:
+        bucket = _metrics_state["per_endpoint"][(method, endpoint)]
+        bucket["count"] += 1
+        bucket["total_latency_ms"] += duration_ms
+        bucket["status_counts"][status_code] += 1
+
+        _metrics_state["requests_total"] += 1
+        _metrics_state["latency_total_ms"] += duration_ms
+        _metrics_state["status_counts"][status_code] += 1
+
+        error_recorded = False
+        if is_client_error:
+            bucket["errors_4xx"] += 1
+            _metrics_state["errors_4xx"] += 1
+            error_recorded = True
+        if is_server_error:
+            bucket["errors_5xx"] += 1
+            _metrics_state["errors_5xx"] += 1
+            error_recorded = True
+        if is_error and not error_recorded:
+            bucket["errors_5xx"] += 1
+            _metrics_state["errors_5xx"] += 1
+        _metrics_state["last_updated"] = now
+
+
+def _now_perf_counter() -> float:
+    """Indirection so tests can monkeypatch app.perf_counter reliably."""
+    return getattr(sys.modules[__name__], "perf_counter")()
+
+
+def reset_metrics_state() -> None:
+    """Reset the in-memory metrics store. Intended for use in tests."""
+    global _metrics_state
+    with _metrics_lock:
+        _metrics_state = _initialize_metrics_state()
+
+
+def _format_timestamp(ts: Optional[float]) -> Optional[str]:
+    if ts is None:
+        return None
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
+def get_metrics_json() -> MetricsSnapshot:
+    with _metrics_lock:
+        requests_total = _metrics_state["requests_total"]
+        total_latency_ms = _metrics_state["latency_total_ms"]
+        avg_latency_ms = total_latency_ms / requests_total if requests_total else 0.0
+        last_updated = _metrics_state.get("last_updated")
+        endpoints: List[EndpointSnapshot] = []
+        for (method, endpoint), bucket in _metrics_state["per_endpoint"].items():
+            count = bucket["count"]
+            avg_endpoint_latency = bucket["total_latency_ms"] / count if count else 0.0
+            endpoints.append(
+                EndpointSnapshot(
+                    method=method,
+                    endpoint=endpoint,
+                    count=count,
+                    avg_latency_ms=round(avg_endpoint_latency, 2),
+                    total_latency_ms=round(bucket["total_latency_ms"], 2),
+                    errors_4xx=bucket["errors_4xx"],
+                    errors_5xx=bucket["errors_5xx"],
+                    status_counts={str(code): value for code, value in bucket["status_counts"].items()},
+                )
+            )
+        endpoints.sort(key=lambda item: (item["endpoint"], item["method"]))
+
+        return MetricsSnapshot(
+            requests_total=requests_total,
+            total_latency_ms=round(total_latency_ms, 2),
+            avg_latency_ms=round(avg_latency_ms, 2),
+            errors_total={
+                "4xx": _metrics_state["errors_4xx"],
+                "5xx": _metrics_state["errors_5xx"],
+            },
+            status_counts={str(code): value for code, value in _metrics_state["status_counts"].items()},
+            endpoints=endpoints,
+            last_updated=_format_timestamp(last_updated),
+        )
+
+
+def get_metrics_text() -> str:
+    snapshot = get_metrics_json()
+    lines = [
+        "# HELP mosaic_requests_total Total HTTP requests processed by the Mosaic backend",
+        "# TYPE mosaic_requests_total counter",
+    ]
+    for entry in snapshot["endpoints"]:
+        lines.append(
+            f'mosaic_requests_total{{method="{entry["method"]}",endpoint="{entry["endpoint"]}"}} {entry["count"]}'
+        )
+    lines.append(f'mosaic_requests_global_total {snapshot["requests_total"]}')
+
+    lines.extend(
+        [
+            "# HELP mosaic_request_latency_ms_total Cumulative request latency in milliseconds",
+            "# TYPE mosaic_request_latency_ms_total counter",
+        ]
+    )
+    for entry in snapshot["endpoints"]:
+        lines.append(
+            f'mosaic_request_latency_ms_total{{method="{entry["method"]}",endpoint="{entry["endpoint"]}"}} '
+            f'{entry["total_latency_ms"]}'
+        )
+    lines.append(f'mosaic_request_latency_ms_average {snapshot["avg_latency_ms"]}')
+
+    lines.extend(
+        [
+            "# HELP mosaic_requests_errors_total Request error counts grouped by class",
+            "# TYPE mosaic_requests_errors_total counter",
+        ]
+    )
+    for error_type, value in snapshot["errors_total"].items():
+        lines.append(f'mosaic_requests_errors_total{{type="{error_type}"}} {value}')
+
+    status_counts = snapshot["status_counts"]
+    if status_counts:
+        lines.extend(
+            [
+                "# HELP mosaic_status_code_total Total responses grouped by HTTP status code",
+                "# TYPE mosaic_status_code_total counter",
+            ]
+        )
+        for status_code, value in status_counts.items():
+            lines.append(f'mosaic_status_code_total{{status="{status_code}"}} {value}')
+
+    return "\n".join(lines) + "\n"
+
+
+def _metrics_logger_loop() -> None:
+    while True:
+        sleep(_METRICS_LOG_INTERVAL_SECONDS)
+        snapshot = get_metrics_json()
+        logger.info("metrics.snapshot", metrics=snapshot)
+
+
+def _ensure_metrics_logger_started() -> None:
+    global _metrics_logger_thread
+    if _metrics_logger_thread and _metrics_logger_thread.is_alive():
+        return
+    thread = Thread(target=_metrics_logger_loop, daemon=True, name="metrics-logger")
+    thread.start()
+    _metrics_logger_thread = thread
+
+
+_ensure_metrics_logger_started()
+
+# Metrics state
+class EndpointSnapshot(TypedDict):
+    method: str
+    endpoint: str
+    count: int
+    avg_latency_ms: float
+    total_latency_ms: float
+    errors_4xx: int
+    errors_5xx: int
+    status_counts: Dict[str, int]
+
+
+class MetricsSnapshot(TypedDict):
+    requests_total: int
+    total_latency_ms: float
+    avg_latency_ms: float
+    errors_total: Dict[str, int]
+    status_counts: Dict[str, int]
+    endpoints: List[EndpointSnapshot]
+    last_updated: Optional[str]
+
+
+class EndpointBucket(TypedDict):
+    count: int
+    total_latency_ms: float
+    errors_4xx: int
+    errors_5xx: int
+    status_counts: Dict[int, int]
+
+
+class MetricsState(TypedDict):
+    requests_total: int
+    latency_total_ms: float
+    errors_4xx: int
+    errors_5xx: int
+    status_counts: Dict[int, int]
+    per_endpoint: DefaultDict[Tuple[str, str], EndpointBucket]
+    last_updated: Optional[float]
 
 
 def _create_access_token(
@@ -351,211 +552,9 @@ def _serialize_user_row(row) -> dict:
     }
 
 
-def parse_pagination(default_limit: int = 100, max_limit: int = 500) -> Dict[str, int]:
-    try:
-        limit_raw = request.args.get("limit", default_limit)
-        limit = int(limit_raw)
-        if limit <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        raise ValidationError("limit must be a positive integer", code="invalid_query")
-
-    try:
-        offset_raw = request.args.get("offset", 0)
-        offset = int(offset_raw)
-        if offset < 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        raise ValidationError("offset must be a non-negative integer", code="invalid_query")
-
-    limit = min(limit, max_limit)
-    return {"limit": limit, "offset": offset}
-
-
 def _build_export_filename(extension: str) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     return f"mosaic-export-{timestamp}.{extension}"
-
-
-def _set_export_headers(
-    response: Response,
-    extension: str,
-    *,
-    limit: int,
-    offset: int,
-    total_entries: int,
-    total_activities: int,
-) -> Response:
-    response.headers["Content-Disposition"] = f'attachment; filename="{_build_export_filename(extension)}"'
-    response.headers["X-Limit"] = str(limit)
-    response.headers["X-Offset"] = str(offset)
-    response.headers["X-Total-Entries"] = str(total_entries)
-    response.headers["X-Total-Activities"] = str(total_activities)
-    response.headers.setdefault("Cache-Control", "no-store")
-    return response
-
-
-def _fetch_export_data(limit: int, offset: int) -> tuple[list[dict], list[dict], int, int]:
-    user_id = _current_user_id()
-    is_admin = _is_admin_user()
-    if user_id is None:
-        raise ValidationError("Missing user context", code="unauthorized", status=401)
-
-    stats_include_unassigned = False
-
-    stats_include_unassigned = False
-
-    conn = get_db_connection()
-    try:
-        entry_params: list = []
-        entry_where = ""
-        if user_id is not None:
-            entry_where = f"WHERE {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
-            entry_params.append(user_id)
-
-        entries_cursor = conn.execute(
-            f"""
-            SELECT
-                e.id AS entry_id,
-                e.date,
-                e.activity,
-                e.description AS entry_description,
-                e.value,
-                e.note,
-                e.activity_category,
-                e.activity_goal,
-                e.activity_type
-            FROM entries e
-            LEFT JOIN activities a
-              ON a.name = e.activity
-             AND (a.user_id = e.user_id OR a.user_id IS NULL)
-            {entry_where}
-            ORDER BY e.date ASC, e.id ASC
-            LIMIT ? OFFSET ?
-            """,
-            tuple(entry_params + [limit, offset]),
-        )
-
-        activity_params: list = []
-        activity_where = ""
-        if user_id is not None:
-            activity_where = f"WHERE {_user_scope_clause('a.user_id', include_unassigned=is_admin)}"
-            activity_params.append(user_id)
-
-        activities_cursor = conn.execute(
-            f"""
-            SELECT
-                a.id AS activity_id,
-                a.name,
-                a.category,
-                a.activity_type,
-                a.goal,
-                a.description AS activity_description,
-                a.active,
-                a.frequency_per_day,
-                a.frequency_per_week,
-                a.deactivated_at
-            FROM activities a
-            {activity_where}
-            ORDER BY a.name ASC, a.id ASC
-            LIMIT ? OFFSET ?
-            """,
-            tuple(activity_params + [limit, offset]),
-        )
-
-        if user_id is None:
-            total_entries_stmt = "SELECT COUNT(1) FROM entries"
-            total_entries_params: Tuple = ()
-            total_activities_stmt = "SELECT COUNT(1) FROM activities"
-            total_activities_params: Tuple = ()
-        else:
-            total_entries_stmt = f"SELECT COUNT(1) FROM entries WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}"
-            total_entries_params = (user_id,)
-            total_activities_stmt = f"SELECT COUNT(1) FROM activities WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}"
-            total_activities_params = (user_id,)
-
-        total_entries = conn.execute(total_entries_stmt, total_entries_params).scalar_one()
-        total_activities = conn.execute(total_activities_stmt, total_activities_params).scalar_one()
-        entries = [dict(row) for row in entries_cursor.fetchall()]
-        activities = [dict(row) for row in activities_cursor.fetchall()]
-        return entries, activities, int(total_entries), int(total_activities)
-    finally:
-        conn.close()
-
-
-default_backup_dir = Path(app.root_path) / "backups"
-app.config.setdefault("BACKUP_DIR", str(default_backup_dir))
-
-backup_manager = BackupManager(app)
-
-def get_db_connection():
-    return sa_connection(db.engine)
-
-
-@contextmanager
-def db_transaction():
-    with transactional_connection(db.engine) as conn:
-        yield conn
-
-
-def home():
-    return jsonify({"message": "Backend běží!", "database": app.config.get("SQLALCHEMY_DATABASE_URI")})
-
-
-def metrics():
-    if (request.args.get("format") or "").lower() == "json":
-        return jsonify(get_metrics_json())
-    text_body = get_metrics_text()
-    return Response(text_body, mimetype="text/plain; version=0.0.4; charset=utf-8")
-
-
-def health():
-    summary, healthy = _build_health_summary()
-    status_code = 200 if healthy else 503
-    return jsonify(summary), status_code
-
-
-@app.cli.command("health")
-@with_appcontext
-def health_command():
-    summary, healthy = _build_health_summary()
-    status_text = "HEALTHY" if healthy else "UNHEALTHY"
-    metric_col_width = max(len("Metric"), max(len(key) for key in summary))
-    header = f'{"Metric":<{metric_col_width}} | Value'
-    divider = "-" * len(header)
-    click.echo(header)
-    click.echo(divider)
-    for key, value in summary.items():
-        click.echo(f"{key:<{metric_col_width}} | {value}")
-    click.echo(divider)
-    click.echo(f"Status: {status_text}")
-
-
-def register():
-    limits = app.config["RATE_LIMITS"]["register"]
-    limited = rate_limit("register", limits["limit"], limits["window"])
-    if limited:
-        return limited
-
-    data = request.get_json() or {}
-    result, status = auth_service.register_user(data)
-    return jsonify(result), status
-
-
-def login():
-    limits = app.config["RATE_LIMITS"]["login"]
-    limited = rate_limit("login", limits["limit"], limits["window"])
-    if limited:
-        return limited
-
-    data = request.get_json() or {}
-    result, status = auth_service.authenticate_user(
-        data,
-        jwt_secret=app.config.get("JWT_SECRET", ""),
-        jwt_algorithm=app.config.get("JWT_ALGORITHM", "HS256"),
-        jwt_exp_minutes=int(app.config.get("JWT_EXP_MINUTES", 60)),
-    )
-    return jsonify(result), status
 
 
 def get_current_user_profile():
@@ -660,6 +659,46 @@ def _enforce_jwt_authentication():
             return error_response("invalid_csrf", "Missing or invalid CSRF token", 403)
 
     return None
+
+
+@app.before_request
+def _start_request_timer():
+    g.metrics_start_time = _now_perf_counter()
+    g.metrics_endpoint = request.endpoint or (request.url_rule.rule if getattr(request, "url_rule", None) else request.path)
+    g.metrics_method = (request.method or "GET").upper()
+
+
+@app.after_request
+def _log_request(response: Response):
+    try:
+        start = getattr(g, "metrics_start_time", None)
+        if start is not None:
+            duration_ms = (_now_perf_counter() - start) * 1000
+        else:
+            duration_ms = 0.0
+        _record_request_metrics(response.status_code, duration_ms)
+        logger.bind(
+            method=request.method,
+            path=request.path,
+            status_code=response.status_code,
+            duration_ms=round(duration_ms, 2),
+            user_id=getattr(g, "current_user", {}).get("id"),
+        ).info("request.completed")
+    except Exception:
+        pass
+    return response
+
+
+@app.teardown_request
+def _record_metrics_on_teardown(exc: Optional[BaseException]):
+    if exc is None:
+        return
+    try:
+        start = getattr(g, "metrics_start_time", None)
+        duration_ms = (_now_perf_counter() - start) * 1000 if start else 0.0
+        _record_request_metrics(500, duration_ms, is_error=True)
+    except Exception:
+        pass
 
 
 @app.errorhandler(ValidationError)
@@ -783,3 +822,48 @@ register_controllers(app)
 if __name__ == "__main__":
     debug = os.environ.get("FLASK_DEBUG", "0").lower() in ("1", "true", "yes")
     app.run(debug=debug)
+def _check_db_connection() -> bool:
+    try:
+        with db.engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception as exc:
+        logger.warning("health.db_check_failed", error=str(exc))
+        return False
+
+
+def _check_cache_state() -> bool:
+    try:
+        return cache_health()
+    except Exception as exc:
+        logger.warning("health.cache_check_failed", error=str(exc))
+        return False
+
+
+def _current_uptime_seconds() -> float:
+    return max(0.0, time() - _SERVER_START_TIME)
+
+
+def _build_health_summary() -> Tuple[Dict[str, object], bool]:
+    metrics_snapshot = get_metrics_json()
+    uptime_s = round(_current_uptime_seconds(), 2)
+    requests_total = metrics_snapshot["requests_total"]
+    uptime_minutes = uptime_s / 60 if uptime_s else 0.0
+    if uptime_minutes <= 0:
+        req_per_min = float(requests_total)
+    else:
+        req_per_min = requests_total / uptime_minutes
+    error_total = metrics_snapshot["errors_total"]["4xx"] + metrics_snapshot["errors_total"]["5xx"]
+    error_rate = error_total / requests_total if requests_total else 0.0
+    db_ok = _check_db_connection()
+    cache_ok = _check_cache_state()
+    summary = {
+        "uptime_s": uptime_s,
+        "db_ok": db_ok,
+        "cache_ok": cache_ok,
+        "req_per_min": round(req_per_min, 2),
+        "error_rate": round(error_rate, 4),
+        "last_metrics_update": metrics_snapshot.get("last_updated"),
+    }
+    healthy = db_ok and cache_ok
+    return summary, healthy
