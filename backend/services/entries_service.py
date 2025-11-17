@@ -15,9 +15,8 @@ from security import (
     validate_entry_payload,
     validate_finalize_day_payload,
 )
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 
-from .common import db_transaction
 from .idempotency import lookup as idempotency_lookup
 from .idempotency import store_response as idempotency_store_response
 
@@ -75,82 +74,18 @@ def add_entry(
         return cached
 
     try:
-        with db_transaction():
-            activity_row = entries_repo.get_activity_metadata(activity, user_id)
-
-            description = activity_row["description"] if activity_row else ""
-            activity_category = activity_row["category"] if activity_row else ""
-            activity_goal = activity_row["goal"] if activity_row else 0
-            activity_type_value = (
-                activity_row["activity_type"] if activity_row else None
-            ) or "positive"
-
-            existing_entry = entries_repo.get_existing_entry(date, activity, user_id)
-            if not activity_row and existing_entry:
-                activity_category = (
-                    existing_entry["activity_category"] or activity_category
-                )
-                activity_goal = (
-                    existing_entry["activity_goal"]
-                    if existing_entry["activity_goal"] is not None
-                    else activity_goal
-                )
-                activity_type_value = (
-                    existing_entry["activity_type"] or activity_type_value
-                )
-            if not activity_row:
-                try:
-                    entries_repo.create_activity_for_entry(
-                        activity,
-                        activity_category or "",
-                        float(activity_goal or 0),
-                        description or "",
-                        user_id,
-                    )
-                except IntegrityError:
-                    pass
-
-            updates = {
-                "value": float_value,
-                "note": note,
-                "description": description,
-                "activity_category": activity_category,
-                "activity_goal": activity_goal,
-                "activity_type": activity_type_value,
-                "user_id": user_id,
-            }
-
-            rowcount = entries_repo.update_entry_by_date_and_activity(
-                date, activity, user_id, updates
-            )
-
-            if rowcount > 0:
-                response_payload = {"message": "Záznam aktualizován"}
-                status_code = 200
-            else:
-                rowcount = entries_repo.update_entry_by_date_and_activity(
-                    date, activity, None, updates
-                )
-
-                if rowcount > 0:
-                    response_payload = {"message": "Záznam aktualizován"}
-                    status_code = 200
-                else:
-                    entries_repo.create_entry(
-                        date,
-                        activity,
-                        float_value,
-                        note,
-                        description,
-                        activity_category,
-                        activity_goal,
-                        activity_type_value,
-                        user_id,
-                    )
-                    response_payload = {"message": "Záznam uložen"}
-                    status_code = 201
+        status, rowcount = entries_repo.upsert_entry(
+            date, activity, float_value, note, user_id
+        )
     except SQLAlchemyError as exc:
         raise ValidationError(str(exc), code="database_error", status=500)
+
+    if status == "updated":
+        response_payload = {"message": "Záznam aktualizován"}
+        status_code = 200
+    else:
+        response_payload = {"message": "Záznam uložen"}
+        status_code = 201
 
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
@@ -202,38 +137,10 @@ def finalize_day(
     data = validate_finalize_day_payload(payload or {})
     date = data["date"]
 
-    with db_transaction():
-        active_activities = entries_repo.get_active_activities_for_date(
-            date, user_id, is_admin
-        )
-        existing = entries_repo.get_existing_activities_for_date(
-            date, user_id, is_admin
-        )
-        existing_names = {e["activity"] for e in existing}
-
-        new_entries: List[Dict[str, Any]] = []
-        for a in active_activities:
-            if a["name"] not in existing_names:
-                activity_type_value = (
-                    (a.get("activity_type") or "positive")
-                    if isinstance(a, dict)
-                    else "positive"
-                )
-                new_entries.append(
-                    {
-                        "date": date,
-                        "activity": a["name"],
-                        "description": a["description"],
-                        "value": 0,
-                        "note": "",
-                        "activity_category": a["category"],
-                        "activity_goal": a["goal"],
-                        "activity_type": activity_type_value,
-                        "user_id": user_id,
-                    }
-                )
-
-        created = entries_repo.bulk_create_entries(new_entries) if new_entries else 0
+    try:
+        created = entries_repo.create_missing_entries_for_day(date, user_id, is_admin)
+    except SQLAlchemyError as exc:
+        raise ValidationError(str(exc), code="database_error", status=500)
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
         invalidate_cache_cb("stats")

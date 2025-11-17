@@ -1,10 +1,11 @@
 """Repository coordinating entry storage and retrieval."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from db_utils import connection as sa_connection
 from db_utils import transactional_connection
 from extensions import db
+from sqlalchemy.exc import IntegrityError
 
 
 def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
@@ -72,11 +73,13 @@ def list_entries(
     return [dict(row) for row in rows]
 
 
-def get_activity_metadata(activity_name: str, user_id: int) -> Optional[dict]:
+def get_activity_metadata(
+    activity_name: str, user_id: int, conn: Optional[Any] = None
+) -> Optional[dict]:
     """Fetch activity metadata for a user-scoped or unassigned activity."""
-    conn = sa_connection(db.engine)
+    managed_conn = conn or sa_connection(db.engine)
     try:
-        row = conn.execute(
+        row = managed_conn.execute(
             """
             SELECT category, goal, description, activity_type
             FROM activities
@@ -85,7 +88,7 @@ def get_activity_metadata(activity_name: str, user_id: int) -> Optional[dict]:
             (activity_name, user_id),
         ).fetchone()
         if not row:
-            row = conn.execute(
+            row = managed_conn.execute(
                 """
                 SELECT category, goal, description, activity_type
                 FROM activities
@@ -94,16 +97,19 @@ def get_activity_metadata(activity_name: str, user_id: int) -> Optional[dict]:
                 (activity_name,),
             ).fetchone()
     finally:
-        conn.close()
+        if conn is None:
+            managed_conn.close()
 
     return dict(row) if row else None
 
 
-def get_existing_entry(date: str, activity: str, user_id: int) -> Optional[dict]:
+def get_existing_entry(
+    date: str, activity: str, user_id: int, conn: Optional[Any] = None
+) -> Optional[dict]:
     """Fetch an existing entry by date/activity scoped to user or unassigned."""
-    conn = sa_connection(db.engine)
+    managed_conn = conn or sa_connection(db.engine)
     try:
-        row = conn.execute(
+        row = managed_conn.execute(
             """
             SELECT activity_category, activity_goal, activity_type
             FROM entries
@@ -112,7 +118,7 @@ def get_existing_entry(date: str, activity: str, user_id: int) -> Optional[dict]
             (date, activity, user_id),
         ).fetchone()
         if not row:
-            row = conn.execute(
+            row = managed_conn.execute(
                 """
                 SELECT activity_category, activity_goal, activity_type
                 FROM entries
@@ -121,34 +127,61 @@ def get_existing_entry(date: str, activity: str, user_id: int) -> Optional[dict]
                 (date, activity),
             ).fetchone()
     finally:
-        conn.close()
+        if conn is None:
+            managed_conn.close()
 
     return dict(row) if row else None
 
 
 def create_activity_for_entry(
-    activity_name: str, category: str, goal: float, description: str, user_id: int
+    activity_name: str,
+    category: str,
+    goal: float,
+    description: str,
+    user_id: int,
+    conn: Optional[Any] = None,
 ) -> None:
     """Insert a new activity when one does not exist for an entry."""
-    with transactional_connection(db.engine) as conn:
-        conn.execute(
-            """
-            INSERT INTO activities (
-                name,
-                category,
-                activity_type,
-                goal,
-                description,
-                active,
-                frequency_per_day,
-                frequency_per_week,
-                deactivated_at,
-                user_id
+    if conn is None:
+        with transactional_connection(db.engine) as managed_conn:
+            managed_conn.execute(
+                """
+                INSERT INTO activities (
+                    name,
+                    category,
+                    activity_type,
+                    goal,
+                    description,
+                    active,
+                    frequency_per_day,
+                    frequency_per_week,
+                    deactivated_at,
+                    user_id
+                )
+                VALUES (?, ?, 'positive', ?, ?, TRUE, 1, 1, NULL, ?)
+                """,
+                (activity_name, category, goal, description, user_id),
             )
-            VALUES (?, ?, 'positive', ?, ?, TRUE, 1, 1, NULL, ?)
-            """,
-            (activity_name, category, goal, description, user_id),
+        return
+
+    conn.execute(
+        """
+        INSERT INTO activities (
+            name,
+            category,
+            activity_type,
+            goal,
+            description,
+            active,
+            frequency_per_day,
+            frequency_per_week,
+            deactivated_at,
+            user_id
         )
+        VALUES (?, ?, 'positive', ?, ?, TRUE, 1, 1, NULL, ?)
+        """,
+        (activity_name, category, goal, description, user_id),
+    )
 
 
 def update_entry_by_date_and_activity(
@@ -156,6 +189,7 @@ def update_entry_by_date_and_activity(
     activity: str,
     user_id: Optional[int],
     updates: Dict[str, Any],
+    conn: Optional[Any] = None,
 ) -> int:
     """Update an entry scoped by date/activity/user (or unassigned) and return affected row count."""
     allowed_keys = {
@@ -183,12 +217,17 @@ def update_entry_by_date_and_activity(
     else:
         params.append(user_id)
 
-    with transactional_connection(db.engine) as conn:
-        result = conn.execute(
+    def _execute(target_conn):
+        result = target_conn.execute(
             f"UPDATE entries SET {', '.join(assignments)} WHERE date = ? AND activity = ? AND {user_clause}",
             params,
         )
         return result.rowcount
+
+    if conn is None:
+        with transactional_connection(db.engine) as managed_conn:
+            return _execute(managed_conn)
+    return _execute(conn)
 
 
 def create_entry(
@@ -201,36 +240,145 @@ def create_entry(
     activity_goal: float,
     activity_type: str,
     user_id: int,
+    conn: Optional[Any] = None,
 ) -> None:
     """Insert a new entry row."""
-    with transactional_connection(db.engine) as conn:
-        conn.execute(
-            """
-            INSERT INTO entries (
-                date,
-                activity,
-                description,
-                value,
-                note,
-                activity_category,
-                activity_goal,
-                activity_type,
-                user_id
+    if conn is None:
+        with transactional_connection(db.engine) as managed_conn:
+            managed_conn.execute(
+                """
+                INSERT INTO entries (
+                    date,
+                    activity,
+                    description,
+                    value,
+                    note,
+                    activity_category,
+                    activity_goal,
+                    activity_type,
+                    user_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    date,
+                    activity,
+                    description,
+                    value,
+                    note,
+                    activity_category,
+                    activity_goal,
+                    activity_type,
+                    user_id,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                date,
-                activity,
-                description,
-                value,
-                note,
-                activity_category,
-                activity_goal,
-                activity_type,
-                user_id,
-            ),
+        return
+
+    conn.execute(
+        """
+        INSERT INTO entries (
+            date,
+            activity,
+            description,
+            value,
+            note,
+            activity_category,
+            activity_goal,
+            activity_type,
+            user_id
         )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            date,
+            activity,
+            description,
+            value,
+            note,
+            activity_category,
+            activity_goal,
+            activity_type,
+            user_id,
+        ),
+    )
+
+
+def upsert_entry(
+    date: str, activity: str, value: float, note: str, user_id: int
+) -> Tuple[str, int]:
+    """
+    Create or update an entry in a single transaction.
+
+    Returns a tuple of ("created"|"updated", affected_rowcount).
+    """
+    with transactional_connection(db.engine) as conn:
+        activity_row = get_activity_metadata(activity, user_id, conn=conn)
+
+        description = activity_row["description"] if activity_row else ""
+        activity_category = activity_row["category"] if activity_row else ""
+        activity_goal = activity_row["goal"] if activity_row else 0
+        activity_type_value = (
+            activity_row["activity_type"] if activity_row else None
+        ) or "positive"
+
+        existing_entry = get_existing_entry(date, activity, user_id, conn=conn)
+        if not activity_row and existing_entry:
+            activity_category = existing_entry["activity_category"] or activity_category
+            activity_goal = (
+                existing_entry["activity_goal"]
+                if existing_entry["activity_goal"] is not None
+                else activity_goal
+            )
+            activity_type_value = existing_entry["activity_type"] or activity_type_value
+        if not activity_row:
+            try:
+                create_activity_for_entry(
+                    activity,
+                    activity_category or "",
+                    float(activity_goal or 0),
+                    description or "",
+                    user_id,
+                    conn=conn,
+                )
+            except IntegrityError:
+                pass
+
+        updates = {
+            "value": value,
+            "note": note,
+            "description": description,
+            "activity_category": activity_category,
+            "activity_goal": activity_goal,
+            "activity_type": activity_type_value,
+            "user_id": user_id,
+        }
+
+        rowcount = update_entry_by_date_and_activity(
+            date, activity, user_id, updates, conn=conn
+        )
+
+        if rowcount > 0:
+            return "updated", rowcount
+
+        rowcount = update_entry_by_date_and_activity(
+            date, activity, None, updates, conn=conn
+        )
+        if rowcount > 0:
+            return "updated", rowcount
+
+        create_entry(
+            date,
+            activity,
+            value,
+            note,
+            description,
+            activity_category,
+            activity_goal,
+            activity_type_value,
+            user_id,
+            conn=conn,
+        )
+        return "created", 1
 
 
 def delete_entry_by_id(entry_id: int, user_id: int, is_admin: bool) -> int:
@@ -247,10 +395,10 @@ def delete_entry_by_id(entry_id: int, user_id: int, is_admin: bool) -> int:
 
 
 def get_active_activities_for_date(
-    date: str, user_id: Optional[int], is_admin: bool
+    date: str, user_id: Optional[int], is_admin: bool, conn: Optional[Any] = None
 ) -> List[dict]:
     """Fetch active or not-yet-deactivated activities for a given date and user scope."""
-    conn = sa_connection(db.engine)
+    managed_conn = conn or sa_connection(db.engine)
     try:
         params: List[Any] = [date]
         where_clause = (
@@ -262,7 +410,7 @@ def get_active_activities_for_date(
             )
             params.append(user_id)
 
-        rows = conn.execute(
+        rows = managed_conn.execute(
             f"""
             SELECT name, description, category, goal, activity_type
             FROM activities
@@ -271,16 +419,17 @@ def get_active_activities_for_date(
             params,
         ).fetchall()
     finally:
-        conn.close()
+        if conn is None:
+            managed_conn.close()
 
     return [dict(row) for row in rows]
 
 
 def get_existing_activities_for_date(
-    date: str, user_id: Optional[int], is_admin: bool
+    date: str, user_id: Optional[int], is_admin: bool, conn: Optional[Any] = None
 ) -> List[dict]:
     """Fetch existing activities for a date from entries with optional user scoping."""
-    conn = sa_connection(db.engine)
+    managed_conn = conn or sa_connection(db.engine)
     try:
         params: List[Any] = [date]
         where_clause = "WHERE date = ?"
@@ -290,25 +439,26 @@ def get_existing_activities_for_date(
             )
             params.append(user_id)
 
-        rows = conn.execute(
+        rows = managed_conn.execute(
             f"SELECT activity FROM entries {where_clause}",
             params,
         ).fetchall()
     finally:
-        conn.close()
+        if conn is None:
+            managed_conn.close()
 
     return [dict(row) for row in rows]
 
 
-def bulk_create_entries(entries: List[Dict[str, Any]]) -> int:
+def bulk_create_entries(entries: List[Dict[str, Any]], conn: Optional[Any] = None) -> int:
     """Insert multiple entry rows in a single transaction; returns count inserted."""
     if not entries:
         return 0
 
-    with transactional_connection(db.engine) as conn:
+    def _insert_all(target_conn):
         inserted = 0
         for entry in entries:
-            conn.execute(
+            target_conn.execute(
                 """
                 INSERT INTO entries (
                     date,
@@ -336,4 +486,49 @@ def bulk_create_entries(entries: List[Dict[str, Any]]) -> int:
                 ),
             )
             inserted += 1
-    return inserted
+        return inserted
+
+    if conn is None:
+        with transactional_connection(db.engine) as managed_conn:
+            return _insert_all(managed_conn)
+    return _insert_all(conn)
+
+
+def create_missing_entries_for_day(
+    date: str, user_id: int, is_admin: bool
+) -> int:
+    """Ensure every active activity has an entry for the given date."""
+    with transactional_connection(db.engine) as conn:
+        active_activities = get_active_activities_for_date(
+            date, user_id, is_admin, conn=conn
+        )
+        existing = get_existing_activities_for_date(date, user_id, is_admin, conn=conn)
+        existing_names = {e["activity"] for e in existing}
+
+        new_entries: List[Dict[str, Any]] = []
+        for activity_row in active_activities:
+            activity_name = activity_row["name"]
+            if activity_name in existing_names:
+                continue
+
+            activity_type_value = (
+                (activity_row.get("activity_type") or "positive")
+                if isinstance(activity_row, dict)
+                else "positive"
+            )
+            new_entries.append(
+                {
+                    "date": date,
+                    "activity": activity_name,
+                    "description": activity_row["description"],
+                    "value": 0,
+                    "note": "",
+                    "activity_category": activity_row["category"],
+                    "activity_goal": activity_row["goal"],
+                    "activity_type": activity_type_value,
+                    "user_id": user_id,
+                }
+            )
+
+        created = bulk_create_entries(new_entries, conn=conn) if new_entries else 0
+        return created
