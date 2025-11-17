@@ -4,6 +4,8 @@ from security import jwt_required, require_admin, error_response
 from services import admin_service
 from infra.cache_manager import invalidate_cache
 from infra import metrics_manager
+from infra import health_service
+from app import SERVER_START_TIME
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -24,9 +26,9 @@ def metrics():
 
 @admin_bp.get("/healthz")
 def health():
-    from app import health as app_health  # local import to avoid circular import at module load
-
-    return app_health()
+    summary, healthy = health_service.build_health_summary(SERVER_START_TIME)
+    status_code = 200 if healthy else 503
+    return jsonify(summary), status_code
 
 
 @admin_bp.get("/users")

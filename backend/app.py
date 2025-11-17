@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from functools import wraps
-from time import time
 from typing import Any, Dict, Iterator, List, Optional, Tuple, cast
 
 import click
@@ -28,16 +27,8 @@ from https_utils import resolve_ssl_context
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from services import auth_service, admin_service, activities_service, nightmotion_service
 from controllers.helpers import current_user_id as _current_user_id, is_admin_user as _is_admin_user, parse_pagination
-from infra.cache_manager import (
-    cache_get,
-    cache_set,
-    invalidate_cache,
-    CacheScope,
-    TODAY_CACHE_TTL,
-    STATS_CACHE_TTL,
-    cache_health,
-)
-from infra import metrics_manager
+from infra.cache_manager import cache_get, cache_set, invalidate_cache, CacheScope, TODAY_CACHE_TTL, STATS_CACHE_TTL
+from infra import metrics_manager, health_service
 
 # Expose streaming helper for legacy callers/tests
 stream_rtsp = nightmotion_service.stream_rtsp
@@ -85,6 +76,7 @@ from wearable_read import wearable_read_bp  # noqa: E402
 install_runtime_log_handler()
 
 logger = structlog.get_logger("mosaic.backend")
+SERVER_START_TIME = metrics_manager._SERVER_START_TIME
 
 metrics_manager.ensure_metrics_logger_started()
 get_metrics_json = metrics_manager.get_metrics_json
@@ -543,6 +535,17 @@ def import_csv_endpoint():
     return jsonify({"message": "CSV import completed", "summary": summary}), 200
 
 
+@app.cli.command("health")
+@with_appcontext
+def health_command():
+    summary, healthy = health_service.build_health_summary(SERVER_START_TIME)
+    status_label = "HEALTHY" if healthy else "UNHEALTHY"
+    click.echo("Metrics:")
+    for key, value in summary.items():
+        click.echo(f"{key}: {value}")
+    click.echo(f"Status: {status_label}")
+
+
 
 from controllers import register_controllers
 
@@ -552,48 +555,3 @@ register_controllers(app)
 if __name__ == "__main__":
     debug = os.environ.get("FLASK_DEBUG", "0").lower() in ("1", "true", "yes")
     app.run(debug=debug)
-def _check_db_connection() -> bool:
-    try:
-        with db.engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        return True
-    except Exception as exc:
-        logger.warning("health.db_check_failed", error=str(exc))
-        return False
-
-
-def _check_cache_state() -> bool:
-    try:
-        return cache_health()
-    except Exception as exc:
-        logger.warning("health.cache_check_failed", error=str(exc))
-        return False
-
-
-def _current_uptime_seconds() -> float:
-    return max(0.0, time() - metrics_manager._SERVER_START_TIME)
-
-
-def _build_health_summary() -> Tuple[Dict[str, object], bool]:
-    metrics_snapshot = metrics_manager.get_metrics_json()
-    uptime_s = round(_current_uptime_seconds(), 2)
-    requests_total = metrics_snapshot["requests_total"]
-    uptime_minutes = uptime_s / 60 if uptime_s else 0.0
-    if uptime_minutes <= 0:
-        req_per_min = float(requests_total)
-    else:
-        req_per_min = requests_total / uptime_minutes
-    error_total = metrics_snapshot["errors_total"]["4xx"] + metrics_snapshot["errors_total"]["5xx"]
-    error_rate = error_total / requests_total if requests_total else 0.0
-    db_ok = _check_db_connection()
-    cache_ok = _check_cache_state()
-    summary = {
-        "uptime_s": uptime_s,
-        "db_ok": db_ok,
-        "cache_ok": cache_ok,
-        "req_per_min": round(req_per_min, 2),
-        "error_rate": round(error_rate, 4),
-        "last_metrics_update": metrics_snapshot.get("last_updated"),
-    }
-    healthy = db_ok and cache_ok
-    return summary, healthy

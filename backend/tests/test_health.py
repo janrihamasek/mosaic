@@ -1,5 +1,5 @@
-import app as app_module
 from app import app, reset_metrics_state
+from infra import health_service
 
 
 def _assert_health_payload(payload: dict) -> None:
@@ -24,7 +24,7 @@ def test_health_endpoint_ok(client):
 def test_health_endpoint_unhealthy_on_db_failure(client, monkeypatch):
     reset_metrics_state()
     client.get("/")
-    monkeypatch.setattr(app_module, "_check_db_connection", lambda: False)
+    monkeypatch.setattr(health_service, "check_db_connection", lambda: False)
 
     response = client.get("/healthz")
     assert response.status_code == 503
