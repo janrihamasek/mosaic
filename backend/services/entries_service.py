@@ -74,18 +74,11 @@ def add_entry(
         return cached
 
     try:
-        status, rowcount = entries_repo.upsert_entry(
-            date, activity, float_value, note, user_id
+        response_payload, status_code = entries_repo.upsert_entry_with_metadata_check(
+            user_id, date, activity, float_value, note
         )
     except SQLAlchemyError as exc:
         raise ValidationError(str(exc), code="database_error", status=500)
-
-    if status == "updated":
-        response_payload = {"message": "Záznam aktualizován"}
-        status_code = 200
-    else:
-        response_payload = {"message": "Záznam uložen"}
-        status_code = 201
 
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
@@ -102,16 +95,16 @@ def delete_entry(
     invalidate_cache_cb=None,
 ) -> Tuple[Dict[str, str], int]:
     try:
-        rowcount = entries_repo.delete_entry_by_id(entry_id, user_id, is_admin)
-        if rowcount == 0:
-            log_event(
-                "entry.delete_missing",
-                "Entry delete attempted but not found",
-                user_id=user_id,
-                level="warning",
-                context={"entry_id": entry_id, "as_admin": is_admin},
-            )
-            raise ValidationError("Záznam nenalezen", code="not_found", status=404)
+        entries_repo.delete_entry(entry_id, user_id, is_admin)
+    except entries_repo.NotFoundError:
+        log_event(
+            "entry.delete_missing",
+            "Entry delete attempted but not found",
+            user_id=user_id,
+            level="warning",
+            context={"entry_id": entry_id, "as_admin": is_admin},
+        )
+        raise ValidationError("Záznam nenalezen", code="not_found", status=404)
     except SQLAlchemyError as exc:
         raise ValidationError(str(exc), code="database_error", status=500)
 
@@ -138,7 +131,7 @@ def finalize_day(
     date = data["date"]
 
     try:
-        created = entries_repo.create_missing_entries_for_day(date, user_id, is_admin)
+        created = entries_repo.create_missing_entries_for_day(user_id, date, is_admin)
     except SQLAlchemyError as exc:
         raise ValidationError(str(exc), code="database_error", status=500)
     if invalidate_cache_cb:

@@ -3,6 +3,7 @@ from app import app
 from extensions import db
 from import_data import import_csv
 from models import Entry
+from repositories import entries_repo
 from sqlalchemy import func, select
 
 
@@ -14,17 +15,17 @@ def test_import_csv_rolls_back_on_failure(tmp_path, client, monkeypatch):
         encoding="utf-8",
     )
 
-    from import_data import _upsert_entry as original_upsert
+    original_upsert = entries_repo._upsert_entry_for_import
 
     state = {"calls": 0}
 
-    def failing_upsert(parsed, activity, **kwargs):
+    def failing_upsert(parsed_row, activity_row, user_id, conn):
         state["calls"] += 1
         if state["calls"] == 1:
-            return original_upsert(parsed, activity, **kwargs)
+            return original_upsert(parsed_row, activity_row, user_id, conn)
         raise RuntimeError("Simulated failure after first upsert")
 
-    monkeypatch.setattr("import_data._upsert_entry", failing_upsert)
+    monkeypatch.setattr(entries_repo, "_upsert_entry_for_import", failing_upsert)
 
     with pytest.raises(RuntimeError):
         import_csv(str(csv_path))
