@@ -744,10 +744,7 @@ def _is_public_endpoint(endpoint: Optional[str]) -> bool:
     if endpoint.startswith("static"):
         return True
     public = app.config.get("PUBLIC_ENDPOINTS", set())
-    if endpoint in public:
-        return True
-    endpoint_name = endpoint.split(".", 1)[-1]
-    return endpoint_name in public
+    return endpoint in public
 
 
 def _row_value(row, key, default=None):
@@ -1066,10 +1063,12 @@ def db_transaction():
         yield conn
 
 
+@app.get("/")
 def home():
     return jsonify({"message": "Backend běží!", "database": app.config.get("SQLALCHEMY_DATABASE_URI")})
 
 
+@app.get("/metrics")
 def metrics():
     if (request.args.get("format") or "").lower() == "json":
         return jsonify(get_metrics_json())
@@ -1077,6 +1076,7 @@ def metrics():
     return Response(text_body, mimetype="text/plain; version=0.0.4; charset=utf-8")
 
 
+@app.get("/healthz")
 def health():
     summary, healthy = _build_health_summary()
     status_code = 200 if healthy else 503
@@ -1099,6 +1099,7 @@ def health_command():
     click.echo(f"Status: {status_text}")
 
 
+@app.post("/register")
 def register():
     limits = app.config["RATE_LIMITS"]["register"]
     limited = rate_limit("register", limits["limit"], limits["window"])
@@ -1142,6 +1143,7 @@ def register():
     return jsonify({"message": "User registered"}), 201
 
 
+@app.post("/login")
 def login():
     limits = app.config["RATE_LIMITS"]["login"]
     limited = rate_limit("login", limits["limit"], limits["window"])
@@ -1227,6 +1229,8 @@ def login():
     )
 
 
+@app.get("/user")
+@jwt_required()
 def get_current_user_profile():
     current_user = getattr(g, "current_user", None)
     if not current_user:
@@ -1254,6 +1258,8 @@ def get_current_user_profile():
     return jsonify(_serialize_user_row(row))
 
 
+@app.patch("/user")
+@jwt_required()
 def update_current_user():
     current_user = getattr(g, "current_user", None)
     if not current_user:
@@ -1306,6 +1312,8 @@ def update_current_user():
     )
 
 
+@app.delete("/user")
+@jwt_required()
 def delete_current_user():
     current_user = getattr(g, "current_user", None)
     if not current_user:
@@ -1323,6 +1331,9 @@ def delete_current_user():
     return jsonify({"message": "Account deleted"}), 200
 
 
+@app.get("/users")
+@jwt_required()
+@require_admin
 def list_users():
     conn = get_db_connection()
     try:
@@ -1343,6 +1354,9 @@ def list_users():
     return jsonify([_serialize_user_row(row) for row in rows])
 
 
+@app.delete("/users/<int:user_id>")
+@jwt_required()
+@require_admin
 def admin_delete_user(user_id: int):
     current_user = getattr(g, "current_user", None)
     if current_user and current_user.get("id") == user_id:
@@ -1445,6 +1459,8 @@ def handle_http_exception(exc: HTTPException):
     return error_response(code, message, status)
 
 
+@app.route("/api/stream-proxy", methods=["GET"])
+@jwt_required()
 def stream_proxy():
     limited = limit_request("stream_proxy", per_minute=2)
     if limited:
@@ -1486,6 +1502,8 @@ def handle_unexpected_exception(exc: Exception):
     return error_response("internal_error", "An unexpected error occurred", 500)
 
 
+@app.get("/backup/status")
+@jwt_required()
 def backup_status():
     try:
         status = backup_manager.get_status()
@@ -1495,6 +1513,8 @@ def backup_status():
     return jsonify(status)
 
 
+@app.post("/backup/run")
+@jwt_required()
 def backup_run():
     operator_id = _current_user_id()
     try:
@@ -1518,6 +1538,8 @@ def backup_run():
     return jsonify({"message": "Backup completed", "backup": result})
 
 
+@app.post("/backup/toggle")
+@jwt_required()
 def backup_toggle():
     operator_id = _current_user_id()
     payload = request.get_json(silent=True) or {}
@@ -1555,6 +1577,8 @@ def backup_toggle():
     return jsonify({"message": "Backup settings updated", "status": status})
 
 
+@app.get("/backup/download/<path:filename>")
+@jwt_required()
 def backup_download(filename: str):
     try:
         path = backup_manager.get_backup_path(filename)
@@ -1572,6 +1596,8 @@ def backup_download(filename: str):
     return send_file(path, as_attachment=True, download_name=path.name)
 
 
+@app.get("/export/json")
+@jwt_required()
 def export_json():
     pagination = parse_pagination(default_limit=500, max_limit=2000)
     limit = pagination["limit"]
@@ -1597,6 +1623,8 @@ def export_json():
     )
 
 
+@app.get("/export/csv")
+@jwt_required()
 def export_csv():
     pagination = parse_pagination(default_limit=500, max_limit=2000)
     limit = pagination["limit"]
@@ -1681,6 +1709,7 @@ def export_csv():
     )
 
 
+@app.get("/entries")
 def get_entries():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -1760,6 +1789,7 @@ def get_entries():
         conn.close()
 
 
+@app.post("/add_entry")
 def add_entry():
     user_id = _current_user_id()
     if user_id is None:
@@ -1950,6 +1980,7 @@ def add_entry():
         return response
 
 
+@app.delete("/entries/<int:entry_id>")
 def delete_entry(entry_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -1992,6 +2023,7 @@ def delete_entry(entry_id):
         return error_response("database_error", str(exc), 500)
 
 
+@app.get("/activities")
 def get_activities():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -2036,6 +2068,7 @@ def get_activities():
         conn.close()
 
 
+@app.post("/add_activity")
 def add_activity():
     user_id = _current_user_id()
     if user_id is None:
@@ -2151,6 +2184,7 @@ def add_activity():
         )
 
 
+@app.put("/activities/<int:activity_id>")
 def update_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -2231,6 +2265,7 @@ def update_activity(activity_id):
     return jsonify({"message": "Aktivita aktualizována"}), 200
 
 
+@app.patch("/activities/<int:activity_id>/deactivate")
 def deactivate_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -2260,6 +2295,7 @@ def deactivate_activity(activity_id):
     return jsonify({"message": "Aktivita deaktivována"}), 200
 
 
+@app.patch("/activities/<int:activity_id>/activate")
 def activate_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -2288,6 +2324,7 @@ def activate_activity(activity_id):
     return jsonify({"message": "Aktivita aktivována"}), 200
 
 
+@app.get("/stats/progress")
 def get_progress_stats():
     date_raw = request.args.get("date")
     if date_raw:
@@ -2567,6 +2604,7 @@ def get_progress_stats():
         conn.close()
 
 
+@app.get("/today")
 def get_today():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -2637,6 +2675,7 @@ def get_today():
     return jsonify(data)
 
 
+@app.delete("/activities/<int:activity_id>")
 def delete_activity(activity_id):
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -2671,6 +2710,7 @@ def delete_activity(activity_id):
     return jsonify({"message": "Aktivita smazána"}), 200
 
 
+@app.post("/finalize_day")
 def finalize_day():
     user_id = _current_user_id()
     is_admin = _is_admin_user()
@@ -2733,6 +2773,7 @@ def finalize_day():
     return jsonify({"message": f"{created} missing entries added for {date}"}), 200
 
 
+@app.post("/ingest/wearable/batch")
 def ingest_wearable_batch():
     user_id = _current_user_id()
     if user_id is None:
@@ -2902,6 +2943,7 @@ def ingest_wearable_batch():
     return jsonify(response_payload), status_code
 
 
+@app.post("/import_csv")
 def import_csv_endpoint():
     user_id = _current_user_id()
     if user_id is None:
@@ -2946,11 +2988,6 @@ def import_csv_endpoint():
     )
     return jsonify({"message": "CSV import completed", "summary": summary}), 200
 
-
-
-from controllers import register_controllers
-
-register_controllers(app)
 
 
 if __name__ == "__main__":
