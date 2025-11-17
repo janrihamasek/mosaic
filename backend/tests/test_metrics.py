@@ -5,6 +5,7 @@ import pytest
 
 import app as app_module
 from app import app, get_metrics_json, get_metrics_text, reset_metrics_state
+from infra import metrics_manager
 
 
 @app.get("/__metrics_test__/boom", endpoint="metrics_test_boom")
@@ -26,7 +27,7 @@ def test_metrics_counts_and_latency(client, monkeypatch):
     def fake_perf_counter():
         return next(perf_values)
 
-    monkeypatch.setattr(app_module, "perf_counter", fake_perf_counter)
+    monkeypatch.setattr(metrics_manager, "perf_counter", fake_perf_counter)
 
     assert client.get("/").status_code == 200
     assert client.get("/").status_code == 200

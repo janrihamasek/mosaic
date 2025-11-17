@@ -1,8 +1,9 @@
-from flask import Blueprint, g, jsonify
+from flask import Blueprint, g, jsonify, request, Response
 
 from security import jwt_required, require_admin, error_response
 from services import admin_service
 from infra.cache_manager import invalidate_cache
+from infra import metrics_manager
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -16,9 +17,9 @@ def home():
 
 @admin_bp.get("/metrics")
 def metrics():
-    from app import metrics as app_metrics  # local import to avoid circular import at module load
-
-    return app_metrics()
+    if request.args.get("format") == "text":
+        return Response(metrics_manager.get_metrics_text(), mimetype="text/plain")
+    return jsonify(metrics_manager.get_metrics_json())
 
 
 @admin_bp.get("/healthz")
