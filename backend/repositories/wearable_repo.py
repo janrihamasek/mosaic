@@ -1,10 +1,13 @@
 """Repository handling wearable device data integrations."""
 
-from typing import Any, Dict, List, Optional
+import json
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from db_utils import connection as sa_connection
 from db_utils import transactional_connection
-from extensions import db
+from extensions import db, db_transaction
 
 
 def check_duplicate_records(
@@ -249,3 +252,105 @@ def insert_wearable_raw(
         ),
     )
     return result.rowcount
+
+
+def _coerce_utc(dt_value: datetime, tzinfo: ZoneInfo) -> datetime:
+    """Convert a datetime to UTC using provided timezone when naive."""
+    if dt_value.tzinfo is None:
+        aware = dt_value.replace(tzinfo=tzinfo)
+    else:
+        aware = dt_value
+    return aware.astimezone(timezone.utc)
+
+
+def process_wearable_batch(records: list, user_id: int) -> Tuple[int, int]:
+    """
+    Process a batch of wearable records, handling deduplication and inserts inside a transaction.
+
+    Returns (new_records_count, duplicate_records_count).
+    """
+    if not records:
+        return 0, 0
+
+    context = {}
+    first_record = records[0]
+    if isinstance(first_record, dict):
+        context = first_record.get("_batch_context", {}) or {}
+
+    source_app = context.get("source_app")
+    device_id = context.get("device_id")
+    tz_name = context.get("tz")
+    now_iso = context.get("now_iso") or datetime.now(timezone.utc).isoformat()
+    sync_metadata = context.get("sync_metadata") or json.dumps({"tz": tz_name} if tz_name else {})
+    source_key = context.get("source_key") or (
+        f"{user_id}:{(source_app or '').lower()}:{device_id or ''}"
+    )
+
+    tzinfo = ZoneInfo(tz_name) if tz_name else timezone.utc
+
+    accepted = 0
+    duplicates = 0
+
+    with db_transaction() as conn:
+        source_row = get_wearable_source_by_dedupe(conn, source_key)
+        if source_row:
+            source_id = source_row["id"]
+            update_wearable_source(conn, source_id, now_iso, sync_metadata)
+        else:
+            source_id = insert_wearable_source(
+                conn,
+                user_id,
+                source_app or "",
+                device_id or "",
+                source_app or "",
+                sync_metadata,
+                source_key,
+                now_iso,
+            )
+
+        if source_id is None:
+            raise ValueError("Unable to resolve wearable source")
+
+        for record in records:
+            start_dt = record.get("start")
+            end_dt = record.get("end")
+            try:
+                collected_utc = _coerce_utc(start_dt, tzinfo)
+                end_utc = _coerce_utc(end_dt, tzinfo) if end_dt else None
+                if end_utc and end_utc < collected_utc:
+                    raise ValueError("end cannot be before start")
+            except Exception:
+                duplicates += 1
+                continue
+
+            record_payload = {
+                "type": record.get("type"),
+                "start": start_dt.isoformat() if start_dt else None,
+                "end": end_dt.isoformat() if end_dt else None,
+                "fields": record.get("fields"),
+                "tz": tz_name,
+                "source_app": source_app,
+                "device_id": device_id,
+            }
+            try:
+                payload_json = json.dumps(record_payload)
+            except (TypeError, ValueError):
+                duplicates += 1
+                continue
+
+            inserted = insert_wearable_raw(
+                conn,
+                user_id,
+                source_id,
+                collected_utc.isoformat(),
+                now_iso,
+                payload_json,
+                record.get("dedupe_key"),
+                now_iso,
+            )
+            if inserted:
+                accepted += 1
+            else:
+                duplicates += 1
+
+    return accepted, duplicates
