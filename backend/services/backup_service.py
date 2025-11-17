@@ -12,8 +12,8 @@ from typing import Dict, Tuple, List, Any
 
 from backup_manager import BackupManager
 from audit import log_event
+from repositories import backup_repo
 from security import ValidationError
-from .common import get_db_connection
 
 
 def get_backup_status(manager: BackupManager) -> Dict:
@@ -87,13 +87,6 @@ def resolve_backup_path(manager: BackupManager, filename: str) -> Path:
         raise ValidationError("Backup not found", code="not_found", status=404)
 
 
-def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
-    clause = f"{column} = ?"
-    if include_unassigned:
-        clause = f"({clause} OR {column} IS NULL)"
-    return clause
-
-
 def fetch_export_data(
     *,
     user_id: int,
@@ -102,82 +95,13 @@ def fetch_export_data(
     offset: int,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], int, int]:
     stats_include_unassigned = False
-    conn = get_db_connection()
-    try:
-        entry_params: list = []
-        entry_where = ""
-        if user_id is not None:
-            entry_where = f"WHERE {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
-            entry_params.append(user_id)
+    entries = backup_repo.get_export_entries(user_id, is_admin, limit, offset)
+    activities = backup_repo.get_export_activities(user_id, is_admin, limit, offset)
 
-        entries_cursor = conn.execute(
-            f"""
-            SELECT
-                e.id AS entry_id,
-                e.date,
-                e.activity,
-                e.description AS entry_description,
-                e.value,
-                e.note,
-                e.activity_category,
-                e.activity_goal,
-                e.activity_type
-            FROM entries e
-            LEFT JOIN activities a
-              ON a.name = e.activity
-             AND (a.user_id = e.user_id OR a.user_id IS NULL)
-            {entry_where}
-            ORDER BY e.date ASC, e.id ASC
-            LIMIT ? OFFSET ?
-            """,
-            tuple(entry_params + [limit, offset]),
-        )
+    total_entries = backup_repo.count_export_entries(user_id, is_admin)
+    total_activities = backup_repo.count_export_activities(user_id, is_admin)
 
-        activity_params: list = []
-        activity_where = ""
-        if user_id is not None:
-            activity_where = f"WHERE {_user_scope_clause('a.user_id', include_unassigned=is_admin)}"
-            activity_params.append(user_id)
-
-        activities_cursor = conn.execute(
-            f"""
-            SELECT
-                a.id AS activity_id,
-                a.name,
-                a.category,
-                a.activity_type,
-                a.goal,
-                a.description AS activity_description,
-                a.active,
-                a.frequency_per_day,
-                a.frequency_per_week,
-                a.deactivated_at
-            FROM activities a
-            {activity_where}
-            ORDER BY a.name ASC, a.id ASC
-            LIMIT ? OFFSET ?
-            """,
-            tuple(activity_params + [limit, offset]),
-        )
-
-        if user_id is None:
-            total_entries_stmt = "SELECT COUNT(1) FROM entries"
-            total_entries_params: Tuple = ()
-            total_activities_stmt = "SELECT COUNT(1) FROM activities"
-            total_activities_params: Tuple = ()
-        else:
-            total_entries_stmt = f"SELECT COUNT(1) FROM entries WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}"
-            total_entries_params = (user_id,)
-            total_activities_stmt = f"SELECT COUNT(1) FROM activities WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}"
-            total_activities_params = (user_id,)
-
-        total_entries = conn.execute(total_entries_stmt, total_entries_params).scalar_one()
-        total_activities = conn.execute(total_activities_stmt, total_activities_params).scalar_one()
-        entries = [dict(row) for row in entries_cursor.fetchall()]
-        activities = [dict(row) for row in activities_cursor.fetchall()]
-        return entries, activities, int(total_entries), int(total_activities)
-    finally:
-        conn.close()
+    return entries, activities, int(total_entries), int(total_activities)
 
 
 def build_export_payload(

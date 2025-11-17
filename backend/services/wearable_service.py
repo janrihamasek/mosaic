@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from audit import log_event
 from ingest import process_wearable_raw_by_dedupe_keys
+from repositories import wearable_repo
 from security import ValidationError, validate_wearable_batch_payload
 from .common import db_transaction
 
@@ -47,63 +48,24 @@ def ingest_batch(user_id: int, payload: Dict) -> Tuple[Dict[str, object], int]:
 
     try:
         with db_transaction() as conn:
-            source_row = conn.execute(
-                "SELECT id FROM wearable_sources WHERE dedupe_key = ?",
-                (source_key,),
-            ).fetchone()
+            source_row = wearable_repo.get_wearable_source_by_dedupe(conn, source_key)
             if source_row:
                 source_id = source_row["id"]
-                conn.execute(
-                    "UPDATE wearable_sources SET updated_at = ?, sync_metadata = ? WHERE id = ?",
-                    (now_iso, sync_metadata, source_id),
-                )
+                wearable_repo.update_wearable_source(conn, source_id, now_iso, sync_metadata)
             else:
-                insert_result = conn.execute(
-                    """
-                    INSERT INTO wearable_sources (
-                        user_id,
-                        provider,
-                        external_id,
-                        display_name,
-                        sync_metadata,
-                        last_synced_at,
-                        dedupe_key,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
-                    RETURNING id
-                    """,
-                    (
-                        user_id,
-                        source_app,
-                        device_id,
-                        source_app,
-                        sync_metadata,
-                        source_key,
-                        now_iso,
-                        now_iso,
-                    ),
+                source_id = wearable_repo.insert_wearable_source(
+                    conn,
+                    user_id,
+                    source_app,
+                    device_id,
+                    source_app,
+                    sync_metadata,
+                    source_key,
+                    now_iso,
                 )
-                new_row = insert_result.fetchone()
-                source_id = new_row["id"] if new_row else None
 
             if source_id is None:
                 raise ValidationError("Unable to resolve wearable source", code="internal_error", status=500)
-
-            insert_sql = """
-                INSERT INTO wearable_raw (
-                    user_id,
-                    source_id,
-                    collected_at_utc,
-                    received_at_utc,
-                    payload,
-                    dedupe_key,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (dedupe_key) DO NOTHING
-            """
 
             for index, record in enumerate(records):
                 start_dt = record["start"]
@@ -144,19 +106,17 @@ def ingest_batch(user_id: int, payload: Dict) -> Tuple[Dict[str, object], int]:
                     )
                     continue
 
-                result = conn.execute(
-                    insert_sql,
-                    (
-                        user_id,
-                        source_id,
-                        collected_utc.isoformat(),
-                        now_iso,
-                        payload_json,
-                        record["dedupe_key"],
-                        now_iso,
-                    ),
+                inserted = wearable_repo.insert_wearable_raw(
+                    conn,
+                    user_id,
+                    source_id,
+                    collected_utc.isoformat(),
+                    now_iso,
+                    payload_json,
+                    record["dedupe_key"],
+                    now_iso,
                 )
-                if result.rowcount:
+                if inserted:
                     accepted += 1
                     accepted_dedupes.append(record["dedupe_key"])
                 else:
