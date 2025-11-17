@@ -3,17 +3,15 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Tuple
 
 import pytest
-from flask.testing import FlaskClient
-
 from app import app
 from extensions import db
+from flask.testing import FlaskClient
 from models import (
     User,
     WearableCanonicalHR,
     WearableCanonicalSleepSession,
     WearableDailyAgg,
 )
-
 
 PASSWORD = "StrongPass123"
 Headers = Dict[str, str]
@@ -30,8 +28,12 @@ def _register_and_login(client: FlaskClient, username: str) -> Tuple[Headers, in
     return headers, int(user.id)
 
 
-def _insert_daily_agg(user_id: int, date_value: date, steps: int, resting: int, sleep_seconds: int) -> None:
-    day_start = datetime(date_value.year, date_value.month, date_value.day, tzinfo=timezone.utc)
+def _insert_daily_agg(
+    user_id: int, date_value: date, steps: int, resting: int, sleep_seconds: int
+) -> None:
+    day_start = datetime(
+        date_value.year, date_value.month, date_value.day, tzinfo=timezone.utc
+    )
     payload: Dict[str, Any] = {
         "user_id": user_id,
         "day_start_utc": day_start,
@@ -44,7 +46,9 @@ def _insert_daily_agg(user_id: int, date_value: date, steps: int, resting: int, 
     db.session.add(agg)
 
 
-def _insert_sleep_session(user_id: int, start: datetime, duration: int, score: int) -> None:
+def _insert_sleep_session(
+    user_id: int, start: datetime, duration: int, score: int
+) -> None:
     payload: Dict[str, Any] = {
         "user_id": user_id,
         "start_time_utc": start,
@@ -84,10 +88,27 @@ def test_wearable_day_returns_user_data(client: FlaskClient):
     with app.app_context():
         _insert_daily_agg(user_id, today, steps=1500, resting=58, sleep_seconds=3600)
         _insert_daily_agg(user_id, earlier, steps=900, resting=60, sleep_seconds=1800)
-        _insert_daily_agg(other_user_id, today, steps=9999, resting=45, sleep_seconds=7200)
-        _insert_sleep_session(user_id, datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc), 3600, 84)
-        _insert_hr_sample(user_id, datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=8), 70)
-        _insert_hr_sample(user_id, datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=12), 90)
+        _insert_daily_agg(
+            other_user_id, today, steps=9999, resting=45, sleep_seconds=7200
+        )
+        _insert_sleep_session(
+            user_id,
+            datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc),
+            3600,
+            84,
+        )
+        _insert_hr_sample(
+            user_id,
+            datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=8),
+            70,
+        )
+        _insert_hr_sample(
+            user_id,
+            datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=12),
+            90,
+        )
         db.session.commit()
 
     response = client.get("/wearable/day", headers=headers)
@@ -111,8 +132,18 @@ def test_wearable_trends_returns_windowed_data(client: FlaskClient):
     with app.app_context():
         _insert_daily_agg(user_id, today, steps=2000, resting=55, sleep_seconds=2400)
         _insert_daily_agg(user_id, previous, steps=800, resting=57, sleep_seconds=1200)
-        _insert_hr_sample(user_id, datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=4), 66)
-        _insert_hr_sample(user_id, datetime.combine(previous, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=4), 72)
+        _insert_hr_sample(
+            user_id,
+            datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=4),
+            66,
+        )
+        _insert_hr_sample(
+            user_id,
+            datetime.combine(previous, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=4),
+            72,
+        )
         db.session.commit()
 
     response = client.get("/wearable/trends?metric=steps&window=7", headers=headers)
@@ -123,7 +154,9 @@ def test_wearable_trends_returns_windowed_data(client: FlaskClient):
     assert len(payload["values"]) == 7
     assert payload["values"][-1]["value"] == 2000.0
     assert payload["values"][-2]["value"] == 800.0
-    assert payload["average"] == pytest.approx(sum(v["value"] for v in payload["values"]) / 7)
+    assert payload["average"] == pytest.approx(
+        sum(v["value"] for v in payload["values"]) / 7
+    )
 
 
 def test_wearable_trends_requires_auth(client: FlaskClient):

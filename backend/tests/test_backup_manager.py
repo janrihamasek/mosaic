@@ -2,9 +2,8 @@ import io
 import zipfile
 from pathlib import Path
 
-import pytest
-
 import app as app_module
+import pytest
 from app import app
 from backup_manager import BackupManager
 from extensions import db
@@ -18,9 +17,13 @@ def auth_headers(client):
 
     username = f"user_{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
-    register_resp = client.post("/register", json={"username": username, "password": password})
+    register_resp = client.post(
+        "/register", json={"username": username, "password": password}
+    )
     assert register_resp.status_code == 201
-    login_resp = client.post("/login", json={"username": username, "password": password})
+    login_resp = client.post(
+        "/login", json={"username": username, "password": password}
+    )
     assert login_resp.status_code == 200
     tokens = login_resp.get_json()
     return {
@@ -90,7 +93,9 @@ def test_backup_toggle_persistence(client, auth_headers, backup_env):
         assert settings.enabled is True
         assert settings.interval_minutes == 15
 
-    disable_resp = client.post("/backup/toggle", json={"enabled": False}, headers=auth_headers)
+    disable_resp = client.post(
+        "/backup/toggle", json={"enabled": False}, headers=auth_headers
+    )
     assert disable_resp.status_code == 200
     assert disable_resp.get_json()["status"]["enabled"] is False
 
@@ -100,7 +105,9 @@ def test_backup_download_endpoint(client, auth_headers, backup_env):
     assert run_resp.status_code == 200
     backup_filename = run_resp.get_json()["backup"]["zip"]
 
-    download_resp = client.get(f"/backup/download/{backup_filename}", headers=auth_headers)
+    download_resp = client.get(
+        f"/backup/download/{backup_filename}", headers=auth_headers
+    )
     assert download_resp.status_code == 200
     assert "zip" in (download_resp.headers.get("Content-Type") or "")
 

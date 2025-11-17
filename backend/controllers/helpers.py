@@ -1,7 +1,6 @@
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 from flask import g, request
-
 from security import ValidationError
 
 
@@ -36,7 +35,9 @@ def parse_pagination(default_limit: int = 100, max_limit: int = 500) -> Dict[str
         if offset < 0:
             raise ValueError
     except (TypeError, ValueError):
-        raise ValidationError("offset must be a non-negative integer", code="invalid_query")
+        raise ValidationError(
+            "offset must be a non-negative integer", code="invalid_query"
+        )
 
     limit = min(limit, max_limit)
     return {"limit": limit, "offset": offset}

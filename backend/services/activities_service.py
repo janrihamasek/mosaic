@@ -8,13 +8,18 @@ propagation logic. Keep HTTP and Flask concerns out of this layer.
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-
 from audit import log_event
 from repositories import activities_repo
-from security import ValidationError, validate_activity_create_payload, validate_activity_update_payload
+from security import (
+    ValidationError,
+    validate_activity_create_payload,
+    validate_activity_update_payload,
+)
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
 from .common import db_transaction
-from .idempotency import lookup as idempotency_lookup, store_response as idempotency_store_response
+from .idempotency import lookup as idempotency_lookup
+from .idempotency import store_response as idempotency_store_response
 
 
 def list_activities(
@@ -26,7 +31,9 @@ def list_activities(
     offset: int,
 ) -> List[Dict[str, Any]]:
     try:
-        payload = activities_repo.list_activities(user_id, is_admin, show_all, limit, offset)
+        payload = activities_repo.list_activities(
+            user_id, is_admin, show_all, limit, offset
+        )
         return payload
     except SQLAlchemyError as exc:
         raise ValidationError(str(exc), code="database_error", status=500)
@@ -173,7 +180,9 @@ def deactivate_activity(
 ) -> Tuple[Dict[str, str], int]:
     deactivation_date = datetime.now().strftime("%Y-%m-%d")
 
-    rowcount = activities_repo.deactivate_activity(activity_id, deactivation_date, user_id, is_admin)
+    rowcount = activities_repo.deactivate_activity(
+        activity_id, deactivation_date, user_id, is_admin
+    )
     if rowcount == 0:
         raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
     if invalidate_cache_cb:
@@ -210,7 +219,11 @@ def delete_activity(
         if not row:
             raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
         if row.get("active"):
-            raise ValidationError("Aktivita musí být deaktivována před smazáním", code="invalid_state", status=400)
+            raise ValidationError(
+                "Aktivita musí být deaktivována před smazáním",
+                code="invalid_state",
+                status=400,
+            )
 
         rowcount = activities_repo.delete_activity(activity_id, user_id, is_admin)
 

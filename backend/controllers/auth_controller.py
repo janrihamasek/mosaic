@@ -1,8 +1,7 @@
 from typing import Any, Dict
 
 from flask import Blueprint, current_app, g, jsonify, request
-
-from security import jwt_required, rate_limit, error_response
+from security import error_response, jwt_required, rate_limit
 from services import auth_service
 
 auth_bp = Blueprint("auth", __name__)
@@ -73,5 +72,7 @@ def delete_current_user():
     # Lazy import to avoid circulars during app setup
     from app import invalidate_cache  # type: ignore
 
-    result, status = auth_service.delete_user(current_user["id"], invalidate_cache_cb=invalidate_cache)
+    result, status = auth_service.delete_user(
+        current_user["id"], invalidate_cache_cb=invalidate_cache
+    )
     return jsonify(result), status

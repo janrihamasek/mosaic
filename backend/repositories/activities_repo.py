@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
-from db_utils import transactional_connection
 from db_utils import connection as sa_connection
+from db_utils import transactional_connection
 from extensions import db
 
 
@@ -28,7 +28,9 @@ def list_activities(
         params: List[Any] = []
         where_clauses: List[str] = []
         if user_id is not None:
-            where_clauses.append(_user_scope_clause("user_id", include_unassigned=is_admin))
+            where_clauses.append(
+                _user_scope_clause("user_id", include_unassigned=is_admin)
+            )
             params.append(user_id)
         if not show_all:
             where_clauses.append("active = TRUE")
@@ -99,14 +101,18 @@ def create_activity(
         )
 
 
-def get_activity_by_id(activity_id: int, user_id: Optional[int], is_admin: bool) -> Optional[dict]:
+def get_activity_by_id(
+    activity_id: int, user_id: Optional[int], is_admin: bool
+) -> Optional[dict]:
     """Fetch an activity by id with optional user scoping."""
     conn = sa_connection(db.engine)
     try:
         where_clause = "id = ?"
         params: List[Any] = [activity_id]
         if not is_admin:
-            where_clause += " AND " + _user_scope_clause("user_id", include_unassigned=False)
+            where_clause += " AND " + _user_scope_clause(
+                "user_id", include_unassigned=False
+            )
             params.append(user_id)
 
         row = conn.execute(
@@ -211,7 +217,9 @@ def activate_activity(activity_id: int, user_id: Optional[int], is_admin: bool) 
         return result.rowcount
 
 
-def deactivate_activity(activity_id: int, deactivation_date: str, user_id: Optional[int], is_admin: bool) -> int:
+def deactivate_activity(
+    activity_id: int, deactivation_date: str, user_id: Optional[int], is_admin: bool
+) -> int:
     """Deactivate an activity and set deactivation timestamp."""
     params: List[Any] = [deactivation_date, activity_id]
     where_clause = "id = ?"

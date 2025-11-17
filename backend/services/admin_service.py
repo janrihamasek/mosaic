@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 from repositories import users_repo
 from security import ValidationError
+
 from .auth_service import _serialize_user_row
 
 

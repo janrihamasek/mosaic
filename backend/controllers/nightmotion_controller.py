@@ -1,7 +1,6 @@
 import structlog
 from flask import Blueprint, Response, jsonify, request, stream_with_context
-
-from security import jwt_required, ValidationError, error_response, limit_request
+from security import ValidationError, error_response, jwt_required, limit_request
 from services import nightmotion_service
 
 nightmotion_bp = Blueprint("nightmotion", __name__)
@@ -38,8 +37,12 @@ def stream_proxy():
     except PermissionError:
         return error_response("unauthorized", "Unauthorized", 401)
     except RuntimeError as exc:
-        logger.bind(stream="nightmotion").exception("nightmotion.stream_error", error=str(exc))
+        logger.bind(stream="nightmotion").exception(
+            "nightmotion.stream_error", error=str(exc)
+        )
         return error_response("internal_error", "Stream nelze navázat", 500)
     except Exception as exc:
-        logger.bind(stream="nightmotion").exception("nightmotion.stream_error_unexpected", error=str(exc))
+        logger.bind(stream="nightmotion").exception(
+            "nightmotion.stream_error_unexpected", error=str(exc)
+        )
         return error_response("internal_error", "Stream nelze navázat", 500)

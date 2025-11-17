@@ -3,7 +3,6 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
-
 from app import CacheScope, _cache_storage, build_cache_key
 
 
@@ -11,9 +10,13 @@ from app import CacheScope, _cache_storage, build_cache_key
 def auth_headers(client):
     username = f"user_{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
-    register_resp = client.post("/register", json={"username": username, "password": password})
+    register_resp = client.post(
+        "/register", json={"username": username, "password": password}
+    )
     assert register_resp.status_code == 201
-    login_resp = client.post("/login", json={"username": username, "password": password})
+    login_resp = client.post(
+        "/login", json={"username": username, "password": password}
+    )
     assert login_resp.status_code == 200
     tokens = login_resp.get_json()
     return {
@@ -50,7 +53,9 @@ def test_add_activity_and_toggle(client, auth_headers):
     assert data[0]["frequency_per_week"] == 5
     assert data[0]["deactivated_at"] is None
 
-    response = client.patch(f"/activities/{activity_id}/deactivate", headers=auth_headers)
+    response = client.patch(
+        f"/activities/{activity_id}/deactivate", headers=auth_headers
+    )
     assert response.status_code == 200
 
     response = client.get("/activities", headers=auth_headers)
@@ -76,7 +81,11 @@ def test_add_activity_requires_category(client, auth_headers):
 
 
 def test_add_activity_requires_frequency(client, auth_headers):
-    resp = client.post("/add_activity", json={"name": "Yoga", "category": "Health"}, headers=auth_headers)
+    resp = client.post(
+        "/add_activity",
+        json={"name": "Yoga", "category": "Health"},
+        headers=auth_headers,
+    )
     assert resp.status_code == 400
     assert resp.get_json()["error"]["code"] == "invalid_input"
     resp = client.post(
@@ -164,7 +173,9 @@ def test_today_and_finalize_day(client, auth_headers):
     assert all("goal" in row for row in today_data)
     assert {row["category"] for row in today_data} == {"Work", "Health"}
 
-    response = client.post("/finalize_day", json={"date": target_date}, headers=auth_headers)
+    response = client.post(
+        "/finalize_day", json={"date": target_date}, headers=auth_headers
+    )
     assert response.status_code == 200
 
     response = client.get("/entries", headers=auth_headers)
@@ -173,7 +184,9 @@ def test_today_and_finalize_day(client, auth_headers):
     assert all(float(e["value"]) == 0 for e in entries)
 
     # ensure finalize_day is idempotent
-    response = client.post("/finalize_day", json={"date": target_date}, headers=auth_headers)
+    response = client.post(
+        "/finalize_day", json={"date": target_date}, headers=auth_headers
+    )
     assert response.status_code == 200
     response = client.get("/entries", headers=auth_headers)
     entries = [e for e in response.get_json() if e["date"] == target_date]
@@ -194,7 +207,12 @@ def test_add_entry_validation(client, auth_headers):
     long_note = "a" * 120
     response = client.post(
         "/add_entry",
-        json={"activity": "Run", "date": "2024-01-01", "value": "abc", "note": long_note},
+        json={
+            "activity": "Run",
+            "date": "2024-01-01",
+            "value": "abc",
+            "note": long_note,
+        },
         headers=auth_headers,
     )
     assert response.status_code == 400
@@ -233,7 +251,9 @@ def test_login_rate_limit(client):
     try:
         first = client.post("/login", json={"username": username, "password": password})
         assert first.status_code == 200
-        second = client.post("/login", json={"username": username, "password": password})
+        second = client.post(
+            "/login", json={"username": username, "password": password}
+        )
         assert second.status_code == 429
         assert second.get_json()["error"]["code"] == "too_many_requests"
     finally:
@@ -293,7 +313,9 @@ def test_auth_is_required_for_entries(client):
 
 
 def test_csrf_is_required_for_mutations(client, auth_headers):
-    headers_without_csrf = {k: v for k, v in auth_headers.items() if k != "X-CSRF-Token"}
+    headers_without_csrf = {
+        k: v for k, v in auth_headers.items() if k != "X-CSRF-Token"
+    }
     resp = client.post(
         "/add_activity",
         json={
@@ -453,7 +475,9 @@ def test_entries_filtering(client, auth_headers):
         headers=auth_headers,
     )
 
-    resp = client.get("/entries?start_date=2024-03-02&end_date=2024-03-04", headers=auth_headers)
+    resp = client.get(
+        "/entries?start_date=2024-03-02&end_date=2024-03-04", headers=auth_headers
+    )
     assert resp.status_code == 200
     filtered = resp.get_json()
     assert len(filtered) == 1
@@ -570,7 +594,9 @@ def test_stats_progress_payload_structure(client, auth_headers):
     assert active_ratio["total_days"] == 30
     assert 0 <= active_ratio["active_days"] <= 30
     assert isinstance(active_ratio["percent"], (int, float))
-    assert pytest.approx(active_ratio["percent"], rel=0, abs=0.05) == round(active_ratio["percent"], 1)
+    assert pytest.approx(active_ratio["percent"], rel=0, abs=0.05) == round(
+        active_ratio["percent"], 1
+    )
 
     polarity = payload["positive_vs_negative"]
     assert {"positive", "negative", "ratio"} == set(polarity.keys())
@@ -602,9 +628,9 @@ def test_stats_progress_payload_structure(client, auth_headers):
             assert isinstance(entry["name"], str)
             assert isinstance(entry["consistency_percent"], (int, float))
             assert 0.0 <= entry["consistency_percent"] <= 100.0
-            assert pytest.approx(entry["consistency_percent"], rel=0, abs=0.05) == round(
-                entry["consistency_percent"], 1
-            )
+            assert pytest.approx(
+                entry["consistency_percent"], rel=0, abs=0.05
+            ) == round(entry["consistency_percent"], 1)
 
 
 def test_stats_progress_invalid_date(client, auth_headers):
@@ -759,7 +785,10 @@ def test_stats_cache_invalidation(client, auth_headers):
     updated = client.get(f"/stats/progress?date={target_date}", headers=auth_headers)
     assert updated.status_code == 200
     updated_payload = updated.get_json()
-    assert updated_payload["goal_completion_today"] > initial_payload["goal_completion_today"]
+    assert (
+        updated_payload["goal_completion_today"]
+        > initial_payload["goal_completion_today"]
+    )
     assert updated_payload["positive_vs_negative"]["positive"] == baseline_positive + 1
     assert cache_key in _cache_storage
 
@@ -776,6 +805,8 @@ def test_stats_cache_invalidation(client, auth_headers):
     )
     assert resp.status_code == 201
     assert cache_key not in _cache_storage
+
+
 def test_negative_activity_entries_and_today(client, auth_headers):
     target_date = "2024-07-02"
     resp = client.post(
@@ -801,7 +832,12 @@ def test_negative_activity_entries_and_today(client, auth_headers):
 
     entry_resp = client.post(
         "/add_entry",
-        json={"date": target_date, "activity": "Mindful Break", "value": 2, "note": "counted as negative"},
+        json={
+            "date": target_date,
+            "activity": "Mindful Break",
+            "value": 2,
+            "note": "counted as negative",
+        },
         headers=auth_headers,
     )
     assert entry_resp.status_code in {200, 201}
@@ -837,7 +873,12 @@ def test_negative_activity_ignored_in_stats(client, auth_headers):
 
     save_resp = client.post(
         "/add_entry",
-        json={"date": target_date, "activity": "Skip Sugar", "value": 5, "note": "Great streak"},
+        json={
+            "date": target_date,
+            "activity": "Skip Sugar",
+            "value": 5,
+            "note": "Great streak",
+        },
         headers=auth_headers,
     )
     assert save_resp.status_code in {200, 201}

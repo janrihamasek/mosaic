@@ -5,10 +5,9 @@ from threading import Lock
 from typing import Any, Dict, Optional
 
 import structlog
-from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
-
 from extensions import db
 from models import ActivityLog
+from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 
 _RUNTIME_LOG_LIMIT = 500
 _runtime_log_buffer = deque(maxlen=_RUNTIME_LOG_LIMIT)
@@ -22,7 +21,9 @@ class _StructlogBufferHandler(logging.Handler):
         except Exception:
             message = str(record.msg)
         payload = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
             "level": record.levelname.lower(),
             "logger": record.name,
             "message": message,
@@ -38,7 +39,9 @@ _runtime_log_handler.setLevel(logging.INFO)
 def install_runtime_log_handler() -> None:
     """Attach a handler that keeps a rolling buffer of structlog output."""
     root_logger = logging.getLogger()
-    if any(isinstance(handler, _StructlogBufferHandler) for handler in root_logger.handlers):
+    if any(
+        isinstance(handler, _StructlogBufferHandler) for handler in root_logger.handlers
+    ):
         return
     root_logger.addHandler(_runtime_log_handler)
 
@@ -150,7 +153,9 @@ def get_runtime_logs(limit: Optional[int] = None) -> list[Dict[str, Any]]:
 
 
 def _extract_error_message(exc: SQLAlchemyError) -> str:
-    if isinstance(exc, (ProgrammingError, OperationalError)) and getattr(exc, "orig", None):
+    if isinstance(exc, (ProgrammingError, OperationalError)) and getattr(
+        exc, "orig", None
+    ):
         return str(exc.orig).lower()
     return str(exc).lower()
 
@@ -164,6 +169,6 @@ def is_activity_log_table_missing_error(exc: SQLAlchemyError) -> bool:
         "no such table",
         "undefined table",
         "relation 'activity_logs' does not exist",
-        "relation \"activity_logs\" does not exist",
+        'relation "activity_logs" does not exist',
     )
     return any(indicator in message for indicator in indicators)

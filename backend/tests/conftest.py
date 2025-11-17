@@ -1,11 +1,10 @@
 import os
 
 import pytest
-
 from app import app
 from extensions import db
-from sqlalchemy import text
 from infra import rate_limiter
+from sqlalchemy import text
 
 
 @pytest.fixture()

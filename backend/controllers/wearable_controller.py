@@ -1,10 +1,9 @@
 from typing import Any, Dict
 
-from flask import Blueprint, jsonify, request, current_app
-
-from security import rate_limit, ValidationError, error_response
-from services import wearable_service
 from controllers.helpers import current_user_id
+from flask import Blueprint, current_app, jsonify, request
+from security import ValidationError, error_response, rate_limit
+from services import wearable_service
 
 wearable_bp = Blueprint("wearable", __name__)
 
@@ -15,7 +14,9 @@ def ingest_wearable_batch():
     if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
 
-    limits = current_app.config["RATE_LIMITS"].get("wearable_ingest", {"limit": 60, "window": 60})
+    limits = current_app.config["RATE_LIMITS"].get(
+        "wearable_ingest", {"limit": 60, "window": 60}
+    )
     limited = rate_limit("wearable_ingest", limits["limit"], limits["window"])
     if limited:
         return limited

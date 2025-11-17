@@ -7,7 +7,9 @@ _rate_limit_storage: DefaultDict[str, Deque[float]] = defaultdict(deque)
 _rate_limit_lock = threading.Lock()
 
 
-def check_rate_limit(key: str, remote_addr: Optional[str], limit: int, window: int) -> bool:
+def check_rate_limit(
+    key: str, remote_addr: Optional[str], limit: int, window: int
+) -> bool:
     identifier = remote_addr or "anonymous"
     storage_key = f"{identifier}:{key}"
     now = time.time()

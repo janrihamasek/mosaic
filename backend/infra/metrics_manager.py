@@ -76,7 +76,9 @@ _metrics_state: MetricsState = initialize_metrics_state()
 _metrics_lock = Lock()
 _metrics_logger_thread: Optional[Thread] = None
 _SERVER_START_TIME = time()
-_METRICS_LOG_INTERVAL_SECONDS = int(os.environ.get("METRICS_LOG_INTERVAL_SECONDS", "60"))
+_METRICS_LOG_INTERVAL_SECONDS = int(
+    os.environ.get("METRICS_LOG_INTERVAL_SECONDS", "60")
+)
 
 
 def resolve_metrics_dimensions(method: str, endpoint: str) -> Tuple[str, str]:
@@ -160,7 +162,10 @@ def get_metrics_json() -> MetricsSnapshot:
                     total_latency_ms=round(bucket["total_latency_ms"], 2),
                     errors_4xx=bucket["errors_4xx"],
                     errors_5xx=bucket["errors_5xx"],
-                    status_counts={str(code): value for code, value in bucket["status_counts"].items()},
+                    status_counts={
+                        str(code): value
+                        for code, value in bucket["status_counts"].items()
+                    },
                 )
             )
         endpoints.sort(key=lambda item: (item["endpoint"], item["method"]))
@@ -173,7 +178,10 @@ def get_metrics_json() -> MetricsSnapshot:
                 "4xx": _metrics_state["errors_4xx"],
                 "5xx": _metrics_state["errors_5xx"],
             },
-            status_counts={str(code): value for code, value in _metrics_state["status_counts"].items()},
+            status_counts={
+                str(code): value
+                for code, value in _metrics_state["status_counts"].items()
+            },
             endpoints=endpoints,
             last_updated=format_timestamp(last_updated),
         )

@@ -9,10 +9,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 
-from sqlalchemy.exc import SQLAlchemyError
-
 from repositories import stats_repo
 from security import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 
 def get_today_payload(

@@ -2,14 +2,15 @@
 
 from typing import Any, Dict, List, Optional
 
+from db_utils import connection as sa_connection
+from db_utils import transactional_connection
+from extensions import db
 from sqlalchemy.exc import SQLAlchemyError
 
-from db_utils import transactional_connection
-from db_utils import connection as sa_connection
-from extensions import db
 
-
-def create_user(username: str, password_hash: str, display_name: str, created_at: str) -> int:
+def create_user(
+    username: str, password_hash: str, display_name: str, created_at: str
+) -> int:
     """Insert a new user row and return its generated id."""
     new_user_id = 0
     with transactional_connection(db.engine) as conn:
@@ -20,7 +21,9 @@ def create_user(username: str, password_hash: str, display_name: str, created_at
             """,
             (username, password_hash, display_name, created_at),
         )
-        row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        row = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
         if row and "id" in row.keys():
             new_user_id = int(row["id"])
     return new_user_id
@@ -43,7 +46,9 @@ def get_user_by_username(username: str) -> Optional[dict]:
                 """,
                 (username,),
             ).fetchone()
-        except SQLAlchemyError as exc:  # graceful fallback if is_admin column is missing
+        except (
+            SQLAlchemyError
+        ) as exc:  # graceful fallback if is_admin column is missing
             if "is_admin" not in str(exc).lower():
                 raise
             row = conn.execute(

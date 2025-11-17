@@ -1,7 +1,8 @@
 from contextlib import contextmanager
 from typing import Iterator
 
-from db_utils import connection as sa_connection, transactional_connection
+from db_utils import connection as sa_connection
+from db_utils import transactional_connection
 from extensions import db
 
 

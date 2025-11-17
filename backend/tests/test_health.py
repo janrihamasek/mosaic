@@ -3,7 +3,14 @@ from infra import health_service
 
 
 def _assert_health_payload(payload: dict) -> None:
-    for key in ("uptime_s", "db_ok", "cache_ok", "req_per_min", "error_rate", "last_metrics_update"):
+    for key in (
+        "uptime_s",
+        "db_ok",
+        "cache_ok",
+        "req_per_min",
+        "error_rate",
+        "last_metrics_update",
+    ):
         assert key in payload
 
 

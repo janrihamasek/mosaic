@@ -1,12 +1,10 @@
-from datetime import datetime, UTC
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
 from functools import wraps
+from typing import Any, Dict, Optional
 
-from flask import current_app, jsonify, request, g
+from flask import current_app, g, jsonify, request
 from infra import rate_limiter
 from pydantic import ValidationError as PydanticValidationError
-from werkzeug.datastructures import FileStorage
-
 from schemas import (
     ActivityCreatePayload,
     ActivityUpdatePayload,
@@ -18,6 +16,7 @@ from schemas import (
     UserUpdatePayload,
     WearableBatchPayload,
 )
+from werkzeug.datastructures import FileStorage
 
 
 def rate_limit(endpoint_name: str, limit: int, window_seconds: int):
@@ -27,11 +26,11 @@ def rate_limit(endpoint_name: str, limit: int, window_seconds: int):
         identifier = f"user:{user_obj['id']}"
     else:
         identifier = (
-            request.headers.get("X-API-Key")
-            or request.remote_addr
-            or "anonymous"
+            request.headers.get("X-API-Key") or request.remote_addr or "anonymous"
         )
-    is_limited = rate_limiter.check_rate_limit(endpoint_name, identifier, limit, window_seconds)
+    is_limited = rate_limiter.check_rate_limit(
+        endpoint_name, identifier, limit, window_seconds
+    )
     if is_limited:
         return error_response("too_many_requests", "Rate limit exceeded", 429)
     return None
@@ -56,10 +55,7 @@ def require_api_key():
     if request.endpoint in public_endpoints:
         return None
 
-    provided = (
-        request.headers.get("X-API-Key")
-        or request.args.get("api_key")
-    )
+    provided = request.headers.get("X-API-Key") or request.args.get("api_key")
     if provided != api_key:
         return error_response("unauthorized", "Unauthorized", 401)
     return None
@@ -81,7 +77,9 @@ def jwt_required():
         @wraps(fn)
         def wrapped(*args, **kwargs):
             if not getattr(g, "current_user", None):
-                return error_response("unauthorized", "Missing or invalid access token", 401)
+                return error_response(
+                    "unauthorized", "Missing or invalid access token", 401
+                )
             return fn(*args, **kwargs)
 
         return wrapped

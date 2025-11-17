@@ -1,9 +1,8 @@
-import uuid
 import time
+import uuid
 
 import jwt
 import pytest
-
 from app import app, cache_get, cache_set, invalidate_cache
 
 
@@ -11,7 +10,9 @@ def test_register_and_login_flow(client):
     username = f"user_{uuid.uuid4().hex[:6]}"
     password = "StrongPass123"
 
-    register = client.post("/register", json={"username": username, "password": password})
+    register = client.post(
+        "/register", json={"username": username, "password": password}
+    )
     assert register.status_code == 201
 
     login = client.post("/login", json={"username": username, "password": password})
@@ -60,9 +61,13 @@ def test_expired_token_rejected(client, monkeypatch):
     token = login.get_json()["access_token"]
 
     # decode & re-encode token with past expiry to simulate expiration
-    decoded = jwt.decode(token, app.config["JWT_SECRET"], algorithms=[app.config["JWT_ALGORITHM"]])
+    decoded = jwt.decode(
+        token, app.config["JWT_SECRET"], algorithms=[app.config["JWT_ALGORITHM"]]
+    )
     decoded["exp"] = 0
-    expired_token = jwt.encode(decoded, app.config["JWT_SECRET"], algorithm=app.config["JWT_ALGORITHM"])
+    expired_token = jwt.encode(
+        decoded, app.config["JWT_SECRET"], algorithm=app.config["JWT_ALGORITHM"]
+    )
 
     resp = client.get(
         "/entries",

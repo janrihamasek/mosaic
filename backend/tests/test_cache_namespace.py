@@ -1,9 +1,12 @@
 import uuid
 
+
 def _create_user_headers(client):
     username = f"user_{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
-    register = client.post("/register", json={"username": username, "password": password})
+    register = client.post(
+        "/register", json={"username": username, "password": password}
+    )
     assert register.status_code == 201
     login = client.post("/login", json={"username": username, "password": password})
     assert login.status_code == 200
@@ -34,7 +37,12 @@ def test_cache_entries_are_namespaced_per_user(client):
 
     add_entry = client.post(
         "/add_entry",
-        json={"date": target_date, "activity": "Namespaced Activity", "value": 1.0, "note": ""},
+        json={
+            "date": target_date,
+            "activity": "Namespaced Activity",
+            "value": 1.0,
+            "note": "",
+        },
         headers=headers_a,
     )
     assert add_entry.status_code in {200, 201}
@@ -54,7 +62,9 @@ def test_cache_entries_are_namespaced_per_user(client):
     # Second calls warm caches for user A.
     cached_today_a = client.get(f"/today?date={target_date}", headers=headers_a)
     assert cached_today_a.get_json() == today_payload_a
-    cached_stats_a = client.get(f"/stats/progress?date={target_date}", headers=headers_a)
+    cached_stats_a = client.get(
+        f"/stats/progress?date={target_date}", headers=headers_a
+    )
     assert cached_stats_a.get_json() == stats_payload_a
 
     today_b = client.get(f"/today?date={target_date}", headers=headers_b)

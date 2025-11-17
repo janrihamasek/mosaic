@@ -7,23 +7,24 @@ project can run migrations without invoking the Flask CLI directly.
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-import json
 from time import perf_counter
 from typing import Optional
 
 import click
+
+# Ensure models are imported so Flask-Migrate sees them
+import models  # noqa: F401
 import sqlalchemy as sa
-from sqlalchemy import func
+import structlog
+from agg_jobs import rebuild_daily_aggregates_for_user
+from app import app
+from extensions import db
 from flask_migrate import init as flask_migrate_init  # type: ignore[import]
 from flask_migrate import migrate as flask_migrate_migrate  # type: ignore[import]
 from flask_migrate import upgrade as flask_migrate_upgrade  # type: ignore[import]
-import structlog
-
-from app import app
-from agg_jobs import rebuild_daily_aggregates_for_user
-from extensions import db
 from models import (
     User,
     WearableCanonicalHR,
@@ -31,10 +32,7 @@ from models import (
     WearableCanonicalSteps,
     WearableDailyAgg,
 )
-
-# Ensure models are imported so Flask-Migrate sees them
-import models  # noqa: F401
-
+from sqlalchemy import func
 
 logger = structlog.get_logger("mosaic.manage")
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
@@ -86,7 +84,12 @@ def upgrade_command(revision: str):
 
 @cli.command("assign-user-data")
 @click.option("--username", required=True, help="Existing username to own legacy data.")
-@click.option("--make-admin/--no-admin", default=True, show_default=True, help="Grant admin role to the user.")
+@click.option(
+    "--make-admin/--no-admin",
+    default=True,
+    show_default=True,
+    help="Grant admin role to the user.",
+)
 def assign_user_data(username: str, make_admin: bool) -> None:
     """Assign existing activities/entries without owners to a specific user."""
 
@@ -110,7 +113,9 @@ def assign_user_data(username: str, make_admin: bool) -> None:
 
             updated_activities = int(
                 session.execute(
-                    sa.text("UPDATE activities SET user_id = :user_id WHERE user_id IS NULL"),
+                    sa.text(
+                        "UPDATE activities SET user_id = :user_id WHERE user_id IS NULL"
+                    ),
                     {"user_id": user_id},
                 ).rowcount
                 or 0
@@ -118,7 +123,9 @@ def assign_user_data(username: str, make_admin: bool) -> None:
 
             updated_entries = int(
                 session.execute(
-                    sa.text("UPDATE entries SET user_id = :user_id WHERE user_id IS NULL"),
+                    sa.text(
+                        "UPDATE entries SET user_id = :user_id WHERE user_id IS NULL"
+                    ),
                     {"user_id": user_id},
                 ).rowcount
                 or 0
@@ -136,8 +143,9 @@ def assign_user_data(username: str, make_admin: bool) -> None:
             )
 
 
-
-def _resolve_user_ids(session, *, user_id: Optional[int], username: Optional[str], all_users: bool) -> list[int]:
+def _resolve_user_ids(
+    session, *, user_id: Optional[int], username: Optional[str], all_users: bool
+) -> list[int]:
     if all_users:
         return [row[0] for row in session.execute(sa.select(User.id)).all()]
     if username:
@@ -156,7 +164,12 @@ def _resolve_user_ids(session, *, user_id: Optional[int], username: Optional[str
 @cli.command("rebuild-wearable-agg")
 @click.option("--user-id", type=int, help="Rebuild aggregates for a specific user.")
 @click.option("--username", help="Rebuild aggregates for this username.")
-@click.option("--all-users", is_flag=True, default=False, help="Rebuild aggregates for every user.")
+@click.option(
+    "--all-users",
+    is_flag=True,
+    default=False,
+    help="Rebuild aggregates for every user.",
+)
 @click.option(
     "--start-date",
     type=click.DateTime(formats=["%Y-%m-%d"]),
@@ -185,26 +198,34 @@ def rebuild_wearable_agg(
 
     with app.app_context():
         session = db.session
-        ids = _resolve_user_ids(session, user_id=user_id, username=username, all_users=all_users)
+        ids = _resolve_user_ids(
+            session, user_id=user_id, username=username, all_users=all_users
+        )
         start_time = perf_counter()
         for uid in ids:
-            rebuild_daily_aggregates_for_user(user_id=uid, start_date=target_start, end_date=target_end)
+            rebuild_daily_aggregates_for_user(
+                user_id=uid, start_date=target_start, end_date=target_end
+            )
         duration = perf_counter() - start_time
         session.expire_all()
 
         start_dt = datetime.combine(target_start, time.min).replace(tzinfo=timezone.utc)
-        end_dt = datetime.combine(target_end + timedelta(days=1), time.min).replace(tzinfo=timezone.utc)
+        end_dt = datetime.combine(target_end + timedelta(days=1), time.min).replace(
+            tzinfo=timezone.utc
+        )
 
         rows_updated = (
             session.query(WearableDailyAgg)
             .filter(WearableDailyAgg.user_id.in_(ids))
-            .filter(WearableDailyAgg.day_start_utc >= start_dt, WearableDailyAgg.day_start_utc < end_dt)
+            .filter(
+                WearableDailyAgg.day_start_utc >= start_dt,
+                WearableDailyAgg.day_start_utc < end_dt,
+            )
             .count()
         )
 
         steps_total = session.execute(
-            sa.select(func.coalesce(func.sum(WearableCanonicalSteps.steps), 0))
-            .where(
+            sa.select(func.coalesce(func.sum(WearableCanonicalSteps.steps), 0)).where(
                 WearableCanonicalSteps.user_id.in_(ids),
                 WearableCanonicalSteps.start_time_utc < end_dt,
                 WearableCanonicalSteps.end_time_utc >= start_dt,
@@ -212,8 +233,11 @@ def rebuild_wearable_agg(
         ).scalar_one()
 
         sleep_seconds = session.execute(
-            sa.select(func.coalesce(func.sum(WearableCanonicalSleepSession.duration_seconds), 0))
-            .where(
+            sa.select(
+                func.coalesce(
+                    func.sum(WearableCanonicalSleepSession.duration_seconds), 0
+                )
+            ).where(
                 WearableCanonicalSleepSession.user_id.in_(ids),
                 WearableCanonicalSleepSession.start_time_utc < end_dt,
                 WearableCanonicalSleepSession.end_time_utc >= start_dt,
@@ -221,8 +245,7 @@ def rebuild_wearable_agg(
         ).scalar_one()
 
         avg_hr = session.execute(
-            sa.select(func.avg(WearableCanonicalHR.bpm))
-            .where(
+            sa.select(func.avg(WearableCanonicalHR.bpm)).where(
                 WearableCanonicalHR.user_id.in_(ids),
                 WearableCanonicalHR.timestamp_utc >= start_dt,
                 WearableCanonicalHR.timestamp_utc < end_dt,

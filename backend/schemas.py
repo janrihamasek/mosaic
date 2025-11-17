@@ -2,7 +2,14 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from werkzeug.datastructures import FileStorage
 
 
@@ -210,7 +217,9 @@ class ActivityUpdatePayload(BaseModel):
         return cls._ensure_frequency(value, "frequency_per_week", minimum=1, maximum=7)
 
     @staticmethod
-    def _ensure_frequency(value, field: str, *, minimum: int, maximum: int) -> Optional[int]:
+    def _ensure_frequency(
+        value, field: str, *, minimum: int, maximum: int
+    ) -> Optional[int]:
         if value is None:
             return None
         try:
@@ -231,7 +240,9 @@ class ActivityUpdatePayload(BaseModel):
         freq_day = data.get("frequency_per_day")
         freq_week = data.get("frequency_per_week")
         if (freq_day is None) ^ (freq_week is None):
-            raise ValueError("Both frequency_per_day and frequency_per_week must be provided together")
+            raise ValueError(
+                "Both frequency_per_day and frequency_per_week must be provided together"
+            )
         return self
 
     def to_update_dict(self) -> dict:
@@ -545,7 +556,9 @@ class WearableBatchPayload(BaseModel):
 
     @field_validator("records")
     @classmethod
-    def validate_records(cls, value: List[WearableRecordPayload]) -> List[WearableRecordPayload]:
+    def validate_records(
+        cls, value: List[WearableRecordPayload]
+    ) -> List[WearableRecordPayload]:
         if not value:
             raise ValueError("records must contain at least one item")
         return value

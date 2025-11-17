@@ -6,7 +6,6 @@ from alembic import context
 from flask import current_app
 from sqlalchemy import engine_from_config, pool
 
-
 config = context.config
 
 if config.config_file_name is not None:
@@ -30,7 +29,9 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = current_app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+    configuration["sqlalchemy.url"] = (
+        current_app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+    )
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",

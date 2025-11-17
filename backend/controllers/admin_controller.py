@@ -1,18 +1,18 @@
-from flask import Blueprint, g, jsonify, request, Response
-
-from security import jwt_required, require_admin, error_response
-from services import admin_service
-from infra.cache_manager import invalidate_cache
-from infra import metrics_manager
-from infra import health_service
 from app import SERVER_START_TIME
+from flask import Blueprint, Response, g, jsonify, request
+from infra import health_service, metrics_manager
+from infra.cache_manager import invalidate_cache
+from security import error_response, jwt_required, require_admin
+from services import admin_service
 
 admin_bp = Blueprint("admin", __name__)
 
 
 @admin_bp.get("/")
 def home():
-    from app import home as app_home  # local import to avoid circular import at module load
+    from app import (
+        home as app_home,
+    )  # local import to avoid circular import at module load
 
     return app_home()
 

@@ -1,7 +1,6 @@
-from flask import Blueprint, Response, jsonify, request, send_file
-
 from controllers.helpers import current_user_id, is_admin_user, parse_pagination
-from security import jwt_required, ValidationError, error_response
+from flask import Blueprint, Response, jsonify, request, send_file
+from security import ValidationError, error_response, jwt_required
 from services import backup_service
 
 backup_bp = Blueprint("backup", __name__)
@@ -26,7 +25,9 @@ def backup_run():
     from app import backup_manager  # local import to avoid circular init
 
     try:
-        result, status = backup_service.run_backup(backup_manager, operator_id=operator_id)
+        result, status = backup_service.run_backup(
+            backup_manager, operator_id=operator_id
+        )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
     return jsonify(result), status
@@ -40,7 +41,9 @@ def backup_toggle():
     from app import backup_manager  # local import to avoid circular init
 
     try:
-        result, status = backup_service.toggle_backup(backup_manager, operator_id=operator_id, payload=payload)
+        result, status = backup_service.toggle_backup(
+            backup_manager, operator_id=operator_id, payload=payload
+        )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
     return jsonify(result), status
@@ -114,7 +117,9 @@ def export_csv():
             limit=limit,
             offset=offset,
         )
-        csv_body = backup_service.build_export_csv(payload["entries"], payload["activities"])
+        csv_body = backup_service.build_export_csv(
+            payload["entries"], payload["activities"]
+        )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
 
@@ -138,7 +143,9 @@ def _set_export_headers(
     total_entries: int,
     total_activities: int,
 ) -> Response:
-    response.headers["Content-Disposition"] = f'attachment; filename="mosaic-export.{extension}"'
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="mosaic-export.{extension}"'
+    )
     response.headers["X-Limit"] = str(limit)
     response.headers["X-Offset"] = str(offset)
     response.headers["X-Total-Entries"] = str(total_entries)

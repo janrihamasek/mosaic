@@ -3,9 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from sqlalchemy.orm import DynamicMapped, Mapped, mapped_column, relationship
-
 from extensions import db
+from sqlalchemy.orm import DynamicMapped, Mapped, mapped_column, relationship
 
 
 def _utcnow() -> datetime:
@@ -27,8 +26,12 @@ class Activity(db.Model):
     goal: Mapped[float] = mapped_column(db.Float, nullable=False, default=0.0)
     description: Mapped[Optional[str]] = mapped_column(db.Text, nullable=True)
     active: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=True)
-    frequency_per_day: Mapped[int] = mapped_column(db.Integer, nullable=False, default=1)
-    frequency_per_week: Mapped[int] = mapped_column(db.Integer, nullable=False, default=1)
+    frequency_per_day: Mapped[int] = mapped_column(
+        db.Integer, nullable=False, default=1
+    )
+    frequency_per_week: Mapped[int] = mapped_column(
+        db.Integer, nullable=False, default=1
+    )
     deactivated_at: Mapped[Optional[str]] = mapped_column(db.String(32), nullable=True)
     user_id: Mapped[Optional[int]] = mapped_column(
         db.Integer,
@@ -53,7 +56,9 @@ class Entry(db.Model):
     description: Mapped[Optional[str]] = mapped_column(db.Text, nullable=True)
     value: Mapped[Optional[float]] = mapped_column(db.Float, nullable=True, default=0.0)
     note: Mapped[Optional[str]] = mapped_column(db.Text, nullable=True)
-    activity_category: Mapped[str] = mapped_column(db.String(120), nullable=False, default="")
+    activity_category: Mapped[str] = mapped_column(
+        db.String(120), nullable=False, default=""
+    )
     activity_goal: Mapped[float] = mapped_column(db.Float, nullable=False, default=0.0)
     activity_type: Mapped[str] = mapped_column(
         db.String(16),
@@ -80,9 +85,13 @@ class User(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(db.String(80), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(db.String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime, nullable=False, default=datetime.utcnow
+    )
     is_admin: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=False)
-    display_name: Mapped[str] = mapped_column(db.String(120), nullable=False, default="")
+    display_name: Mapped[str] = mapped_column(
+        db.String(120), nullable=False, default=""
+    )
 
     activities: Mapped[List["Activity"]] = relationship(
         back_populates="user",
@@ -117,10 +126,12 @@ class User(db.Model):
         back_populates="user",
         passive_deletes=True,
     )
-    wearable_sleep_sessions: Mapped[List["WearableCanonicalSleepSession"]] = relationship(
-        "WearableCanonicalSleepSession",
-        back_populates="user",
-        passive_deletes=True,
+    wearable_sleep_sessions: Mapped[List["WearableCanonicalSleepSession"]] = (
+        relationship(
+            "WearableCanonicalSleepSession",
+            back_populates="user",
+            passive_deletes=True,
+        )
     )
     wearable_sleep_stages: Mapped[List["WearableCanonicalSleepStage"]] = relationship(
         "WearableCanonicalSleepStage",
@@ -142,8 +153,12 @@ class BackupSettings(db.Model):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     enabled: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=False)
-    interval_minutes: Mapped[int] = mapped_column(db.Integer, nullable=False, default=60)
-    last_run: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    interval_minutes: Mapped[int] = mapped_column(
+        db.Integer, nullable=False, default=60
+    )
+    last_run: Mapped[Optional[datetime]] = mapped_column(
+        db.DateTime(timezone=True), nullable=True
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - convenience
         status = "enabled" if self.enabled else "disabled"
@@ -169,7 +184,9 @@ class ActivityLog(db.Model):
     event_type: Mapped[str] = mapped_column(db.String(64), nullable=False, index=True)
     message: Mapped[str] = mapped_column(db.Text, nullable=False)
     context: Mapped[Optional[Dict[str, object]]] = mapped_column(db.JSON, nullable=True)
-    level: Mapped[str] = mapped_column(db.String(20), nullable=False, default="info", index=True)
+    level: Mapped[str] = mapped_column(
+        db.String(20), nullable=False, default="info", index=True
+    )
 
     user: Mapped[Optional["User"]] = relationship(back_populates="activity_logs")
 
@@ -192,7 +209,12 @@ class WearableSource(db.Model):
     __tablename__ = "wearable_sources"
     __table_args__ = (
         db.UniqueConstraint("dedupe_key", name="uq_wearable_sources_dedupe_key"),
-        db.UniqueConstraint("user_id", "provider", "external_id", name="uq_wearable_sources_user_provider_external"),
+        db.UniqueConstraint(
+            "user_id",
+            "provider",
+            "external_id",
+            name="uq_wearable_sources_user_provider_external",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -205,10 +227,16 @@ class WearableSource(db.Model):
     provider: Mapped[str] = mapped_column(db.String(64), nullable=False)
     external_id: Mapped[str] = mapped_column(db.String(128), nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(db.String(128), nullable=True)
-    sync_metadata: Mapped[Optional[Dict[str, object]]] = mapped_column(db.JSON, nullable=True)
-    last_synced_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    sync_metadata: Mapped[Optional[Dict[str, object]]] = mapped_column(
+        db.JSON, nullable=True
+    )
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(
+        db.DateTime(timezone=True), nullable=True
+    )
     dedupe_key: Mapped[str] = mapped_column(db.String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False, default=_utcnow
+    )
     updated_at: Mapped[datetime] = mapped_column(
         db.DateTime(timezone=True),
         nullable=False,
@@ -264,7 +292,9 @@ class WearableRaw(db.Model):
         nullable=True,
         index=True,
     )
-    collected_at_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
+    collected_at_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
     received_at_utc: Mapped[datetime] = mapped_column(
         db.DateTime(timezone=True),
         nullable=False,
@@ -272,10 +302,14 @@ class WearableRaw(db.Model):
     )
     payload: Mapped[Dict[str, object]] = mapped_column(db.JSON, nullable=False)
     dedupe_key: Mapped[str] = mapped_column(db.String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     user: Mapped["User"] = relationship(back_populates="wearable_raw_records")
-    source: Mapped[Optional["WearableSource"]] = relationship(back_populates="raw_records")
+    source: Mapped[Optional["WearableSource"]] = relationship(
+        back_populates="raw_records"
+    )
     canonical_steps: Mapped[List["WearableCanonicalSteps"]] = relationship(
         "WearableCanonicalSteps",
         back_populates="raw",
@@ -296,7 +330,9 @@ class WearableRaw(db.Model):
 class WearableCanonicalSteps(db.Model):
     __tablename__ = "wearable_canonical_steps"
     __table_args__ = (
-        db.UniqueConstraint("dedupe_key", name="uq_wearable_canonical_steps_dedupe_key"),
+        db.UniqueConstraint(
+            "dedupe_key", name="uq_wearable_canonical_steps_dedupe_key"
+        ),
         db.Index("ix_wearable_canonical_steps_user_start", "user_id", "start_time_utc"),
     )
 
@@ -319,17 +355,27 @@ class WearableCanonicalSteps(db.Model):
         nullable=True,
         index=True,
     )
-    start_time_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
-    end_time_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
+    start_time_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
+    end_time_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
     steps: Mapped[int] = mapped_column(db.Integer, nullable=False, default=0)
     distance_meters: Mapped[Optional[float]] = mapped_column(db.Float, nullable=True)
     active_minutes: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
     dedupe_key: Mapped[str] = mapped_column(db.String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     user: Mapped["User"] = relationship(back_populates="wearable_steps")
-    source: Mapped[Optional["WearableSource"]] = relationship(back_populates="canonical_steps")
-    raw: Mapped[Optional["WearableRaw"]] = relationship(back_populates="canonical_steps")
+    source: Mapped[Optional["WearableSource"]] = relationship(
+        back_populates="canonical_steps"
+    )
+    raw: Mapped[Optional["WearableRaw"]] = relationship(
+        back_populates="canonical_steps"
+    )
 
 
 class WearableCanonicalHR(db.Model):
@@ -358,22 +404,30 @@ class WearableCanonicalHR(db.Model):
         nullable=True,
         index=True,
     )
-    timestamp_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
+    timestamp_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
     bpm: Mapped[int] = mapped_column(db.Integer, nullable=False)
     confidence: Mapped[Optional[str]] = mapped_column(db.String(32), nullable=True)
     variability_ms: Mapped[Optional[float]] = mapped_column(db.Float, nullable=True)
     dedupe_key: Mapped[str] = mapped_column(db.String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     user: Mapped["User"] = relationship(back_populates="wearable_hr")
-    source: Mapped[Optional["WearableSource"]] = relationship(back_populates="canonical_hr")
+    source: Mapped[Optional["WearableSource"]] = relationship(
+        back_populates="canonical_hr"
+    )
     raw: Mapped[Optional["WearableRaw"]] = relationship(back_populates="canonical_hr")
 
 
 class WearableCanonicalSleepSession(db.Model):
     __tablename__ = "wearable_canonical_sleep_sessions"
     __table_args__ = (
-        db.UniqueConstraint("dedupe_key", name="uq_wearable_canonical_sleep_sessions_dedupe_key"),
+        db.UniqueConstraint(
+            "dedupe_key", name="uq_wearable_canonical_sleep_sessions_dedupe_key"
+        ),
         db.Index("ix_wearable_sleep_sessions_user_start", "user_id", "start_time_utc"),
     )
 
@@ -396,16 +450,24 @@ class WearableCanonicalSleepSession(db.Model):
         nullable=True,
         index=True,
     )
-    start_time_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
-    end_time_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
+    start_time_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
+    end_time_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
     duration_seconds: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
     sleep_type: Mapped[Optional[str]] = mapped_column(db.String(32), nullable=True)
     score: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
     dedupe_key: Mapped[str] = mapped_column(db.String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     user: Mapped["User"] = relationship(back_populates="wearable_sleep_sessions")
-    source: Mapped[Optional["WearableSource"]] = relationship(back_populates="sleep_sessions")
+    source: Mapped[Optional["WearableSource"]] = relationship(
+        back_populates="sleep_sessions"
+    )
     raw: Mapped[Optional["WearableRaw"]] = relationship(back_populates="sleep_sessions")
     stages: Mapped[List["WearableCanonicalSleepStage"]] = relationship(
         "WearableCanonicalSleepStage",
@@ -417,7 +479,9 @@ class WearableCanonicalSleepSession(db.Model):
 class WearableCanonicalSleepStage(db.Model):
     __tablename__ = "wearable_canonical_sleep_stages"
     __table_args__ = (
-        db.UniqueConstraint("dedupe_key", name="uq_wearable_canonical_sleep_stages_dedupe_key"),
+        db.UniqueConstraint(
+            "dedupe_key", name="uq_wearable_canonical_sleep_stages_dedupe_key"
+        ),
         db.Index("ix_wearable_sleep_stages_user_start", "user_id", "start_time_utc"),
     )
 
@@ -435,13 +499,21 @@ class WearableCanonicalSleepStage(db.Model):
         index=True,
     )
     stage_type: Mapped[str] = mapped_column(db.String(32), nullable=False)
-    start_time_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
-    end_time_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
+    start_time_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
+    end_time_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
     duration_seconds: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
     dedupe_key: Mapped[str] = mapped_column(db.String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
-    session: Mapped["WearableCanonicalSleepSession"] = relationship(back_populates="stages")
+    session: Mapped["WearableCanonicalSleepSession"] = relationship(
+        back_populates="stages"
+    )
     user: Mapped["User"] = relationship(back_populates="wearable_sleep_stages")
 
 
@@ -465,7 +537,9 @@ class WearableDailyAgg(db.Model):
         nullable=True,
         index=True,
     )
-    day_start_utc: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False)
+    day_start_utc: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False
+    )
     steps: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
     distance_meters: Mapped[Optional[float]] = mapped_column(db.Float, nullable=True)
     calories: Mapped[Optional[float]] = mapped_column(db.Float, nullable=True)
@@ -474,10 +548,14 @@ class WearableDailyAgg(db.Model):
     sleep_seconds: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
     payload: Mapped[Optional[Dict[str, object]]] = mapped_column(db.JSON, nullable=True)
     dedupe_key: Mapped[str] = mapped_column(db.String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        db.DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     user: Mapped["User"] = relationship(back_populates="wearable_daily_agg")
-    source: Mapped[Optional["WearableSource"]] = relationship(back_populates="daily_aggregates")
+    source: Mapped[Optional["WearableSource"]] = relationship(
+        back_populates="daily_aggregates"
+    )
 
 
 __all__ = [

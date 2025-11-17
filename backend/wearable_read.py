@@ -1,17 +1,9 @@
-from datetime import datetime, date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Optional
 
-from flask import Blueprint, jsonify, request, g
-from sqlalchemy import func
-from sqlalchemy.sql import label
-
 from extensions import db
-from models import (
-    WearableCanonicalHR,
-    WearableCanonicalSleepSession,
-    WearableDailyAgg,
-)
-from security import ValidationError, error_response, jwt_required
+from flask import Blueprint, g, jsonify, request
+from models import WearableCanonicalHR, WearableCanonicalSleepSession, WearableDailyAgg
 from schemas_wearable import (
     WearableDayResponse,
     WearableHrSummary,
@@ -20,6 +12,9 @@ from schemas_wearable import (
     WearableTrendsQuery,
     WearableTrendsResponse,
 )
+from security import ValidationError, error_response, jwt_required
+from sqlalchemy import func
+from sqlalchemy.sql import label
 
 wearable_read_bp = Blueprint("wearable_read", __name__)
 
@@ -32,7 +27,9 @@ def _current_user_id() -> Optional[int]:
 
 
 def _day_start_for(target_date: date) -> datetime:
-    return datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
+    return datetime(
+        target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc
+    )
 
 
 def _parse_date_param(value: Optional[str]) -> date:
@@ -44,7 +41,9 @@ def _parse_date_param(value: Optional[str]) -> date:
         raise ValidationError("date must be in YYYY-MM-DD format", code="invalid_query")
 
 
-def _validate_trends_query(metric: Optional[str], window: Optional[str]) -> WearableTrendsQuery:
+def _validate_trends_query(
+    metric: Optional[str], window: Optional[str]
+) -> WearableTrendsQuery:
     try:
         window_value = int(window) if window is not None else 7
     except (TypeError, ValueError):
@@ -69,29 +68,37 @@ def get_wearable_day():
     start = _day_start_for(target_date)
     end = start + timedelta(days=1)
 
-    aggregate = db.session.query(
-        func.coalesce(func.sum(WearableDailyAgg.steps), 0),
-        func.coalesce(func.sum(WearableDailyAgg.sleep_seconds), 0),
-        func.min(WearableDailyAgg.resting_heart_rate),
-    ).filter(
-        WearableDailyAgg.user_id == user_id,
-        WearableDailyAgg.day_start_utc >= start,
-        WearableDailyAgg.day_start_utc < end,
-    ).one()
+    aggregate = (
+        db.session.query(
+            func.coalesce(func.sum(WearableDailyAgg.steps), 0),
+            func.coalesce(func.sum(WearableDailyAgg.sleep_seconds), 0),
+            func.min(WearableDailyAgg.resting_heart_rate),
+        )
+        .filter(
+            WearableDailyAgg.user_id == user_id,
+            WearableDailyAgg.day_start_utc >= start,
+            WearableDailyAgg.day_start_utc < end,
+        )
+        .one()
+    )
 
     steps_total = int(aggregate[0] or 0)
     sleep_seconds = int(aggregate[1] or 0)
     resting_hr = aggregate[2]
 
-    sleep_stats = db.session.query(
-        func.coalesce(func.sum(WearableCanonicalSleepSession.duration_seconds), 0),
-        func.avg(WearableCanonicalSleepSession.score),
-        func.count(WearableCanonicalSleepSession.id),
-    ).filter(
-        WearableCanonicalSleepSession.user_id == user_id,
-        WearableCanonicalSleepSession.start_time_utc >= start,
-        WearableCanonicalSleepSession.start_time_utc < end,
-    ).one()
+    sleep_stats = (
+        db.session.query(
+            func.coalesce(func.sum(WearableCanonicalSleepSession.duration_seconds), 0),
+            func.avg(WearableCanonicalSleepSession.score),
+            func.count(WearableCanonicalSleepSession.id),
+        )
+        .filter(
+            WearableCanonicalSleepSession.user_id == user_id,
+            WearableCanonicalSleepSession.start_time_utc >= start,
+            WearableCanonicalSleepSession.start_time_utc < end,
+        )
+        .one()
+    )
 
     efficiency = None
     if sleep_stats[1] is not None:
@@ -99,15 +106,19 @@ def get_wearable_day():
     sessions = int(sleep_stats[2] or 0)
     total_min = round(sleep_seconds / 60, 1)
 
-    hr_stats = db.session.query(
-        func.min(WearableCanonicalHR.bpm),
-        func.avg(WearableCanonicalHR.bpm),
-        func.max(WearableCanonicalHR.bpm),
-    ).filter(
-        WearableCanonicalHR.user_id == user_id,
-        WearableCanonicalHR.timestamp_utc >= start,
-        WearableCanonicalHR.timestamp_utc < end,
-    ).one()
+    hr_stats = (
+        db.session.query(
+            func.min(WearableCanonicalHR.bpm),
+            func.avg(WearableCanonicalHR.bpm),
+            func.max(WearableCanonicalHR.bpm),
+        )
+        .filter(
+            WearableCanonicalHR.user_id == user_id,
+            WearableCanonicalHR.timestamp_utc >= start,
+            WearableCanonicalHR.timestamp_utc < end,
+        )
+        .one()
+    )
 
     hr_summary = WearableHrSummary(
         rest=resting_hr if resting_hr is not None else None,
@@ -119,7 +130,9 @@ def get_wearable_day():
     payload = WearableDayResponse(
         date=target_date.isoformat(),
         steps=steps_total,
-        sleep=WearableSleepSummary(total_min=total_min, efficiency=efficiency, sessions=sessions),
+        sleep=WearableSleepSummary(
+            total_min=total_min, efficiency=efficiency, sessions=sessions
+        ),
         hr=hr_summary,
     )
     return jsonify(payload.model_dump())
@@ -136,7 +149,9 @@ def _normalize_day_key(raw_value: object) -> date:
     raise ValueError("Unsupported day key type")
 
 
-def _build_trend_map(user_id: int, query: WearableTrendsQuery, start_date: date, end_date: date) -> Dict[date, Optional[float]]:
+def _build_trend_map(
+    user_id: int, query: WearableTrendsQuery, start_date: date, end_date: date
+) -> Dict[date, Optional[float]]:
     day_start = _day_start_for(start_date)
     day_end = _day_start_for(end_date + timedelta(days=1))
     if query.metric in {"steps", "sleep"}:
@@ -144,7 +159,9 @@ def _build_trend_map(user_id: int, query: WearableTrendsQuery, start_date: date,
         value_expr = (
             func.coalesce(func.sum(WearableDailyAgg.steps), 0).label("value")
             if query.metric == "steps"
-            else func.coalesce(func.sum(WearableDailyAgg.sleep_seconds), 0).label("value")
+            else func.coalesce(func.sum(WearableDailyAgg.sleep_seconds), 0).label(
+                "value"
+            )
         )
         rows = (
             db.session.query(day_expr, value_expr)
@@ -170,7 +187,9 @@ def _build_trend_map(user_id: int, query: WearableTrendsQuery, start_date: date,
         .group_by(day_expr)
         .all()
     )
-    return {_normalize_day_key(row[0]): float(row[1]) for row in rows if row[1] is not None}
+    return {
+        _normalize_day_key(row[0]): float(row[1]) for row in rows if row[1] is not None
+    }
 
 
 @wearable_read_bp.route("/wearable/trends", methods=["GET"])

@@ -1,5 +1,4 @@
 import pytest
-
 from app import app
 from extensions import db
 from import_data import import_csv

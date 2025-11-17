@@ -4,7 +4,9 @@ import uuid
 def _auth_headers(client):
     username = f"idempotent_{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
-    register = client.post("/register", json={"username": username, "password": password})
+    register = client.post(
+        "/register", json={"username": username, "password": password}
+    )
     assert register.status_code == 201
     login = client.post("/login", json={"username": username, "password": password})
     assert login.status_code == 200
@@ -17,17 +19,28 @@ def _auth_headers(client):
 
 def test_add_entry_idempotent(client):
     headers = _auth_headers(client)
-    payload = {"date": "2025-11-08", "activity": "Test Entry", "value": 1.5, "note": "local"}
+    payload = {
+        "date": "2025-11-08",
+        "activity": "Test Entry",
+        "value": 1.5,
+        "note": "local",
+    }
     key = "entry-key-001"
 
-    first = client.post("/add_entry", json=payload, headers={**headers, "X-Idempotency-Key": key})
+    first = client.post(
+        "/add_entry", json=payload, headers={**headers, "X-Idempotency-Key": key}
+    )
     assert first.status_code in (200, 201)
 
-    second = client.post("/add_entry", json=payload, headers={**headers, "X-Idempotency-Key": key})
+    second = client.post(
+        "/add_entry", json=payload, headers={**headers, "X-Idempotency-Key": key}
+    )
     assert second.status_code == first.status_code
     assert second.get_json()["message"]
 
-    today = client.get("/today", query_string={"date": payload["date"]}, headers=headers)
+    today = client.get(
+        "/today", query_string={"date": payload["date"]}, headers=headers
+    )
     assert today.status_code == 200
     rows = today.get_json()
     matching = [row for row in rows if row["name"] == payload["activity"]]
@@ -47,10 +60,14 @@ def test_add_activity_idempotent_and_overwrite(client):
     }
     key = "activity-key-001"
 
-    first = client.post("/add_activity", json=payload, headers={**headers, "X-Idempotency-Key": key})
+    first = client.post(
+        "/add_activity", json=payload, headers={**headers, "X-Idempotency-Key": key}
+    )
     assert first.status_code == 201
 
-    replay = client.post("/add_activity", json=payload, headers={**headers, "X-Idempotency-Key": key})
+    replay = client.post(
+        "/add_activity", json=payload, headers={**headers, "X-Idempotency-Key": key}
+    )
     assert replay.status_code == 201
 
     overwrite_payload = {

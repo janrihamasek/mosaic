@@ -7,7 +7,9 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine, Result, RowMapping
 
 
-def _prepare_statement(sql: str, params: Sequence[object] | Mapping[str, object] | None) -> Tuple[str, dict]:
+def _prepare_statement(
+    sql: str, params: Sequence[object] | Mapping[str, object] | None
+) -> Tuple[str, dict]:
     if params is None:
         return sql, {}
     if isinstance(params, Mapping):
@@ -17,7 +19,9 @@ def _prepare_statement(sql: str, params: Sequence[object] | Mapping[str, object]
 
     placeholders = sql.count("?")
     if placeholders != len(params):
-        raise ValueError(f"Parameter count mismatch: expected {placeholders}, got {len(params)}.")
+        raise ValueError(
+            f"Parameter count mismatch: expected {placeholders}, got {len(params)}."
+        )
 
     bound_params: dict[str, object] = {}
     parts = sql.split("?")
@@ -38,7 +42,9 @@ class ResultWrapper:
         return None if row is None else cast(Mapping[str, object], row._mapping)
 
     def fetchall(self) -> list[Mapping[str, object]]:
-        return [cast(Mapping[str, object], row._mapping) for row in self._result.fetchall()]
+        return [
+            cast(Mapping[str, object], row._mapping) for row in self._result.fetchall()
+        ]
 
     def first(self) -> Optional[Mapping[str, object]]:
         row = self._result.first()

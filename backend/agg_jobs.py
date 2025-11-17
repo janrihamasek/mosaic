@@ -4,7 +4,6 @@ from datetime import date, datetime
 from typing import Optional
 
 import structlog
-
 from extensions import db
 from wearable_service import WearableAggregator
 

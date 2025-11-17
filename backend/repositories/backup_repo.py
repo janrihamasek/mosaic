@@ -14,14 +14,18 @@ def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
     return clause
 
 
-def get_export_entries(user_id: Optional[int], is_admin: bool, limit: int, offset: int) -> List[dict]:
+def get_export_entries(
+    user_id: Optional[int], is_admin: bool, limit: int, offset: int
+) -> List[dict]:
     """Fetch entries for export with optional user scoping."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = []
         where_clause = ""
         if user_id is not None:
-            where_clause = f"WHERE {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
+            where_clause = (
+                f"WHERE {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
+            )
             params.append(user_id)
         params.extend([limit, offset])
 
@@ -52,14 +56,18 @@ def get_export_entries(user_id: Optional[int], is_admin: bool, limit: int, offse
     return [dict(row) for row in rows]
 
 
-def get_export_activities(user_id: Optional[int], is_admin: bool, limit: int, offset: int) -> List[dict]:
+def get_export_activities(
+    user_id: Optional[int], is_admin: bool, limit: int, offset: int
+) -> List[dict]:
     """Fetch activities for export with optional user scoping."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = []
         where_clause = ""
         if user_id is not None:
-            where_clause = f"WHERE {_user_scope_clause('a.user_id', include_unassigned=is_admin)}"
+            where_clause = (
+                f"WHERE {_user_scope_clause('a.user_id', include_unassigned=is_admin)}"
+            )
             params.append(user_id)
         params.extend([limit, offset])
 

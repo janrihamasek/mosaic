@@ -1,10 +1,9 @@
 import time
 from typing import Dict, Tuple
 
-from sqlalchemy import text
-
 from extensions import db
 from infra import cache_manager, metrics_manager
+from sqlalchemy import text
 
 
 def check_db_connection() -> bool:
@@ -38,7 +37,10 @@ def build_health_summary(server_start_time: float) -> Tuple[Dict[str, object], b
         req_per_min = float(requests_total)
     else:
         req_per_min = requests_total / uptime_minutes
-    error_total = metrics_snapshot["errors_total"]["4xx"] + metrics_snapshot["errors_total"]["5xx"]
+    error_total = (
+        metrics_snapshot["errors_total"]["4xx"]
+        + metrics_snapshot["errors_total"]["5xx"]
+    )
     error_rate = error_total / requests_total if requests_total else 0.0
     db_ok = check_db_connection()
     cache_ok = check_cache_state()

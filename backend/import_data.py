@@ -1,14 +1,12 @@
 import csv
 from typing import Dict, Optional, Set, Tuple
 
-from flask import has_app_context
-
-from pydantic import ValidationError
-from sqlalchemy import select
-
 from extensions import db
+from flask import has_app_context
 from models import Activity, Entry, User
+from pydantic import ValidationError
 from schemas import CSVImportRow
+from sqlalchemy import select
 
 
 def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activity:
@@ -35,7 +33,9 @@ def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activit
         return activity
 
     if user_id is not None and activity.user_id not in (None, user_id):
-        raise ValueError(f"Activity '{parsed.activity}' already belongs to another user")
+        raise ValueError(
+            f"Activity '{parsed.activity}' already belongs to another user"
+        )
 
     if user_id is not None and activity.user_id is None:
         activity.user_id = user_id
@@ -51,10 +51,16 @@ def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activit
     if parsed.goal is not None and float(activity.goal or 0) != float(parsed.goal):
         activity.goal = parsed.goal
         updated = True
-    if parsed.frequency_per_day is not None and activity.frequency_per_day != parsed.frequency_per_day:
+    if (
+        parsed.frequency_per_day is not None
+        and activity.frequency_per_day != parsed.frequency_per_day
+    ):
         activity.frequency_per_day = parsed.frequency_per_day
         updated = True
-    if parsed.frequency_per_week is not None and activity.frequency_per_week != parsed.frequency_per_week:
+    if (
+        parsed.frequency_per_week is not None
+        and activity.frequency_per_week != parsed.frequency_per_week
+    ):
         activity.frequency_per_week = parsed.frequency_per_week
         updated = True
     if not activity.active:
@@ -68,9 +74,13 @@ def _ensure_activity(parsed: CSVImportRow, *, user_id: Optional[int]) -> Activit
     return activity
 
 
-def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional[int]) -> str:
+def _upsert_entry(
+    parsed: CSVImportRow, activity: Activity, *, user_id: Optional[int]
+) -> str:
     session = db.session
-    stmt = select(Entry).where(Entry.date == parsed.date, Entry.activity == parsed.activity)
+    stmt = select(Entry).where(
+        Entry.date == parsed.date, Entry.activity == parsed.activity
+    )
     if user_id is not None:
         stmt = stmt.where(Entry.user_id == user_id)
     entry = session.execute(stmt).scalar_one_or_none()
@@ -108,7 +118,9 @@ def _upsert_entry(parsed: CSVImportRow, activity: Activity, *, user_id: Optional
     return "updated"
 
 
-def _import_csv_impl(csv_path: str, *, commit: bool = True, user_id: Optional[int] = None) -> Dict[str, object]:
+def _import_csv_impl(
+    csv_path: str, *, commit: bool = True, user_id: Optional[int] = None
+) -> Dict[str, object]:
     created = 0
     updated = 0
     skipped = 0
@@ -137,7 +149,9 @@ def _import_csv_impl(csv_path: str, *, commit: bool = True, user_id: Optional[in
                             "row": index,
                             "status": "skipped",
                             "reason": message,
-                            "raw": {str(key or ""): value for key, value in row.items()},
+                            "raw": {
+                                str(key or ""): value for key, value in row.items()
+                            },
                         }
                     )
                     continue
@@ -194,10 +208,17 @@ def _import_csv_impl(csv_path: str, *, commit: bool = True, user_id: Optional[in
         session.rollback()
         raise
 
-    return {"created": created, "updated": updated, "skipped": skipped, "details": details}
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "details": details,
+    }
 
 
-def import_csv(csv_path: str, *, commit: bool = True, user_id: Optional[int] = None) -> Dict[str, object]:
+def import_csv(
+    csv_path: str, *, commit: bool = True, user_id: Optional[int] = None
+) -> Dict[str, object]:
     if has_app_context():
         return _import_csv_impl(csv_path, commit=commit, user_id=user_id)
 
@@ -212,9 +233,12 @@ __all__ = ["import_csv"]
 
 if __name__ == "__main__":
     import argparse
+
     from app import app  # type: ignore
 
-    parser = argparse.ArgumentParser(description="Import Mosaic activities and entries from CSV.")
+    parser = argparse.ArgumentParser(
+        description="Import Mosaic activities and entries from CSV."
+    )
     parser.add_argument("csv_path", help="Path to the CSV file.")
     parser.add_argument("--username", help="Username that should own imported data.")
     args = parser.parse_args()
@@ -222,7 +246,9 @@ if __name__ == "__main__":
     with app.app_context():
         owner_id: Optional[int] = None
         if args.username:
-            owner_id = db.session.execute(select(User.id).where(User.username == args.username)).scalar_one_or_none()
+            owner_id = db.session.execute(
+                select(User.id).where(User.username == args.username)
+            ).scalar_one_or_none()
             if owner_id is None:
                 raise SystemExit(f"User '{args.username}' not found")
         result = import_csv(args.csv_path, user_id=owner_id)

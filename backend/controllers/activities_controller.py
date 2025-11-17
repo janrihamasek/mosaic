@@ -1,16 +1,15 @@
 from typing import Any, Dict
 
-from flask import Blueprint, jsonify, request, g, current_app
-
-from security import rate_limit, ValidationError, error_response
-from services import activities_service
 from controllers.helpers import (
-    parse_pagination,
     current_user_id,
-    is_admin_user,
     header_truthy,
+    is_admin_user,
+    parse_pagination,
 )
+from flask import Blueprint, current_app, g, jsonify, request
 from infra.cache_manager import invalidate_cache
+from security import ValidationError, error_response, rate_limit
+from services import activities_service
 
 activities_bp = Blueprint("activities", __name__)
 

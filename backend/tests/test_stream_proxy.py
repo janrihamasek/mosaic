@@ -5,14 +5,11 @@ from app import stream_rtsp
 
 
 class RTSPStream(Protocol):
-    def __iter__(self) -> "RTSPStream":
-        ...
+    def __iter__(self) -> "RTSPStream": ...
 
-    def __next__(self) -> bytes:
-        ...
+    def __next__(self) -> bytes: ...
 
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
 
 FAKE_FRAME_CHUNK = (
@@ -27,7 +24,9 @@ FAKE_FRAME_CHUNK = (
 def _create_user_and_token(client):
     username = f"user_{uuid.uuid4().hex[:6]}"
     password = "StrongPass123"
-    register = client.post("/register", json={"username": username, "password": password})
+    register = client.post(
+        "/register", json={"username": username, "password": password}
+    )
     assert register.status_code == 201
     login = client.post("/login", json={"username": username, "password": password})
     assert login.status_code == 200
@@ -47,7 +46,11 @@ def test_stream_proxy_authorized_ok(client, monkeypatch):
 
     response = client.get(
         "/api/stream-proxy",
-        query_string={"url": "rtsp://camera.local/live", "username": "user", "password": "secret"},
+        query_string={
+            "url": "rtsp://camera.local/live",
+            "username": "user",
+            "password": "secret",
+        },
         headers={"Authorization": f"Bearer {token}"},
     )
 

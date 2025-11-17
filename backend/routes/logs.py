@@ -3,14 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from flask import Blueprint, jsonify, request
-from sqlalchemy import desc
-from sqlalchemy.exc import SQLAlchemyError
 import structlog
-
 from audit import get_runtime_logs, is_activity_log_table_missing_error
+from flask import Blueprint, jsonify, request
 from models import ActivityLog
 from security import error_response, require_admin
+from sqlalchemy import desc
+from sqlalchemy.exc import SQLAlchemyError
 
 logs_bp = Blueprint("logs", __name__, url_prefix="/logs")
 logger = structlog.get_logger("mosaic.logs")
@@ -25,7 +24,9 @@ def _parse_iso_timestamp(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _parse_positive_int(value: Optional[str], *, default: int, minimum: int = 1, maximum: int = 500) -> int:
+def _parse_positive_int(
+    value: Optional[str], *, default: int, minimum: int = 1, maximum: int = 500
+) -> int:
     try:
         parsed = int(value) if value is not None else default
     except (TypeError, ValueError):
@@ -39,8 +40,12 @@ def _parse_positive_int(value: Optional[str], *, default: int, minimum: int = 1,
 @require_admin
 def list_activity_logs():
     try:
-        limit = _parse_positive_int(request.args.get("limit"), default=100, minimum=1, maximum=500)
-        offset = _parse_positive_int(request.args.get("offset"), default=0, minimum=0, maximum=10_000)
+        limit = _parse_positive_int(
+            request.args.get("limit"), default=100, minimum=1, maximum=500
+        )
+        offset = _parse_positive_int(
+            request.args.get("offset"), default=0, minimum=0, maximum=10_000
+        )
     except ValueError:
         return error_response("invalid_query", "Invalid pagination parameters", 400)
 

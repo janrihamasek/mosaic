@@ -9,21 +9,16 @@ import structlog
 from flask import Flask, Response, g, jsonify, request
 from flask.cli import with_appcontext
 from flask_cors import CORS
-from werkzeug.exceptions import HTTPException
-
 from https_utils import resolve_ssl_context
 from infra import health_service, metrics_manager
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from services import nightmotion_service
+from werkzeug.exceptions import HTTPException
 
 # Expose streaming helper for legacy callers/tests
 stream_rtsp = nightmotion_service.stream_rtsp
-from security import (
-    ValidationError,
-    error_response,
-    require_api_key,
-)
 from extensions import db, migrate
+from security import ValidationError, error_response, require_api_key
 
 
 def configure_logging() -> None:
@@ -80,7 +75,9 @@ class MosaicFlask(Flask):
             ssl_context = resolve_ssl_context()
             if ssl_context:
                 options["ssl_context"] = ssl_context
-        super().run(host=host, port=port, debug=debug, load_dotenv=load_dotenv, **options)
+        super().run(
+            host=host, port=port, debug=debug, load_dotenv=load_dotenv, **options
+        )
 
 
 app = MosaicFlask(__name__)
@@ -151,8 +148,12 @@ app.config["API_KEY"] = os.environ.get("MOSAIC_API_KEY")
 app.config.setdefault("PUBLIC_ENDPOINTS", {"home"})
 app.config.setdefault("JWT_SECRET", os.environ.get("MOSAIC_JWT_SECRET") or "change-me")
 app.config.setdefault("JWT_ALGORITHM", "HS256")
-app.config.setdefault("JWT_EXP_MINUTES", int(os.environ.get("MOSAIC_JWT_EXP_MINUTES", "60")))
-app.config["PUBLIC_ENDPOINTS"].update({"login", "register", "metrics", "health", "healthz"})
+app.config.setdefault(
+    "JWT_EXP_MINUTES", int(os.environ.get("MOSAIC_JWT_EXP_MINUTES", "60"))
+)
+app.config["PUBLIC_ENDPOINTS"].update(
+    {"login", "register", "metrics", "health", "healthz"}
+)
 
 db.init_app(app)
 migrate.init_app(app, db)
@@ -174,6 +175,7 @@ ERROR_CODE_BY_STATUS = {
 }
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
 
 def _decode_access_token(token: str) -> dict:
     return jwt.decode(
@@ -257,7 +259,9 @@ def _enforce_jwt_authentication():
 @app.before_request
 def _start_request_timer():
     g.metrics_start_time = metrics_manager.now_perf_counter()
-    g.metrics_endpoint = request.endpoint or (request.url_rule.rule if getattr(request, "url_rule", None) else request.path)
+    g.metrics_endpoint = request.endpoint or (
+        request.url_rule.rule if getattr(request, "url_rule", None) else request.path
+    )
     g.metrics_method = (request.method or "GET").upper()
 
 
@@ -269,7 +273,9 @@ def _log_request(response: Response):
             duration_ms = (metrics_manager.now_perf_counter() - start) * 1000
         else:
             duration_ms = 0.0
-        metrics_manager.record_request_metrics(g.metrics_method, g.metrics_endpoint, response.status_code, duration_ms)
+        metrics_manager.record_request_metrics(
+            g.metrics_method, g.metrics_endpoint, response.status_code, duration_ms
+        )
         logger.bind(
             method=request.method,
             path=request.path,
@@ -288,8 +294,12 @@ def _record_metrics_on_teardown(exc: Optional[BaseException]):
         return
     try:
         start = getattr(g, "metrics_start_time", None)
-        duration_ms = (metrics_manager.now_perf_counter() - start) * 1000 if start else 0.0
-        metrics_manager.record_request_metrics(g.metrics_method, g.metrics_endpoint, 500, duration_ms, is_error=True)
+        duration_ms = (
+            (metrics_manager.now_perf_counter() - start) * 1000 if start else 0.0
+        )
+        metrics_manager.record_request_metrics(
+            g.metrics_method, g.metrics_endpoint, 500, duration_ms, is_error=True
+        )
     except Exception:
         pass
 
@@ -323,7 +333,9 @@ def handle_http_exception(exc: HTTPException):
 
 @app.errorhandler(Exception)
 def handle_unexpected_exception(exc: Exception):
-    logger.bind(status_code=500).exception("request.unhandled_exception", error=str(exc))
+    logger.bind(status_code=500).exception(
+        "request.unhandled_exception", error=str(exc)
+    )
     return error_response("internal_error", "An unexpected error occurred", 500)
 
 
@@ -336,7 +348,6 @@ def health_command():
     for key, value in summary.items():
         click.echo(f"{key}: {value}")
     click.echo(f"Status: {status_label}")
-
 
 
 from controllers import register_controllers

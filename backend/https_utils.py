@@ -38,7 +38,12 @@ def _find_cert_directory() -> Path:
 
 
 def resolve_ssl_context() -> Optional[Tuple[str, str]]:
-    use_https = os.environ.get("USE_HTTPS", "").strip().lower() in ("1", "true", "yes", "on")
+    use_https = os.environ.get("USE_HTTPS", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
     if not use_https:
         return None
 
@@ -51,7 +56,9 @@ def resolve_ssl_context() -> Optional[Tuple[str, str]]:
     key_override = os.environ.get("TLS_KEY_FILE", "").strip()
     if cert_override or key_override:
         if not cert_override or not key_override:
-            raise RuntimeError("Both TLS_CERT_FILE and TLS_KEY_FILE must be set when overriding cert paths.")
+            raise RuntimeError(
+                "Both TLS_CERT_FILE and TLS_KEY_FILE must be set when overriding cert paths."
+            )
         cert_path = _resolve_candidate(cert_override, base_path)
         key_path = _resolve_candidate(key_override, base_path)
         if not cert_path.exists() or not key_path.exists():

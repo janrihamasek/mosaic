@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
-from db_utils import transactional_connection
 from db_utils import connection as sa_connection
+from db_utils import transactional_connection
 from extensions import db
 
 
@@ -126,7 +126,9 @@ def get_existing_entry(date: str, activity: str, user_id: int) -> Optional[dict]
     return dict(row) if row else None
 
 
-def create_activity_for_entry(activity_name: str, category: str, goal: float, description: str, user_id: int) -> None:
+def create_activity_for_entry(
+    activity_name: str, category: str, goal: float, description: str, user_id: int
+) -> None:
     """Insert a new activity when one does not exist for an entry."""
     with transactional_connection(db.engine) as conn:
         conn.execute(
@@ -156,7 +158,14 @@ def update_entry_by_date_and_activity(
     updates: Dict[str, Any],
 ) -> int:
     """Update an entry scoped by date/activity/user (or unassigned) and return affected row count."""
-    allowed_keys = {"value", "note", "description", "activity_category", "activity_goal", "activity_type"}
+    allowed_keys = {
+        "value",
+        "note",
+        "description",
+        "activity_category",
+        "activity_goal",
+        "activity_type",
+    }
     assignments: List[str] = []
     params: List[Any] = []
     for key, value in updates.items():
@@ -237,14 +246,20 @@ def delete_entry_by_id(entry_id: int, user_id: int, is_admin: bool) -> int:
         return result.rowcount
 
 
-def get_active_activities_for_date(date: str, user_id: Optional[int], is_admin: bool) -> List[dict]:
+def get_active_activities_for_date(
+    date: str, user_id: Optional[int], is_admin: bool
+) -> List[dict]:
     """Fetch active or not-yet-deactivated activities for a given date and user scope."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [date]
-        where_clause = "WHERE active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at)"
+        where_clause = (
+            "WHERE active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at)"
+        )
         if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            where_clause += (
+                f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            )
             params.append(user_id)
 
         rows = conn.execute(
@@ -261,14 +276,18 @@ def get_active_activities_for_date(date: str, user_id: Optional[int], is_admin: 
     return [dict(row) for row in rows]
 
 
-def get_existing_activities_for_date(date: str, user_id: Optional[int], is_admin: bool) -> List[dict]:
+def get_existing_activities_for_date(
+    date: str, user_id: Optional[int], is_admin: bool
+) -> List[dict]:
     """Fetch existing activities for a date from entries with optional user scoping."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [date]
         where_clause = "WHERE date = ?"
         if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            where_clause += (
+                f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            )
             params.append(user_id)
 
         rows = conn.execute(

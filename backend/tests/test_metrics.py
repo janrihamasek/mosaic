@@ -1,9 +1,8 @@
 import itertools
 from typing import Any, Dict
 
-import pytest
-
 import app as app_module
+import pytest
 from app import app, get_metrics_json, get_metrics_text, reset_metrics_state
 from infra import metrics_manager
 
@@ -17,7 +16,9 @@ app.config["PUBLIC_ENDPOINTS"].add("metrics_test_boom")
 
 
 def _find_endpoint_metrics(snapshot: Dict[str, Any], endpoint: str) -> Dict[str, Any]:
-    return next(entry for entry in snapshot["endpoints"] if entry["endpoint"] == endpoint)
+    return next(
+        entry for entry in snapshot["endpoints"] if entry["endpoint"] == endpoint
+    )
 
 
 def test_metrics_counts_and_latency(client, monkeypatch):

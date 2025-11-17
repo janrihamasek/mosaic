@@ -14,14 +14,18 @@ def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
     return clause
 
 
-def get_progress_data(user_id: int, is_admin: bool, start_date: str, end_date: str) -> List[dict]:
+def get_progress_data(
+    user_id: int, is_admin: bool, start_date: str, end_date: str
+) -> List[dict]:
     """Aggregate progress data grouped by activity."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [start_date, end_date]
         where_clause = "WHERE e.date >= ? AND e.date <= ?"
         if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
+            where_clause += (
+                f" AND {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
+            )
             params.append(user_id)
 
         rows = conn.execute(
@@ -48,14 +52,18 @@ def get_progress_data(user_id: int, is_admin: bool, start_date: str, end_date: s
     return [dict(row) for row in rows]
 
 
-def get_category_aggregates(user_id: int, is_admin: bool, start_date: str, end_date: str) -> List[dict]:
+def get_category_aggregates(
+    user_id: int, is_admin: bool, start_date: str, end_date: str
+) -> List[dict]:
     """Aggregate progress data grouped by category."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [start_date, end_date]
         where_clause = "WHERE e.date >= ? AND e.date <= ?"
         if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
+            where_clause += (
+                f" AND {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
+            )
             params.append(user_id)
 
         rows = conn.execute(
@@ -115,14 +123,20 @@ def get_today_entries(user_id: int, is_admin: bool, date: str) -> List[dict]:
     return [dict(row) for row in rows]
 
 
-def get_active_activities_for_today(user_id: int, is_admin: bool, date: str) -> List[dict]:
+def get_active_activities_for_today(
+    user_id: int, is_admin: bool, date: str
+) -> List[dict]:
     """Fetch active (or not-yet-deactivated) activities for a target date."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [date]
-        where_clause = "WHERE active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at)"
+        where_clause = (
+            "WHERE active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at)"
+        )
         if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            where_clause += (
+                f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
+            )
             params.append(user_id)
 
         rows = conn.execute(
@@ -145,7 +159,9 @@ def get_active_activities_for_today(user_id: int, is_admin: bool, date: str) -> 
     return [dict(row) for row in rows]
 
 
-def get_active_positive_goals_by_category(user_id: Optional[int], include_unassigned: bool) -> List[dict]:
+def get_active_positive_goals_by_category(
+    user_id: Optional[int], include_unassigned: bool
+) -> List[dict]:
     """Retrieve positive active activity goals grouped by category."""
     conn = sa_connection(db.engine)
     try:
@@ -172,7 +188,9 @@ def get_active_positive_goals_by_category(user_id: Optional[int], include_unassi
     return [dict(row) for row in rows]
 
 
-def get_daily_positive_totals(user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str) -> List[dict]:
+def get_daily_positive_totals(
+    user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str
+) -> List[dict]:
     """Retrieve daily totals for positive entries within a date range."""
     conn = sa_connection(db.engine)
     try:
@@ -201,7 +219,9 @@ def get_daily_positive_totals(user_id: Optional[int], include_unassigned: bool, 
     return [dict(row) for row in rows]
 
 
-def get_category_daily_totals(user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str) -> List[dict]:
+def get_category_daily_totals(
+    user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str
+) -> List[dict]:
     """Retrieve daily totals by category for positive entries."""
     conn = sa_connection(db.engine)
     try:
@@ -230,7 +250,9 @@ def get_category_daily_totals(user_id: Optional[int], include_unassigned: bool, 
     return [dict(row) for row in rows]
 
 
-def get_positive_distribution(user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str) -> List[dict]:
+def get_positive_distribution(
+    user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str
+) -> List[dict]:
     """Retrieve entry distribution counts for positive entries grouped by category."""
     conn = sa_connection(db.engine)
     try:
@@ -257,7 +279,13 @@ def get_positive_distribution(user_id: Optional[int], include_unassigned: bool, 
     return [dict(row) for row in rows]
 
 
-def get_frequent_categories(user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str, limit: int = 5) -> List[dict]:
+def get_frequent_categories(
+    user_id: Optional[int],
+    include_unassigned: bool,
+    start_date: str,
+    end_date: str,
+    limit: int = 5,
+) -> List[dict]:
     """Retrieve most frequent categories within a date range."""
     conn = sa_connection(db.engine)
     try:

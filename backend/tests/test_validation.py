@@ -2,8 +2,6 @@ import io
 from datetime import datetime
 
 import pytest
-from werkzeug.datastructures import FileStorage, MultiDict
-
 from security import (
     ValidationError,
     validate_activity_create_payload,
@@ -12,6 +10,7 @@ from security import (
     validate_entry_payload,
     validate_finalize_day_payload,
 )
+from werkzeug.datastructures import FileStorage, MultiDict
 
 
 def test_validate_entry_payload_success():
@@ -53,7 +52,10 @@ def test_validate_activity_create_payload_invalid_frequency():
 def test_validate_activity_update_payload_requires_pairs():
     with pytest.raises(ValidationError) as err:
         validate_activity_update_payload({"frequency_per_day": 2})
-    assert err.value.message == "Both frequency_per_day and frequency_per_week must be provided together"
+    assert (
+        err.value.message
+        == "Both frequency_per_day and frequency_per_week must be provided together"
+    )
 
 
 def test_validate_activity_update_payload_overrides_goal_with_frequency():

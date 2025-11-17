@@ -1,13 +1,13 @@
 """Repository package exposing all repository modules."""
 
 from . import (
-    users_repo,
     activities_repo,
-    entries_repo,
     admin_repo,
-    stats_repo,
-    wearable_repo,
     backup_repo,
+    entries_repo,
+    stats_repo,
+    users_repo,
+    wearable_repo,
 )
 
 __all__ = [

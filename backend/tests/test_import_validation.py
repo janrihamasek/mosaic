@@ -2,12 +2,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence, cast
 
 import pytest
-from sqlalchemy import func, select
-
 from app import app
 from extensions import db
 from import_data import import_csv
 from models import Activity, Entry
+from sqlalchemy import func, select
 
 
 def _write_csv(tmp_path, name: str, rows: Sequence[str]) -> Path:
@@ -34,12 +33,16 @@ def test_import_csv_skips_duplicate_rows(tmp_path):
     assert summary["created"] == 1
     assert summary["skipped"] == 1
     details = cast(List[Dict[str, Any]], summary["details"])
-    reasons = {detail.get("reason") for detail in details if detail["status"] == "skipped"}
+    reasons = {
+        detail.get("reason") for detail in details if detail["status"] == "skipped"
+    }
     assert "duplicate_in_file" in reasons
 
     with app.app_context():
         row = db.session.execute(
-            select(Entry.value, Entry.note).where(Entry.date == "2024-03-01", Entry.activity == "Swim")
+            select(Entry.value, Entry.note).where(
+                Entry.date == "2024-03-01", Entry.activity == "Swim"
+            )
         ).first()
         assert row is not None
         assert pytest.approx(row.value) == 2.0
@@ -117,14 +120,18 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
 
     with app.app_context():
         updated_row = db.session.execute(
-            select(Entry.value, Entry.note).where(Entry.date == "2024-03-01", Entry.activity == "Run")
+            select(Entry.value, Entry.note).where(
+                Entry.date == "2024-03-01", Entry.activity == "Run"
+            )
         ).first()
         assert updated_row is not None
         assert pytest.approx(updated_row.value) == 8.0
         assert updated_row.note == "Updated note"
 
         created_row = db.session.execute(
-            select(Entry.date, Entry.activity_category, Entry.activity_goal).where(Entry.activity == "Reading")
+            select(Entry.date, Entry.activity_category, Entry.activity_goal).where(
+                Entry.activity == "Reading"
+            )
         ).first()
         assert created_row is not None
         assert created_row.date == "2024-03-02"

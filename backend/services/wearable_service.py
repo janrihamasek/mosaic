@@ -7,16 +7,16 @@ independent from HTTP concerns.
 
 import json
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 from typing import Dict, List, Tuple
+from zoneinfo import ZoneInfo
 
 import structlog
-from sqlalchemy.exc import SQLAlchemyError
-
 from audit import log_event
 from ingest import process_wearable_raw_by_dedupe_keys
 from repositories import wearable_repo
 from security import ValidationError, validate_wearable_batch_payload
+from sqlalchemy.exc import SQLAlchemyError
+
 from .common import db_transaction
 
 logger = structlog.get_logger("mosaic.backend")
@@ -51,7 +51,9 @@ def ingest_batch(user_id: int, payload: Dict) -> Tuple[Dict[str, object], int]:
             source_row = wearable_repo.get_wearable_source_by_dedupe(conn, source_key)
             if source_row:
                 source_id = source_row["id"]
-                wearable_repo.update_wearable_source(conn, source_id, now_iso, sync_metadata)
+                wearable_repo.update_wearable_source(
+                    conn, source_id, now_iso, sync_metadata
+                )
             else:
                 source_id = wearable_repo.insert_wearable_source(
                     conn,
@@ -65,7 +67,11 @@ def ingest_batch(user_id: int, payload: Dict) -> Tuple[Dict[str, object], int]:
                 )
 
             if source_id is None:
-                raise ValidationError("Unable to resolve wearable source", code="internal_error", status=500)
+                raise ValidationError(
+                    "Unable to resolve wearable source",
+                    code="internal_error",
+                    status=500,
+                )
 
             for index, record in enumerate(records):
                 start_dt = record["start"]

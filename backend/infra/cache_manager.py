@@ -21,12 +21,16 @@ STATS_CACHE_TTL = 300
 def _cache_scope_key_parts(scope: Optional[CacheScope]) -> Tuple[str, ...]:
     if scope is None:
         return tuple()
-    user_component = f"user:{scope.user_id}" if scope.user_id is not None else "user:anonymous"
+    user_component = (
+        f"user:{scope.user_id}" if scope.user_id is not None else "user:anonymous"
+    )
     role_component = "role:admin" if scope.is_admin else "role:user"
     return (user_component, role_component)
 
 
-def build_cache_key(prefix: str, key_parts: Tuple, *, scope: Optional[CacheScope] = None) -> str:
+def build_cache_key(
+    prefix: str, key_parts: Tuple, *, scope: Optional[CacheScope] = None
+) -> str:
     namespaced_parts = _cache_scope_key_parts(scope) + key_parts
     key_str = "::".join(str(part) for part in namespaced_parts)
     return f"{prefix}::{key_str}"

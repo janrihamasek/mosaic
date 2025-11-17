@@ -1,8 +1,7 @@
-from flask import Blueprint, jsonify, request, g
-
+from flask import Blueprint, g, jsonify, request
+from infra.cache_manager import STATS_CACHE_TTL, TODAY_CACHE_TTL, cache_get, cache_set
 from security import ValidationError, error_response
 from services import stats_service
-from infra.cache_manager import cache_get, cache_set, TODAY_CACHE_TTL, STATS_CACHE_TTL
 
 stats_bp = Blueprint("stats", __name__)
 

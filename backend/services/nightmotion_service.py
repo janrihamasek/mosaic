@@ -46,7 +46,9 @@ def _raise_stream_error(stderr_lines: list[str], return_code: Optional[int]) -> 
     snippet = "\n".join(stderr_lines[-10:]).lower()
     if "401" in snippet or "unauthorized" in snippet:
         raise PermissionError("Unauthorized stream access")
-    raise RuntimeError(f"Unable to proxy stream (ffmpeg exited with code {return_code})")
+    raise RuntimeError(
+        f"Unable to proxy stream (ffmpeg exited with code {return_code})"
+    )
 
 
 def stream_rtsp(url: str) -> Iterator[bytes]:
@@ -122,9 +124,7 @@ def stream_rtsp(url: str) -> Iterator[bytes]:
                 headers = (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n"
-                    b"Content-Length: "
-                    + str(len(frame)).encode()
-                    + b"\r\n\r\n"
+                    b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
                 )
                 yield headers + frame + b"\r\n"
     except GeneratorExit:

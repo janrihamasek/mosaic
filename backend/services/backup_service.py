@@ -8,10 +8,10 @@ any Flask HTTP dependencies.
 import csv
 import io
 from pathlib import Path
-from typing import Dict, Tuple, List, Any
+from typing import Any, Dict, List, Tuple
 
-from backup_manager import BackupManager
 from audit import log_event
+from backup_manager import BackupManager
 from repositories import backup_repo
 from security import ValidationError
 
@@ -23,7 +23,9 @@ def get_backup_status(manager: BackupManager) -> Dict:
         raise ValidationError(str(exc), code="backup_error", status=500)
 
 
-def run_backup(manager: BackupManager, *, operator_id: int | None) -> Tuple[Dict[str, object], int]:
+def run_backup(
+    manager: BackupManager, *, operator_id: int | None
+) -> Tuple[Dict[str, object], int]:
     try:
         result = manager.create_backup(initiated_by="api")
     except Exception as exc:
@@ -34,7 +36,9 @@ def run_backup(manager: BackupManager, *, operator_id: int | None) -> Tuple[Dict
             level="error",
             context={"error": str(exc)},
         )
-        raise ValidationError("Failed to create backup", code="backup_error", status=500)
+        raise ValidationError(
+            "Failed to create backup", code="backup_error", status=500
+        )
     log_event(
         "backup.run",
         "Backup created",
@@ -44,19 +48,27 @@ def run_backup(manager: BackupManager, *, operator_id: int | None) -> Tuple[Dict
     return {"message": "Backup completed", "backup": result}, 200
 
 
-def toggle_backup(manager: BackupManager, *, operator_id: int | None, payload: Dict[str, object]) -> Tuple[Dict[str, object], int]:
+def toggle_backup(
+    manager: BackupManager, *, operator_id: int | None, payload: Dict[str, object]
+) -> Tuple[Dict[str, object], int]:
     enabled = payload.get("enabled")
     interval = payload.get("interval_minutes")
 
     if enabled is not None and not isinstance(enabled, bool):
-        raise ValidationError("enabled must be a boolean", code="invalid_input", status=400)
+        raise ValidationError(
+            "enabled must be a boolean", code="invalid_input", status=400
+        )
     if interval is not None:
         try:
             interval = int(interval)
         except (TypeError, ValueError):
-            raise ValidationError("interval_minutes must be an integer", code="invalid_input", status=400)
+            raise ValidationError(
+                "interval_minutes must be an integer", code="invalid_input", status=400
+            )
         if interval < 5:
-            raise ValidationError("interval_minutes must be at least 5", code="invalid_input", status=400)
+            raise ValidationError(
+                "interval_minutes must be at least 5", code="invalid_input", status=400
+            )
 
     try:
         status = manager.toggle(enabled=enabled, interval_minutes=interval)
@@ -68,7 +80,9 @@ def toggle_backup(manager: BackupManager, *, operator_id: int | None, payload: D
             level="error",
             context={"error": str(exc)},
         )
-        raise ValidationError("Unable to update backup settings", code="backup_error", status=500)
+        raise ValidationError(
+            "Unable to update backup settings", code="backup_error", status=500
+        )
     log_event(
         "backup.toggle",
         "Backup settings updated",
@@ -82,7 +96,9 @@ def resolve_backup_path(manager: BackupManager, filename: str) -> Path:
     try:
         return manager.get_backup_path(filename)
     except ValueError:
-        raise ValidationError("Invalid backup filename", code="invalid_input", status=400)
+        raise ValidationError(
+            "Invalid backup filename", code="invalid_input", status=400
+        )
     except FileNotFoundError:
         raise ValidationError("Backup not found", code="not_found", status=404)
 
@@ -125,7 +141,10 @@ def build_export_payload(
             "activities": {"limit": limit, "offset": offset, "total": total_activities},
         },
     }
-    return payload, {"total_entries": total_entries, "total_activities": total_activities}
+    return payload, {
+        "total_entries": total_entries,
+        "total_activities": total_activities,
+    }
 
 
 def build_export_csv(entries, activities) -> str:

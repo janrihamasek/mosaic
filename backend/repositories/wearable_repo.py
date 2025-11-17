@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
-from db_utils import transactional_connection
 from db_utils import connection as sa_connection
+from db_utils import transactional_connection
 from extensions import db
 
 
@@ -160,7 +160,9 @@ def get_wearable_source_by_dedupe(conn, dedupe_key: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def update_wearable_source(conn, source_id: int, updated_at: str, sync_metadata: str) -> int:
+def update_wearable_source(
+    conn, source_id: int, updated_at: str, sync_metadata: str
+) -> int:
     """Update wearable source metadata timestamps using an existing connection."""
     result = conn.execute(
         "UPDATE wearable_sources SET updated_at = ?, sync_metadata = ? WHERE id = ?",
@@ -196,7 +198,16 @@ def insert_wearable_source(
         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
         RETURNING id
         """,
-        (user_id, provider, external_id, display_name, sync_metadata, dedupe_key, now_iso, now_iso),
+        (
+            user_id,
+            provider,
+            external_id,
+            display_name,
+            sync_metadata,
+            dedupe_key,
+            now_iso,
+            now_iso,
+        ),
     )
     row = result.fetchone()
     return int(row["id"]) if row and "id" in row.keys() else None
@@ -227,6 +238,14 @@ def insert_wearable_raw(
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (dedupe_key) DO NOTHING
         """,
-        (user_id, source_id, collected_at_utc, received_at_utc, payload_json, dedupe_key, created_at),
+        (
+            user_id,
+            source_id,
+            collected_at_utc,
+            received_at_utc,
+            payload_json,
+            dedupe_key,
+            created_at,
+        ),
     )
     return result.rowcount

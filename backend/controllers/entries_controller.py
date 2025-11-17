@@ -1,12 +1,12 @@
-from typing import Any, Dict
-
 import os
 import tempfile
 from typing import Any, Dict
 
 from audit import log_event
+from controllers.helpers import current_user_id, is_admin_user, parse_pagination
 from flask import Blueprint, current_app, g, jsonify, request
 from import_data import import_csv as run_import_csv
+from infra.cache_manager import TODAY_CACHE_TTL, cache_get, cache_set, invalidate_cache
 from security import (
     ValidationError,
     error_response,
@@ -15,9 +15,6 @@ from security import (
 )
 from services import entries_service
 from werkzeug.utils import secure_filename
-
-from controllers.helpers import current_user_id, is_admin_user, parse_pagination
-from infra.cache_manager import TODAY_CACHE_TTL, cache_get, cache_set, invalidate_cache
 
 entries_bp = Blueprint("entries", __name__)
 
@@ -42,8 +39,12 @@ def get_entries():
             return None
         return candidate
 
-    activity_filter = normalize_filter(activity_filter_raw, {"all", "all activities", "all_activities"})
-    category_filter = normalize_filter(category_filter_raw, {"all", "all categories", "all_categories"})
+    activity_filter = normalize_filter(
+        activity_filter_raw, {"all", "all activities", "all_activities"}
+    )
+    category_filter = normalize_filter(
+        category_filter_raw, {"all", "all categories", "all_categories"}
+    )
 
     try:
         pagination = parse_pagination()

@@ -23,7 +23,9 @@ def lookup(user_id: int, key: Optional[str]) -> Optional[Tuple[dict, int]]:
         return payload, status
 
 
-def store_response(user_id: int, key: Optional[str], payload: dict, status: int) -> None:
+def store_response(
+    user_id: int, key: Optional[str], payload: dict, status: int
+) -> None:
     if not key:
         return
     now = time.time()

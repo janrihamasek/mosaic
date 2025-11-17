@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import structlog
-
-from db_utils import connection as sa_connection, transactional_connection
+from db_utils import connection as sa_connection
+from db_utils import transactional_connection
 from extensions import db
 
 
@@ -78,7 +78,9 @@ class BackupManager:
                 {
                     "filename": path.name,
                     "size_bytes": stats.st_size,
-                    "created_at": datetime.fromtimestamp(stats.st_mtime, timezone.utc).isoformat(),
+                    "created_at": datetime.fromtimestamp(
+                        stats.st_mtime, timezone.utc
+                    ).isoformat(),
                 }
             )
         return backups
@@ -120,7 +122,9 @@ class BackupManager:
             "backups": self.list_backups(),
         }
 
-    def toggle(self, enabled: Optional[bool] = None, interval_minutes: Optional[int] = None) -> Dict[str, object]:
+    def toggle(
+        self, enabled: Optional[bool] = None, interval_minutes: Optional[int] = None
+    ) -> Dict[str, object]:
         if interval_minutes is not None:
             interval_minutes = max(int(interval_minutes), 5)
 
@@ -144,7 +148,9 @@ class BackupManager:
                 existing_enabled_raw: Any = row.get("enabled", False)
                 existing_interval_raw: Any = row.get("interval_minutes", 60)
 
-                new_enabled = bool(existing_enabled_raw) if enabled is None else bool(enabled)
+                new_enabled = (
+                    bool(existing_enabled_raw) if enabled is None else bool(enabled)
+                )
 
                 candidate_interval = interval_minutes
                 if candidate_interval is None:
@@ -195,7 +201,9 @@ class BackupManager:
     def _ensure_scheduler(self) -> None:
         if self._thread and self._thread.is_alive():
             return
-        self._thread = threading.Thread(target=self._scheduler_loop, name="backup-scheduler", daemon=True)
+        self._thread = threading.Thread(
+            target=self._scheduler_loop, name="backup-scheduler", daemon=True
+        )
         self._thread.start()
 
     def _scheduler_loop(self) -> None:
@@ -212,7 +220,9 @@ class BackupManager:
                 interval_value = 60
             interval = max(interval_value, 5)
             raw_last_run = status.get("last_run")
-            last_run = self._parse_iso(raw_last_run if isinstance(raw_last_run, str) else None)
+            last_run = self._parse_iso(
+                raw_last_run if isinstance(raw_last_run, str) else None
+            )
             now = datetime.now(timezone.utc)
 
             if last_run is None or (now - last_run).total_seconds() >= interval * 60:
@@ -229,10 +239,16 @@ class BackupManager:
         with self.app.app_context():
             conn = sa_connection(db.engine)
             try:
-                entries_result = conn.execute("SELECT * FROM entries ORDER BY date ASC, id ASC")
+                entries_result = conn.execute(
+                    "SELECT * FROM entries ORDER BY date ASC, id ASC"
+                )
                 entries = [dict(row) for row in entries_result.mappings().fetchall()]
-                activities_result = conn.execute("SELECT * FROM activities ORDER BY name ASC")
-                activities = [dict(row) for row in activities_result.mappings().fetchall()]
+                activities_result = conn.execute(
+                    "SELECT * FROM activities ORDER BY name ASC"
+                )
+                activities = [
+                    dict(row) for row in activities_result.mappings().fetchall()
+                ]
             finally:
                 conn.close()
         return {"entries": entries, "activities": activities}
@@ -245,17 +261,19 @@ class BackupManager:
     ) -> None:
         with csv_path.open("w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
-            writer.writerow([
-                "dataset",
-                "id",
-                "date",
-                "activity",
-                "value",
-                "note",
-                "category",
-                "goal",
-                "activity_type",
-            ])
+            writer.writerow(
+                [
+                    "dataset",
+                    "id",
+                    "date",
+                    "activity",
+                    "value",
+                    "note",
+                    "category",
+                    "goal",
+                    "activity_type",
+                ]
+            )
             for row in entries:
                 writer.writerow(
                     [

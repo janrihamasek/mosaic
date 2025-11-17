@@ -9,9 +9,13 @@ import pytest
 def auth_headers(client):
     username = f"user_{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
-    register_resp = client.post("/register", json={"username": username, "password": password})
+    register_resp = client.post(
+        "/register", json={"username": username, "password": password}
+    )
     assert register_resp.status_code == 201
-    login_resp = client.post("/login", json={"username": username, "password": password})
+    login_resp = client.post(
+        "/login", json={"username": username, "password": password}
+    )
     assert login_resp.status_code == 200
     tokens = login_resp.get_json()
     return {
@@ -42,7 +46,12 @@ def _seed_sample_data(client, headers):
         assert response.status_code == 201
 
     entries = [
-        {"date": "2024-03-01", "activity": "Reading", "value": 1, "note": "Finished chapter"},
+        {
+            "date": "2024-03-01",
+            "activity": "Reading",
+            "value": 1,
+            "note": "Finished chapter",
+        },
         {"date": "2024-03-02", "activity": "Running", "value": 5, "note": "5km run"},
     ]
     for payload in entries:

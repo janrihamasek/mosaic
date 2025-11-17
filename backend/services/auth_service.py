@@ -10,9 +10,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import jwt  # type: ignore[import]
-from sqlalchemy.exc import IntegrityError
-from werkzeug.security import check_password_hash, generate_password_hash
-
 from audit import log_event
 from repositories import users_repo
 from security import (
@@ -21,11 +18,15 @@ from security import (
     validate_register_payload,
     validate_user_update_payload,
 )
+from sqlalchemy.exc import IntegrityError
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 def _serialize_user_row(row) -> dict:
     username = row["username"] if "username" in row.keys() else ""
-    display_name = (row["display_name"] if "display_name" in row.keys() else "") or username
+    display_name = (
+        row["display_name"] if "display_name" in row.keys() else ""
+    ) or username
     created_at_value = row["created_at"] if "created_at" in row.keys() else None
     if isinstance(created_at_value, datetime):
         created_at_str = created_at_value.replace(
@@ -124,7 +125,9 @@ def authenticate_user(
             level="warning",
             context={"username": data["username"]},
         )
-        raise ValidationError("Invalid username or password", code="invalid_credentials", status=401)
+        raise ValidationError(
+            "Invalid username or password", code="invalid_credentials", status=401
+        )
 
     if row and "is_admin" in row.keys():
         is_admin_flag = bool(row["is_admin"])
@@ -166,7 +169,9 @@ def get_user_profile(user_id: int) -> Dict[str, Any]:
     return _serialize_user_row(row)
 
 
-def update_user_profile(user_id: int, payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+def update_user_profile(
+    user_id: int, payload: Dict[str, Any]
+) -> Tuple[Dict[str, Any], int]:
     data = validate_user_update_payload(payload or {})
 
     updates: Dict[str, Any] = {}
@@ -187,7 +192,9 @@ def update_user_profile(user_id: int, payload: Dict[str, Any]) -> Tuple[Dict[str
     return {"message": "Profile updated", "user": _serialize_user_row(row)}, 200
 
 
-def delete_user(user_id: int, *, invalidate_cache_cb=None) -> Tuple[Dict[str, Any], int]:
+def delete_user(
+    user_id: int, *, invalidate_cache_cb=None
+) -> Tuple[Dict[str, Any], int]:
     rowcount = users_repo.delete_user(user_id)
     if rowcount == 0:
         raise ValidationError("User not found", code="not_found", status=404)
