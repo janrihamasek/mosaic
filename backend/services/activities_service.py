@@ -15,7 +15,7 @@ from security import (
     validate_activity_create_payload,
     validate_activity_update_payload,
 )
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from .idempotency import lookup as idempotency_lookup
 from .idempotency import store_response as idempotency_store_response
 
@@ -60,44 +60,28 @@ def add_activity(
         return payload, status_code
 
     try:
-        activities_repo.create_activity(
-            name,
-            category,
-            activity_type,
-            goal,
-            description,
-            frequency_per_day,
-            frequency_per_week,
+        response_payload, status_code = activities_repo.insert_activity(
             user_id,
+            {
+                "name": name,
+                "category": category,
+                "activity_type": activity_type,
+                "goal": goal,
+                "description": description,
+                "frequency_per_day": frequency_per_day,
+                "frequency_per_week": frequency_per_week,
+            },
+            overwrite_existing=overwrite_existing,
         )
-        response_payload = {"message": "Kategorie přidána"}
-        status_code = 201
-    except IntegrityError:
-        if not overwrite_existing:
-            log_event(
-                "activity.create_failed",
-                "Activity already exists",
-                user_id=user_id,
-                level="warning",
-                context={"name": name},
-            )
-            raise ValidationError("Aktivita již existuje", code="conflict", status=409)
-        try:
-            activities_repo.overwrite_activity(
-                name,
-                category,
-                activity_type,
-                goal,
-                description,
-                frequency_per_day,
-                frequency_per_week,
-                user_id,
-            )
-        except SQLAlchemyError as exc:
-            raise ValidationError(str(exc), code="database_error", status=500)
-        else:
-            response_payload = {"message": "Aktivita obnovena"}
-            status_code = 200
+    except activities_repo.ConflictError:
+        log_event(
+            "activity.create_failed",
+            "Activity already exists",
+            user_id=user_id,
+            level="warning",
+            context={"name": name},
+        )
+        raise ValidationError("Aktivita již existuje", code="conflict", status=409)
     except SQLAlchemyError as exc:
         raise ValidationError(str(exc), code="database_error", status=500)
 
@@ -125,10 +109,6 @@ def update_activity(
 ) -> Tuple[Dict[str, Any], int]:
     validated = validate_activity_update_payload(payload or {})
 
-    row = activities_repo.get_activity_by_id(activity_id, user_id, is_admin)
-    if not row:
-        raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
-
     updates: Dict[str, Any] = {}
     for key in (
         "category",
@@ -141,31 +121,19 @@ def update_activity(
         if key in validated:
             updates[key] = validated[key]
 
-    if updates:
-        activities_repo.update_activity(activity_id, updates, user_id, is_admin)
-    else:
-        return {"message": "No changes detected"}, 200
-
-    entry_updates: Dict[str, Any] = {}
-    if "description" in validated:
-        entry_updates["description"] = validated["description"]
-    if "category" in validated:
-        entry_updates["category"] = validated["category"]
-    if "activity_type" in validated:
-        entry_updates["activity_type"] = validated["activity_type"]
-    if "goal" in validated:
-        entry_updates["goal"] = validated["goal"]
-    if entry_updates:
-        activities_repo.update_entries_for_activity(
-            row["name"],
-            entry_updates,
-            row["user_id"],
+    try:
+        response, status_code = activities_repo.update_activity(
+            activity_id, user_id, is_admin, updates
         )
+    except activities_repo.NotFoundError:
+        raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
+    except SQLAlchemyError as exc:
+        raise ValidationError(str(exc), code="database_error", status=500)
 
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
         invalidate_cache_cb("stats")
-    return {"message": "Aktivita aktualizována"}, 200
+    return response, status_code
 
 
 def deactivate_activity(
@@ -177,15 +145,22 @@ def deactivate_activity(
 ) -> Tuple[Dict[str, str], int]:
     deactivation_date = datetime.now().strftime("%Y-%m-%d")
 
-    rowcount = activities_repo.deactivate_activity(
-        activity_id, deactivation_date, user_id, is_admin
-    )
-    if rowcount == 0:
+    try:
+        response, status_code = activities_repo.deactivate_activity(
+            activity_id, deactivation_date, user_id, is_admin
+        )
+    except activities_repo.NotFoundError:
         raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
+    except activities_repo.ConflictError:
+        raise ValidationError(
+            "Aktivita již deaktivována", code="invalid_state", status=400
+        )
+    except SQLAlchemyError as exc:
+        raise ValidationError(str(exc), code="database_error", status=500)
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
         invalidate_cache_cb("stats")
-    return {"message": "Aktivita deaktivována"}, 200
+    return response, status_code
 
 
 def activate_activity(
@@ -195,13 +170,22 @@ def activate_activity(
     is_admin: bool,
     invalidate_cache_cb=None,
 ) -> Tuple[Dict[str, str], int]:
-    rowcount = activities_repo.activate_activity(activity_id, user_id, is_admin)
-    if rowcount == 0:
+    try:
+        response, status_code = activities_repo.activate_activity(
+            activity_id, user_id, is_admin
+        )
+    except activities_repo.NotFoundError:
         raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
+    except activities_repo.ConflictError:
+        raise ValidationError(
+            "Aktivita již aktivní", code="invalid_state", status=400
+        )
+    except SQLAlchemyError as exc:
+        raise ValidationError(str(exc), code="database_error", status=500)
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
         invalidate_cache_cb("stats")
-    return {"message": "Aktivita aktivována"}, 200
+    return response, status_code
 
 
 def delete_activity(
@@ -211,22 +195,22 @@ def delete_activity(
     is_admin: bool,
     invalidate_cache_cb=None,
 ) -> Tuple[Dict[str, str], int]:
-    row = activities_repo.get_activity_by_id(activity_id, user_id, is_admin)
-    if not row:
+    try:
+        response, status_code = activities_repo.delete_activity(
+            activity_id, user_id, is_admin
+        )
+    except activities_repo.NotFoundError:
         raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
-    if row.get("active"):
+    except activities_repo.ConflictError:
         raise ValidationError(
             "Aktivita musí být deaktivována před smazáním",
             code="invalid_state",
             status=400,
         )
-
-    rowcount = activities_repo.delete_activity(activity_id, user_id, is_admin)
-
-    if rowcount == 0:
-        raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
+    except SQLAlchemyError as exc:
+        raise ValidationError(str(exc), code="database_error", status=500)
 
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
         invalidate_cache_cb("stats")
-    return {"message": "Aktivita smazána"}, 200
+    return response, status_code
