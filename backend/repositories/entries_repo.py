@@ -8,6 +8,19 @@ from extensions import db
 from sqlalchemy.exc import IntegrityError
 
 
+class RepositoryError(Exception):
+    """Base repository error."""
+
+
+class NotFoundError(RepositoryError):
+    """Raised when a repository resource is not found."""
+
+
+class ConflictError(RepositoryError):
+    """Raised when a repository action conflicts with existing data."""
+
+
+
 def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
     """Build a WHERE clause fragment for user scoping with optional unassigned inclusion."""
     clause = f"{column} = ?"
@@ -381,17 +394,43 @@ def upsert_entry(
         return "created", 1
 
 
-def delete_entry_by_id(entry_id: int, user_id: int, is_admin: bool) -> int:
+def upsert_entry_with_metadata_check(
+    user_id: int, date: str, activity: str, value: float, note: str
+) -> Tuple[Dict[str, Any], int]:
+    """
+    Repository-level upsert wrapper used by the service layer.
+
+    Runs atomic upsert and returns payload + status code mirroring existing
+    add_entry behavior.
+    """
+    status, _rowcount = upsert_entry(date, activity, value, note, user_id)
+    if status == "updated":
+        return {"message": "Záznam aktualizován"}, 200
+    return {"message": "Záznam uložen"}, 201
+
+
+def delete_entry(entry_id: int, requester_user_id: int, is_admin: bool) -> Tuple[Dict[str, str], int]:
     """Delete an entry by id with optional user scoping."""
     params: List[Any] = [entry_id]
     query = "DELETE FROM entries WHERE id = ?"
     if not is_admin:
         query += " AND user_id = ?"
-        params.append(user_id)
+        params.append(requester_user_id)
 
     with transactional_connection(db.engine) as conn:
         result = conn.execute(query, params)
-        return result.rowcount
+        if result.rowcount == 0:
+            raise NotFoundError("not_found")
+    return {"message": "Záznam smazán"}, 200
+
+
+def delete_entry_by_id(entry_id: int, user_id: int, is_admin: bool) -> int:
+    """Compatibility wrapper returning rowcount for legacy callers."""
+    try:
+        delete_entry(entry_id, user_id, is_admin)
+    except NotFoundError:
+        return 0
+    return 1
 
 
 def get_active_activities_for_date(
@@ -495,7 +534,7 @@ def bulk_create_entries(entries: List[Dict[str, Any]], conn: Optional[Any] = Non
 
 
 def create_missing_entries_for_day(
-    date: str, user_id: int, is_admin: bool
+    user_id: int, date: str, is_admin: bool
 ) -> int:
     """Ensure every active activity has an entry for the given date."""
     with transactional_connection(db.engine) as conn:
@@ -532,3 +571,269 @@ def create_missing_entries_for_day(
 
         created = bulk_create_entries(new_entries, conn=conn) if new_entries else 0
         return created
+
+
+def _fetch_activity_for_import(name: str, conn) -> Optional[Dict[str, Any]]:
+    """Retrieve activity row for import with all relevant metadata."""
+    row = conn.execute(
+        """
+        SELECT
+            id,
+            name,
+            category,
+            COALESCE(activity_type, 'positive') AS activity_type,
+            goal,
+            description,
+            COALESCE(active, TRUE) AS active,
+            frequency_per_day,
+            frequency_per_week,
+            deactivated_at,
+            user_id
+        FROM activities
+        WHERE name = ?
+        """,
+        (name,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _ensure_activity_for_import(
+    parsed_row: Dict[str, Any], user_id: Optional[int], conn
+) -> Dict[str, Any]:
+    """
+    Create or update an activity for imported entries.
+
+    Raises:
+        ValueError: when the activity belongs to a different user.
+    """
+    activity_name = parsed_row["activity"]
+    activity = _fetch_activity_for_import(activity_name, conn)
+
+    if activity and user_id is not None:
+        owner = activity.get("user_id")
+        if owner not in (None, user_id):
+            raise ValueError(f"Activity '{activity_name}' already belongs to another user")
+
+    if activity is None:
+        goal_value = float(parsed_row.get("goal") or 0)
+        new_activity = {
+            "name": activity_name,
+            "category": parsed_row.get("category") or "",
+            "activity_type": "positive",
+            "goal": goal_value,
+            "description": parsed_row.get("description") or "",
+            "active": True,
+            "frequency_per_day": parsed_row.get("frequency_per_day") or 1,
+            "frequency_per_week": parsed_row.get("frequency_per_week") or 1,
+            "deactivated_at": None,
+            "user_id": user_id,
+        }
+        conn.execute(
+            """
+            INSERT INTO activities (
+                name,
+                category,
+                activity_type,
+                goal,
+                description,
+                active,
+                frequency_per_day,
+                frequency_per_week,
+                deactivated_at,
+                user_id
+            )
+            VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
+            """,
+            (
+                new_activity["name"],
+                new_activity["category"],
+                new_activity["activity_type"],
+                new_activity["goal"],
+                new_activity["description"],
+                new_activity["frequency_per_day"],
+                new_activity["frequency_per_week"],
+                new_activity["user_id"],
+            ),
+        )
+        return new_activity
+
+    updates: List[str] = []
+    params: List[Any] = []
+
+    category = parsed_row.get("category") or ""
+    if category and category != (activity.get("category") or ""):
+        updates.append("category = ?")
+        params.append(category)
+
+    goal_value = float(parsed_row.get("goal") or 0)
+    if goal_value != float(activity.get("goal") or 0):
+        updates.append("goal = ?")
+        params.append(goal_value)
+
+    description = parsed_row.get("description") or ""
+    if description and description != (activity.get("description") or ""):
+        updates.append("description = ?")
+        params.append(description)
+
+    freq_day = parsed_row.get("frequency_per_day") or 1
+    if freq_day != int(activity.get("frequency_per_day") or 0):
+        updates.append("frequency_per_day = ?")
+        params.append(freq_day)
+
+    freq_week = parsed_row.get("frequency_per_week") or 1
+    if freq_week != int(activity.get("frequency_per_week") or 0):
+        updates.append("frequency_per_week = ?")
+        params.append(freq_week)
+
+    if not activity.get("active", True):
+        updates.append("active = TRUE")
+        updates.append("deactivated_at = NULL")
+
+    if user_id is not None and activity.get("user_id") is None:
+        updates.append("user_id = ?")
+        params.append(user_id)
+
+    if updates:
+        params.append(activity["id"])
+        conn.execute(
+            f"UPDATE activities SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        activity = _fetch_activity_for_import(activity_name, conn) or activity
+
+    return activity
+
+
+def _upsert_entry_for_import(
+    parsed_row: Dict[str, Any], activity_row: Dict[str, Any], user_id: Optional[int], conn
+) -> str:
+    """Insert or update a single entry during CSV import."""
+    activity_category = parsed_row.get("category") or activity_row.get("category") or ""
+    activity_goal = (
+        float(parsed_row.get("goal")) if parsed_row.get("goal") is not None else float(activity_row.get("goal") or 0)
+    )
+    description = parsed_row.get("description") or activity_row.get("description") or ""
+    activity_type_value = activity_row.get("activity_type") or "positive"
+    note_value = parsed_row.get("note") or ""
+
+    entry_params: List[Any] = [parsed_row["date"], parsed_row["activity"]]
+    entry_query = "SELECT id, user_id FROM entries WHERE date = ? AND activity = ?"
+    if user_id is not None:
+        entry_query += " AND user_id = ?"
+        entry_params.append(user_id)
+
+    existing_entry = conn.execute(entry_query, entry_params).fetchone()
+    if existing_entry:
+        existing_entry = dict(existing_entry)
+
+    if not existing_entry:
+        conn.execute(
+            """
+            INSERT INTO entries (
+                date,
+                activity,
+                description,
+                value,
+                note,
+                activity_category,
+                activity_goal,
+                activity_type,
+                user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                parsed_row["date"],
+                parsed_row["activity"],
+                description,
+                float(parsed_row.get("value") or 0),
+                note_value,
+                activity_category,
+                activity_goal,
+                activity_type_value,
+                user_id,
+            ),
+        )
+        return "created"
+
+    update_fields: List[str] = [
+        "value = ?",
+        "note = ?",
+        "description = ?",
+        "activity_category = ?",
+        "activity_goal = ?",
+        "activity_type = ?",
+    ]
+    update_params: List[Any] = [
+        float(parsed_row.get("value") or 0),
+        note_value,
+        description,
+        activity_category,
+        activity_goal,
+        activity_type_value,
+    ]
+
+    if user_id is not None and not existing_entry.get("user_id"):
+        update_fields.append("user_id = ?")
+        update_params.append(user_id)
+
+    update_params.append(existing_entry["id"])
+    conn.execute(
+        f"UPDATE entries SET {', '.join(update_fields)} WHERE id = ?",
+        update_params,
+    )
+    return "updated"
+
+
+def import_entries_from_rows(
+    rows: List[Dict[str, Any]], user_id: Optional[int]
+) -> Tuple[int, int, int, List[Dict[str, Any]]]:
+    """
+    Import validated CSV rows into activities and entries tables.
+
+    Returns:
+        Tuple of (created_count, updated_count, skipped_count, details).
+    """
+    if not rows:
+        return 0, 0, 0, []
+
+    created = 0
+    updated = 0
+    skipped = 0
+    details: List[Dict[str, Any]] = []
+
+    with transactional_connection(db.engine) as conn:
+        for row in rows:
+            row_index = row.get("row")
+            date_value = row.get("date")
+            activity_name = row.get("activity")
+            try:
+                activity_row = _ensure_activity_for_import(row, user_id, conn)
+            except ValueError as exc:
+                skipped += 1
+                details.append(
+                    {
+                        "row": row_index,
+                        "date": date_value,
+                        "activity": activity_name,
+                        "status": "skipped",
+                        "reason": str(exc),
+                    }
+                )
+                continue
+
+            status = _upsert_entry_for_import(row, activity_row, user_id, conn)
+            if status == "created":
+                created += 1
+            else:
+                updated += 1
+            details.append(
+                {
+                    "row": row_index,
+                    "date": date_value,
+                    "activity": activity_name,
+                    "status": status,
+                }
+            )
+
+    return created, updated, skipped, details
