@@ -1,8 +1,10 @@
 """Repository managing backup and restore database interactions."""
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from db_utils import connection as sa_connection
+from db_utils import transactional_connection
 from extensions import db
 
 
@@ -126,3 +128,80 @@ def count_export_activities(user_id: Optional[int], is_admin: bool) -> int:
     finally:
         conn.close()
     return int(row[0]) if row else 0
+
+
+def ensure_settings_row() -> None:
+    """Create backup_settings table and ensure a default row exists."""
+    with transactional_connection(db.engine) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS backup_settings (
+                id SERIAL PRIMARY KEY,
+                enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                interval_minutes INTEGER NOT NULL DEFAULT 60,
+                last_run TIMESTAMPTZ
+            )
+            """
+        )
+        has_row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").scalar()
+        if not has_row:
+            conn.execute(
+                "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
+                (False, 60),
+            )
+
+
+def fetch_settings() -> Optional[Dict[str, Any]]:
+    """Fetch the single backup_settings row."""
+    conn = sa_connection(db.engine)
+    try:
+        row = conn.execute(
+            "SELECT id, enabled, interval_minutes, last_run FROM backup_settings ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
+def update_settings(enabled: bool, interval_minutes: int) -> None:
+    """Update backup settings, inserting a row if absent."""
+    with transactional_connection(db.engine) as conn:
+        row = conn.execute(
+            "SELECT id FROM backup_settings ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE backup_settings SET enabled = ?, interval_minutes = ? WHERE id = ?",
+                (enabled, interval_minutes, row["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
+                (enabled, interval_minutes),
+            )
+
+
+def update_last_run(timestamp: datetime) -> None:
+    """Persist the last run timestamp."""
+    with transactional_connection(db.engine) as conn:
+        conn.execute(
+            "UPDATE backup_settings SET last_run = ?, enabled = enabled",
+            (timestamp,),
+        )
+
+
+def fetch_database_payload() -> Dict[str, List[Dict[str, object]]]:
+    """Return entries and activities ordered for backup export."""
+    conn = sa_connection(db.engine)
+    try:
+        entries_result = conn.execute(
+            "SELECT * FROM entries ORDER BY date ASC, id ASC"
+        )
+        entries = [dict(row) for row in entries_result.mappings().fetchall()]
+        activities_result = conn.execute(
+            "SELECT * FROM activities ORDER BY name ASC"
+        )
+        activities = [dict(row) for row in activities_result.mappings().fetchall()]
+    finally:
+        conn.close()
+    return {"entries": entries, "activities": activities}

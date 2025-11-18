@@ -7,9 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import structlog
-from db_utils import connection as sa_connection
-from db_utils import transactional_connection
-from extensions import db
+from repositories import backup_repo
 
 
 class BackupManager:
@@ -89,16 +87,8 @@ class BackupManager:
         row: Optional[Dict[str, object]] = None
 
         with self.app.app_context():
-            conn = sa_connection(db.engine)
-            try:
-                result = conn.execute(
-                    "SELECT enabled, interval_minutes, last_run FROM backup_settings ORDER BY id ASC LIMIT 1"
-                )
-                fetched = result.mappings().fetchone()
-                if fetched:
-                    row = dict(fetched)
-            finally:
-                conn.close()
+            backup_repo.ensure_settings_row()
+            row = backup_repo.fetch_settings()
 
         enabled_raw: Any = row["enabled"] if row else False
         interval_raw: Any = row["interval_minutes"] if row else 60
@@ -129,43 +119,26 @@ class BackupManager:
             interval_minutes = max(int(interval_minutes), 5)
 
         with self.app.app_context():
-            with transactional_connection(db.engine) as conn:
-                result = conn.execute(
-                    "SELECT id, enabled, interval_minutes FROM backup_settings ORDER BY id ASC LIMIT 1"
-                )
-                row_mapping = result.mappings().fetchone()
-                if not row_mapping:
-                    conn.execute(
-                        "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
-                        (
-                            bool(enabled) if enabled is not None else False,
-                            interval_minutes or 60,
-                        ),
-                    )
-                    return self.get_status()
+            backup_repo.ensure_settings_row()
+            row = backup_repo.fetch_settings() or {}
+            existing_enabled_raw: Any = row.get("enabled", False)
+            existing_interval_raw: Any = row.get("interval_minutes", 60)
 
-                row = dict(row_mapping)
-                existing_enabled_raw: Any = row.get("enabled", False)
-                existing_interval_raw: Any = row.get("interval_minutes", 60)
+            new_enabled = (
+                bool(existing_enabled_raw) if enabled is None else bool(enabled)
+            )
 
-                new_enabled = (
-                    bool(existing_enabled_raw) if enabled is None else bool(enabled)
-                )
-
-                candidate_interval = interval_minutes
-                if candidate_interval is None:
-                    if isinstance(existing_interval_raw, (int, float, str)):
-                        candidate_interval = int(existing_interval_raw)
-                    else:
-                        candidate_interval = 60
+            candidate_interval = interval_minutes
+            if candidate_interval is None:
+                if isinstance(existing_interval_raw, (int, float, str)):
+                    candidate_interval = int(existing_interval_raw)
                 else:
-                    candidate_interval = int(candidate_interval)
-                new_interval = candidate_interval
+                    candidate_interval = 60
+            else:
+                candidate_interval = int(candidate_interval)
+            new_interval = candidate_interval
 
-                conn.execute(
-                    "UPDATE backup_settings SET enabled = ?, interval_minutes = ? WHERE id = ?",
-                    (new_enabled, new_interval, row["id"]),
-                )
+            backup_repo.update_settings(new_enabled, new_interval)
 
         return self.get_status()
 
@@ -237,21 +210,7 @@ class BackupManager:
 
     def _fetch_database_payload(self) -> Dict[str, List[Dict[str, object]]]:
         with self.app.app_context():
-            conn = sa_connection(db.engine)
-            try:
-                entries_result = conn.execute(
-                    "SELECT * FROM entries ORDER BY date ASC, id ASC"
-                )
-                entries = [dict(row) for row in entries_result.mappings().fetchall()]
-                activities_result = conn.execute(
-                    "SELECT * FROM activities ORDER BY name ASC"
-                )
-                activities = [
-                    dict(row) for row in activities_result.mappings().fetchall()
-                ]
-            finally:
-                conn.close()
-        return {"entries": entries, "activities": activities}
+            return backup_repo.fetch_database_payload()
 
     def _write_csv_dump(
         self,
@@ -321,11 +280,7 @@ class BackupManager:
 
     def _update_last_run(self, timestamp: datetime) -> None:
         with self.app.app_context():
-            with transactional_connection(db.engine) as conn:
-                conn.execute(
-                    "UPDATE backup_settings SET last_run = ?, enabled = enabled",
-                    (timestamp,),
-                )
+            backup_repo.update_last_run(timestamp)
 
     @staticmethod
     def _parse_iso(value: Optional[str]) -> Optional[datetime]:
