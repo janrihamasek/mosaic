@@ -1,1 +1,3 @@
 feature/repo-entries: merged cleanly
+feature/repo-wearable: merged cleanly (already up to date)
+feature/repo-backup: merge conflict -> recorded in MERGE_CONFLICTS.log
