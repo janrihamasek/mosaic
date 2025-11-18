@@ -7,7 +7,10 @@ from controllers.helpers import (
     parse_pagination,
 )
 from flask import Blueprint, current_app, g, jsonify, request
-from infra.cache_manager import invalidate_cache
+from infra.cache_manager import (
+    CacheScope,
+    invalidate_cache_for_scope,
+)
 from security import ValidationError, error_response, rate_limit
 from services import activities_service
 
@@ -57,12 +60,15 @@ def add_activity():
 
     data: Dict[str, Any] = request.get_json() or {}
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin_user())
+        )
         result, status = activities_service.add_activity(
             user_id=user_id,
             payload=data,
             overwrite_existing=overwrite_requested,
             idempotency_key=idempotency_key,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
@@ -85,12 +91,15 @@ def update_activity(activity_id):
 
     data: Dict[str, Any] = request.get_json() or {}
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin)
+        )
         result, status = activities_service.update_activity(
             activity_id,
             user_id=user_id,
             is_admin=is_admin,
             payload=data,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
@@ -111,11 +120,14 @@ def deactivate_activity(activity_id: int):
     if limited:
         return limited
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin)
+        )
         result, status = activities_service.deactivate_activity(
             activity_id,
             user_id=user_id,
             is_admin=is_admin,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
@@ -135,11 +147,14 @@ def activate_activity(activity_id: int):
     if limited:
         return limited
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin)
+        )
         result, status = activities_service.activate_activity(
             activity_id,
             user_id=user_id,
             is_admin=is_admin,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
@@ -159,11 +174,14 @@ def delete_activity(activity_id: int):
     if limited:
         return limited
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin)
+        )
         result, status = activities_service.delete_activity(
             activity_id,
             user_id=user_id,
             is_admin=is_admin,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)

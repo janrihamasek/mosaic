@@ -10,6 +10,7 @@ import structlog
 from db_utils import transactional_connection
 from extensions import db
 from repositories import backup_repo
+from sqlalchemy.exc import ProgrammingError
 
 
 class BackupManager:
@@ -90,7 +91,12 @@ class BackupManager:
 
         with self.app.app_context():
             backup_repo.ensure_settings_row()
-            row = backup_repo.fetch_settings()
+            try:
+                row = backup_repo.fetch_settings()
+            except ProgrammingError:
+                # Table might not exist yet (e.g., fresh DB); ensure and retry.
+                backup_repo.ensure_settings_row()
+                row = backup_repo.fetch_settings()
 
         enabled_raw: Any = row["enabled"] if row else False
         interval_raw: Any = row["interval_minutes"] if row else 60
@@ -183,7 +189,13 @@ class BackupManager:
 
     def _scheduler_loop(self) -> None:
         while not self._stop_event.is_set():
-            status = self.get_status()
+            try:
+                status = self.get_status()
+            except Exception as exc:  # pragma: no cover - log and retry later
+                self.logger.exception("backup.scheduler_status_error", error=str(exc))
+                self._stop_event.wait(10)
+                continue
+
             if not status["enabled"]:
                 self._stop_event.wait(30)
                 continue

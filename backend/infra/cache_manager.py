@@ -47,7 +47,9 @@ def cache_get(prefix: str, key_parts: Tuple, *, scope: Optional[CacheScope] = No
         if expires_at <= _time_provider():
             del _cache_storage[key]
             return None
-        if scope and entry_scope and scope != entry_scope:
+        # Only return cached values when the scope matches exactly. This prevents
+        # unscoped cache entries from leaking into scoped lookups (and vice versa).
+        if scope != entry_scope:
             return None
         return copy.deepcopy(value)
 
@@ -73,6 +75,15 @@ def invalidate_cache(prefix: str) -> None:
                 del _cache_storage[key]
 
 
+def invalidate_cache_for_scope(prefix: str, scope: Optional[CacheScope]) -> None:
+    """Invalidate cache entries for a given prefix and optional scope."""
+    key_prefix = build_cache_key(prefix, tuple(), scope=scope)
+    with _cache_lock:
+        for key in list(_cache_storage.keys()):
+            if key.startswith(key_prefix):
+                del _cache_storage[key]
+
+
 def cache_health() -> bool:
     try:
         with _cache_lock:
@@ -88,15 +99,25 @@ def set_time_provider(func: Callable[[], float]) -> None:
     _time_provider = func
 
 
+def reset_cache() -> None:
+    """Clear all cached entries and restore default time provider."""
+    global _time_provider
+    with _cache_lock:
+        _cache_storage.clear()
+    _time_provider = time.time
+
+
 __all__ = [
     "CacheScope",
     "cache_get",
     "cache_set",
     "invalidate_cache",
+    "invalidate_cache_for_scope",
     "build_cache_key",
     "cache_health",
     "TODAY_CACHE_TTL",
     "STATS_CACHE_TTL",
     "set_time_provider",
+    "reset_cache",
     "_cache_storage",
 ]

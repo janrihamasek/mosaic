@@ -103,6 +103,7 @@ def get_today_entries(user_id: int, is_admin: bool, date: str) -> List[dict]:
             f"""
             SELECT
                 e.*,
+                e.activity AS name,
                 COALESCE(a.category, e.activity_category, '') AS category,
                 COALESCE(a.goal, e.activity_goal, 0) AS goal,
                 COALESCE(a.description, e.description, '') AS activity_description,

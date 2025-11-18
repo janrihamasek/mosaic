@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from db_utils import connection as sa_connection
 from db_utils import transactional_connection
 from extensions import db
+from sqlalchemy import text
 
 
 def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
@@ -111,7 +112,11 @@ def count_export_entries(user_id: Optional[int], is_admin: bool) -> int:
             ).fetchone()
     finally:
         conn.close()
-    return int(row[0]) if row else 0
+    if not row:
+        return 0
+    # RowMapping may not support numeric indexing; use first value
+    values = list(row.values()) if hasattr(row, "values") else list(row)
+    return int(values[0]) if values else 0
 
 
 def count_export_activities(user_id: Optional[int], is_admin: bool) -> int:
@@ -127,27 +132,38 @@ def count_export_activities(user_id: Optional[int], is_admin: bool) -> int:
             ).fetchone()
     finally:
         conn.close()
-    return int(row[0]) if row else 0
+    if not row:
+        return 0
+    values = list(row.values()) if hasattr(row, "values") else list(row)
+    return int(values[0]) if values else 0
 
 
 def ensure_settings_row() -> None:
     """Create backup_settings table and ensure a default row exists."""
-    with transactional_connection(db.engine) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS backup_settings (
-                id SERIAL PRIMARY KEY,
-                enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                interval_minutes INTEGER NOT NULL DEFAULT 60,
-                last_run TIMESTAMPTZ
+    # Use a direct engine transaction to avoid issues with nested transactions
+    # inside Flask session context during app startup/scheduler threads.
+    with db.engine.begin() as raw_conn:
+        raw_conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS backup_settings (
+                    id SERIAL PRIMARY KEY,
+                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    interval_minutes INTEGER NOT NULL DEFAULT 60,
+                    last_run TIMESTAMPTZ
+                )
+                """
             )
-            """
         )
-        has_row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").scalar()
+        has_row = raw_conn.execute(
+            text("SELECT 1 FROM backup_settings LIMIT 1")
+        ).scalar()
         if not has_row:
-            conn.execute(
-                "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
-                (False, 60),
+            raw_conn.execute(
+                text(
+                    "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (:enabled, :interval)"
+                ),
+                {"enabled": False, "interval": 60},
             )
 
 

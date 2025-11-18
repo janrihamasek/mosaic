@@ -157,6 +157,38 @@ def insert_activity(
     )
 
     with transactional_connection(db.engine) as conn:
+        if overwrite_existing:
+            # Avoid IntegrityError/failed transactions: Postgres upsert by unique name
+            conn.execute(
+                """
+                INSERT INTO activities (
+                    name,
+                    category,
+                    activity_type,
+                    goal,
+                    description,
+                    active,
+                    frequency_per_day,
+                    frequency_per_week,
+                    deactivated_at,
+                    user_id
+                )
+                VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
+                ON CONFLICT (name) DO UPDATE SET
+                    category = EXCLUDED.category,
+                    activity_type = EXCLUDED.activity_type,
+                    goal = EXCLUDED.goal,
+                    description = EXCLUDED.description,
+                    frequency_per_day = EXCLUDED.frequency_per_day,
+                    frequency_per_week = EXCLUDED.frequency_per_week,
+                    deactivated_at = NULL,
+                    active = TRUE
+                WHERE activities.user_id = EXCLUDED.user_id OR activities.user_id IS NULL
+                """,
+                params,
+            )
+            return {"message": "Kategorie aktualizována"}, 200
+
         try:
             conn.execute(
                 """
@@ -178,36 +210,7 @@ def insert_activity(
             )
             return {"message": "Kategorie přidána"}, 201
         except IntegrityError:
-            if not overwrite_existing:
-                raise ConflictError("exists")
-            conn.execute(
-                """
-                UPDATE activities
-                SET
-                    category = ?,
-                    name = ?,
-                    activity_type = ?,
-                    goal = ?,
-                    description = ?,
-                    frequency_per_day = ?,
-                    frequency_per_week = ?,
-                    deactivated_at = NULL,
-                    active = TRUE
-                WHERE name = ? AND (user_id = ? OR user_id IS NULL)
-                """,
-                (
-                    payload["category"],
-                    payload["name"],
-                    payload["activity_type"],
-                    payload["goal"],
-                    payload["description"],
-                    payload["frequency_per_day"],
-                    payload["frequency_per_week"],
-                    name,
-                    user_id,
-                ),
-            )
-            return {"message": "Aktivita obnovena"}, 200
+            raise ConflictError("exists")
 
 
 def update_activity(

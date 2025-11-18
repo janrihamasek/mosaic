@@ -6,24 +6,6 @@ from typing import Iterator, Mapping, Optional, Sequence, Tuple, cast
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine, Result, RowMapping
 
-def _get_active_session_connection():
-    """Return a (connection, session) tuple if a Flask-SQLAlchemy session is active."""
-    try:
-        from extensions import db  # type: ignore
-    except Exception:
-        return None
-
-    session = getattr(db, "session", None)
-    if session is None:
-        return None
-
-    try:
-        # session.connection() will reuse the current transaction/connection
-        connection = session.connection()
-    except Exception:
-        return None
-
-    return connection
 
 def _prepare_statement(
     sql: str, params: Sequence[object] | Mapping[str, object] | None
@@ -108,32 +90,19 @@ class SQLAlchemyConnectionWrapper:
 
 @contextmanager
 def transactional_connection(engine: Engine) -> Iterator[SQLAlchemyConnectionWrapper]:
-    active_conn = _get_active_session_connection()
-    if active_conn is not None:
-        # Participate in the current session transaction using a SAVEPOINT to avoid
-        # interfering with caller-managed commits.
-        nested = active_conn.begin_nested()
-        wrapper = SQLAlchemyConnectionWrapper(active_conn)
-        try:
-            yield wrapper
-        except Exception:
-            nested.rollback()
-            raise
-        else:
-            nested.commit()
+    # Always use an explicit transaction on a fresh connection so changes persist
+    connection = engine.connect()
+    transaction = connection.begin()
+    wrapper = SQLAlchemyConnectionWrapper(connection)
+    try:
+        yield wrapper
+    except Exception:
+        transaction.rollback()
+        connection.close()
+        raise
     else:
-        connection = engine.connect()
-        transaction = connection.begin()
-        wrapper = SQLAlchemyConnectionWrapper(connection)
-        try:
-            yield wrapper
-        except Exception:
-            transaction.rollback()
-            connection.close()
-            raise
-        else:
-            transaction.commit()
-            connection.close()
+        transaction.commit()
+        connection.close()
 
 
 def connection(engine: Engine) -> SQLAlchemyConnectionWrapper:

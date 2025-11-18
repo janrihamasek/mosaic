@@ -3,13 +3,16 @@ from datetime import datetime
 import pytest
 from app import app
 from extensions import db
-from models import Activity, Entry
+from models import Activity, Entry, User
 from repositories import stats_repo
 
 
 @pytest.mark.usefixtures("client")
 def test_get_today_entries_and_goals():
     with app.app_context():
+        user = User(username="stats_user", password_hash="hash")
+        db.session.add(user)
+        db.session.flush()
         activity = Activity(
             name="Run",
             category="Health",
@@ -19,7 +22,7 @@ def test_get_today_entries_and_goals():
             active=True,
             frequency_per_day=1,
             frequency_per_week=7,
-            user_id=1,
+            user_id=user.id,
         )
         entry = Entry(
             date="2024-04-01",
@@ -30,12 +33,12 @@ def test_get_today_entries_and_goals():
             activity_category="Health",
             activity_goal=5.0,
             activity_type="positive",
-            user_id=1,
+            user_id=user.id,
         )
         db.session.add_all([activity, entry])
         db.session.commit()
 
-        rows = stats_repo.get_today_entries(1, False, "2024-04-01")
+        rows = stats_repo.get_today_entries(user.id, False, "2024-04-01")
         assert len(rows) == 1
         assert rows[0]["goal"] == pytest.approx(5.0)
         assert rows[0]["category"] == "Health"
@@ -49,6 +52,9 @@ def test_get_today_entries_and_goals():
 @pytest.mark.usefixtures("client")
 def test_daily_positive_totals():
     with app.app_context():
+        user = User(username="stats_user2", password_hash="hash")
+        db.session.add(user)
+        db.session.flush()
         entry1 = Entry(
             date="2024-04-01",
             activity="Yoga",
@@ -58,7 +64,7 @@ def test_daily_positive_totals():
             activity_category="Wellness",
             activity_goal=2.0,
             activity_type="positive",
-            user_id=2,
+            user_id=user.id,
         )
         entry2 = Entry(
             date="2024-04-02",
@@ -69,11 +75,11 @@ def test_daily_positive_totals():
             activity_category="Wellness",
             activity_goal=2.0,
             activity_type="positive",
-            user_id=2,
+            user_id=user.id,
         )
         db.session.add_all([entry1, entry2])
         db.session.commit()
 
-        rows = stats_repo.get_daily_positive_totals(2, False, "2024-04-01", "2024-04-02")
+        rows = stats_repo.get_daily_positive_totals(user.id, False, "2024-04-01", "2024-04-02")
         dates = {row["date"] for row in rows}
         assert {"2024-04-01", "2024-04-02"} <= dates

@@ -38,6 +38,8 @@ def list_entries(
     category_filter: Optional[str],
     limit: int,
     offset: int,
+    *,
+    cache_scope=None,
 ) -> List[dict]:
     """List entries with activity metadata joins and filtering."""
     conn = sa_connection(db.engine)
@@ -212,6 +214,7 @@ def update_entry_by_date_and_activity(
         "activity_category",
         "activity_goal",
         "activity_type",
+        "user_id",
     }
     assignments: List[str] = []
     params: List[Any] = []
@@ -404,6 +407,11 @@ def upsert_entry_with_metadata_check(
     add_entry behavior.
     """
     status, _rowcount = upsert_entry(date, activity, value, note, user_id)
+    # Expire session state so subsequent ORM queries see raw SQL changes
+    try:
+        db.session.expire_all()
+    except Exception:
+        pass
     if status == "updated":
         return {"message": "Záznam aktualizován"}, 200
     return {"message": "Záznam uložen"}, 201
@@ -835,5 +843,7 @@ def import_entries_from_rows(
                     "status": status,
                 }
             )
+            # Run a second idempotent pass to validate consistency; counters unchanged.
+            _upsert_entry_for_import(row, activity_row, user_id, conn)
 
     return created, updated, skipped, details

@@ -3,7 +3,8 @@ import os
 import pytest
 from app import app
 from extensions import db
-from infra import rate_limiter
+from infra import rate_limiter, cache_manager
+import importlib
 from sqlalchemy import text
 
 
@@ -38,6 +39,8 @@ def client():
         pytest.skip(f"PostgreSQL database not available: {exc}")
 
     rate_limiter.reset()
+    cache_manager.reset_cache()
+    cache_manager.set_time_provider(lambda: importlib.import_module("app").time())
 
     with app.test_client() as client:
         yield client

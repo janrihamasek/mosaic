@@ -67,9 +67,10 @@ get_metrics_json = metrics_manager.get_metrics_json
 get_metrics_text = metrics_manager.get_metrics_text
 reset_metrics_state = metrics_manager.reset_metrics_state
 
-# Re-export utilities referenced by tests
-time = _time.time
 subprocess = _subprocess
+# Re-export utilities referenced by tests; `time` is a callable so monkeypatching works.
+time = lambda: _time.time()
+# Ensure cache manager uses the current `app.time`, respecting monkeypatch changes.
 set_time_provider(lambda: time())
 backup_manager = None  # initialized after extensions setup
 
@@ -179,6 +180,11 @@ backup_manager = BackupManager(app)
 app.register_blueprint(logs_bp)
 app.register_blueprint(wearable_read_bp)
 
+# Simple home endpoint used by health checks/tests
+@app.get("/")
+def home():
+    return jsonify({"status": "ok"}), 200
+
 ERROR_CODE_BY_STATUS = {
     400: "bad_request",
     401: "unauthorized",
@@ -278,9 +284,12 @@ def _enforce_jwt_authentication():
 @app.before_request
 def _start_request_timer():
     g.metrics_start_time = metrics_manager.now_perf_counter()
-    g.metrics_endpoint = request.endpoint or (
+    endpoint = request.endpoint or (
         request.url_rule.rule if getattr(request, "url_rule", None) else request.path
     )
+    if isinstance(endpoint, str) and "." in endpoint:
+        endpoint = endpoint.split(".", 1)[1]
+    g.metrics_endpoint = endpoint
     g.metrics_method = (request.method or "GET").upper()
 
 
@@ -317,7 +326,11 @@ def _record_metrics_on_teardown(exc: Optional[BaseException]):
             (metrics_manager.now_perf_counter() - start) * 1000 if start else 0.0
         )
         metrics_manager.record_request_metrics(
-            g.metrics_method, g.metrics_endpoint, 500, duration_ms, is_error=True
+            getattr(g, "metrics_method", request.method or "GET"),
+            getattr(g, "metrics_endpoint", request.endpoint or request.path or "<unknown>"),
+            500,
+            duration_ms,
+            is_error=True,
         )
     except Exception:
         pass

@@ -6,7 +6,14 @@ from audit import log_event
 from controllers.helpers import current_user_id, is_admin_user, parse_pagination
 from flask import Blueprint, current_app, g, jsonify, request
 from import_data import import_csv as run_import_csv
-from infra.cache_manager import TODAY_CACHE_TTL, cache_get, cache_set, invalidate_cache
+from infra.cache_manager import (
+    TODAY_CACHE_TTL,
+    CacheScope,
+    cache_get,
+    cache_set,
+    invalidate_cache,
+    invalidate_cache_for_scope,
+)
 from security import (
     ValidationError,
     error_response,
@@ -79,11 +86,14 @@ def add_entry():
     data: Dict[str, Any] = request.get_json() or {}
 
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin_user())
+        )
         result, status = entries_service.add_entry(
             user_id=user_id,
             payload=data,
             idempotency_key=idempotency_key,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
@@ -105,11 +115,14 @@ def delete_entry(entry_id):
         return limited
 
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin)
+        )
         result, status = entries_service.delete_entry(
             entry_id,
             user_id=user_id,
             is_admin=is_admin,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
@@ -126,6 +139,10 @@ def get_today():
 
     date = (request.args.get("date") or "").strip() or None
     try:
+        pagination = parse_pagination()
+    except ValidationError as exc:
+        return error_response(exc.code, exc.message, exc.status, exc.details)
+    try:
         from services import stats_service  # local import to avoid circulars
 
         data = stats_service.get_today_payload(
@@ -136,6 +153,11 @@ def get_today():
             cache_set=cache_set,
             today_cache_ttl=TODAY_CACHE_TTL,
         )
+        # Filter strictly to current user to ensure no cross-user leakage
+        data = [row for row in data if row.get("user_id") == user_id]
+        start = pagination["offset"]
+        end = start + pagination["limit"]
+        data = data[start:end]
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
 
@@ -157,11 +179,14 @@ def finalize_day():
 
     data: Dict[str, Any] = request.get_json() or {}
     try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin)
+        )
         result, status = entries_service.finalize_day(
             user_id=user_id,
             is_admin=is_admin,
             payload=data,
-            invalidate_cache_cb=invalidate_cache,
+            invalidate_cache_cb=scoped_invalidate,
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
