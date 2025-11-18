@@ -1,4 +1,3 @@
-from app import SERVER_START_TIME
 from flask import Blueprint, Response, g, jsonify, request
 from infra import health_service, metrics_manager
 from infra.cache_manager import invalidate_cache
@@ -6,6 +5,7 @@ from security import error_response, jwt_required, require_admin
 from services import admin_service
 
 admin_bp = Blueprint("admin", __name__)
+SERVER_START_TIME = metrics_manager._SERVER_START_TIME
 
 
 @admin_bp.get("/")

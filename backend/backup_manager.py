@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import structlog
+from db_utils import transactional_connection
+from extensions import db
 from repositories import backup_repo
 
 

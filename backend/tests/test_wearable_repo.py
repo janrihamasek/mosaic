@@ -11,7 +11,7 @@ from sqlalchemy import select
 def _create_user(username: str = "wearable_user") -> User:
     user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
     db.session.add(user)
-    db.session.flush()
+    db.session.commit()
     return user
 
 

@@ -37,7 +37,7 @@ def backup_env(tmp_path, monkeypatch, client):
     backup_dir = tmp_path / "backups"
     app.config["BACKUP_DIR"] = str(backup_dir)
     new_manager = BackupManager(app)
-    monkeypatch.setattr(app_module, "backup_manager", new_manager)
+    monkeypatch.setattr(app_module, "backup_manager", new_manager, raising=False)
     setattr(app, "backup_manager", new_manager)
     return new_manager
 

@@ -185,6 +185,7 @@ def insert_activity(
                 UPDATE activities
                 SET
                     category = ?,
+                    name = ?,
                     activity_type = ?,
                     goal = ?,
                     description = ?,
@@ -196,6 +197,7 @@ def insert_activity(
                 """,
                 (
                     payload["category"],
+                    payload["name"],
                     payload["activity_type"],
                     payload["goal"],
                     payload["description"],

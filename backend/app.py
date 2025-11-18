@@ -68,9 +68,10 @@ get_metrics_text = metrics_manager.get_metrics_text
 reset_metrics_state = metrics_manager.reset_metrics_state
 
 # Re-export utilities referenced by tests
-time = time.time
-subprocess = subprocess
+time = _time.time
+subprocess = _subprocess
 set_time_provider(lambda: time())
+backup_manager = None  # initialized after extensions setup
 
 
 class MosaicFlask(Flask):
@@ -173,6 +174,8 @@ app.config["PUBLIC_ENDPOINTS"].update(
 
 db.init_app(app)
 migrate.init_app(app, db)
+from backup_manager import BackupManager
+backup_manager = BackupManager(app)
 app.register_blueprint(logs_bp)
 app.register_blueprint(wearable_read_bp)
 

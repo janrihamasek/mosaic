@@ -26,8 +26,11 @@ def stream_proxy():
     logger.bind(stream="nightmotion", rtsp_url=rtsp_url).info("nightmotion.proxy_start")
 
     try:
+        # Import lazily to avoid circular imports and enable tests to monkeypatch
+        from app import stream_rtsp
+
         response = Response(
-            stream_with_context(nightmotion_service.stream_rtsp(rtsp_url)),
+            stream_with_context(stream_rtsp(rtsp_url)),
             mimetype="multipart/x-mixed-replace; boundary=frame",
         )
         response.headers["Cache-Control"] = "no-store"
