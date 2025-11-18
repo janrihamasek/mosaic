@@ -1,8 +1,7 @@
 import copy
 import time
 from threading import Lock
-from time import time
-from typing import Dict, NamedTuple, Optional, Tuple
+from typing import Callable, Dict, NamedTuple, Optional, Tuple
 
 
 class CacheScope(NamedTuple):

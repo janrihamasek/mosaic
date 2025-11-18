@@ -3,7 +3,6 @@ import os
 import subprocess as _subprocess
 import sys
 import time as _time
-import time as _time
 from typing import Optional
 
 import click
