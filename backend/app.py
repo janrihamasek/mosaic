@@ -1,6 +1,8 @@
 import logging
 import os
+import subprocess as _subprocess
 import sys
+import time as _time
 from typing import Optional
 
 import click
@@ -11,6 +13,15 @@ from flask.cli import with_appcontext
 from flask_cors import CORS
 from https_utils import resolve_ssl_context
 from infra import health_service, metrics_manager
+from infra.cache_manager import (
+    CacheScope,
+    _cache_storage,
+    build_cache_key,
+    cache_get,
+    cache_set,
+    invalidate_cache,
+    set_time_provider,
+)
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from services import nightmotion_service
 from werkzeug.exceptions import HTTPException
@@ -55,6 +66,11 @@ metrics_manager.ensure_metrics_logger_started()
 get_metrics_json = metrics_manager.get_metrics_json
 get_metrics_text = metrics_manager.get_metrics_text
 reset_metrics_state = metrics_manager.reset_metrics_state
+
+# Expose cache helpers for tests
+time = _time.time
+set_time_provider(lambda: time())
+subprocess = _subprocess
 
 
 class MosaicFlask(Flask):
