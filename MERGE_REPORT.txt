@@ -1,2 +1,1 @@
 feature/repo-entries: merged cleanly
-feature/repo-activities: merge conflict -> recorded in MERGE_CONFLICTS.log
