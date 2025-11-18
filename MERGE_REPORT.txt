@@ -5,3 +5,5 @@ feature/repo-backup: merged cleanly (already up to date)
 feature/repo-users: merge conflict -> recorded in MERGE_CONFLICTS.log
 feature/repo-users: merged cleanly (already up to date)
 feature/repo-stats: merge conflict -> recorded in MERGE_CONFLICTS.log
+feature/repo-stats: merged cleanly (already up to date)
+ci/layering-check: merged cleanly
