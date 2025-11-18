@@ -1,8 +1,8 @@
 import copy
 import time
 from threading import Lock
-from typing import Callable, Dict, NamedTuple, Optional, Tuple
-from typing import Callable, Dict, NamedTuple, Optional, Tuple
+from time import time
+from typing import Dict, NamedTuple, Optional, Tuple
 
 
 class CacheScope(NamedTuple):
@@ -14,7 +14,6 @@ CacheEntry = Tuple[float, object, Optional[CacheScope]]
 
 _cache_storage: Dict[str, CacheEntry] = {}
 _cache_lock = Lock()
-_time_provider: Callable[[], float] = time.time
 _time_provider: Callable[[], float] = time.time
 
 TODAY_CACHE_TTL = 60
@@ -46,7 +45,6 @@ def cache_get(prefix: str, key_parts: Tuple, *, scope: Optional[CacheScope] = No
         if not entry:
             return None
         expires_at, value, entry_scope = entry
-        if expires_at <= _time_provider():
         if expires_at <= _time_provider():
             del _cache_storage[key]
             return None
@@ -86,6 +84,20 @@ def cache_health() -> bool:
 
 
 def set_time_provider(func: Callable[[], float]) -> None:
-    """Override time provider (used in tests)."""
+    """Override time provider for cache TTL calculations (used in tests)."""
     global _time_provider
     _time_provider = func
+
+
+__all__ = [
+    "CacheScope",
+    "cache_get",
+    "cache_set",
+    "invalidate_cache",
+    "build_cache_key",
+    "cache_health",
+    "TODAY_CACHE_TTL",
+    "STATS_CACHE_TTL",
+    "set_time_provider",
+    "_cache_storage",
+]
