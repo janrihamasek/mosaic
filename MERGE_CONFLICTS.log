@@ -1,0 +1,12 @@
+backend/app.py:3-8; conflict markers present; first snippet: <<<START>>> <<<<<<< HEAD
+import subprocess
+import sys
+import time
+=======
+import subprocess as _subprocess<<<END>>>
+backend/infra/cache_manager.py:86-91; conflict markers present; first snippet: <<<START>>> <<<<<<< HEAD
+    """Override time provider (used in tests)."""
+    global _time_provider
+    _time_provider = func
+=======
+    """Override the time provider (primarily for tests)."""<<<END>>>
