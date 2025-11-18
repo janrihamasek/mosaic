@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from db_utils import connection as sa_connection
 from db_utils import transactional_connection
-from extensions import db, db_transaction
+from extensions import db
 
 
 def check_duplicate_records(
@@ -263,35 +263,30 @@ def _coerce_utc(dt_value: datetime, tzinfo: ZoneInfo) -> datetime:
     return aware.astimezone(timezone.utc)
 
 
-def process_wearable_batch(records: list, user_id: int) -> Tuple[int, int]:
+def ingest_wearable_batch_atomically(
+    user_id: int, payload: Dict[str, Any]
+) -> Tuple[Dict[str, Any], int]:
     """
-    Process a batch of wearable records, handling deduplication and inserts inside a transaction.
+    Atomically ingest a batch of wearable records.
 
-    Returns (new_records_count, duplicate_records_count).
+    Returns summary and status code (201 when at least one record accepted).
     """
-    if not records:
-        return 0, 0
+    source_app = payload["source_app"]
+    device_id = payload["device_id"]
+    tz_name = payload["tz"]
+    records = payload.get("records") or []
 
-    context = {}
-    first_record = records[0]
-    if isinstance(first_record, dict):
-        context = first_record.get("_batch_context", {}) or {}
-
-    source_app = context.get("source_app")
-    device_id = context.get("device_id")
-    tz_name = context.get("tz")
-    now_iso = context.get("now_iso") or datetime.now(timezone.utc).isoformat()
-    sync_metadata = context.get("sync_metadata") or json.dumps({"tz": tz_name} if tz_name else {})
-    source_key = context.get("source_key") or (
-        f"{user_id}:{(source_app or '').lower()}:{device_id or ''}"
-    )
-
+    now_iso = datetime.now(timezone.utc).isoformat()
+    source_key = f"{user_id}:{source_app.lower()}:{device_id}"
+    sync_metadata = json.dumps({"tz": tz_name})
     tzinfo = ZoneInfo(tz_name) if tz_name else timezone.utc
 
     accepted = 0
     duplicates = 0
+    errors: List[dict] = []
+    dedupes: List[str] = []
 
-    with db_transaction() as conn:
+    with transactional_connection(db.engine) as conn:
         source_row = get_wearable_source_by_dedupe(conn, source_key)
         if source_row:
             source_id = source_row["id"]
@@ -300,9 +295,9 @@ def process_wearable_batch(records: list, user_id: int) -> Tuple[int, int]:
             source_id = insert_wearable_source(
                 conn,
                 user_id,
-                source_app or "",
-                device_id or "",
-                source_app or "",
+                source_app,
+                device_id,
+                source_app,
                 sync_metadata,
                 source_key,
                 now_iso,
@@ -312,15 +307,16 @@ def process_wearable_batch(records: list, user_id: int) -> Tuple[int, int]:
             raise ValueError("Unable to resolve wearable source")
 
         for record in records:
-            start_dt = record.get("start")
-            end_dt = record.get("end")
+            dedupe_key = record.get("dedupe_key") or ""
             try:
+                start_dt = record.get("start")
+                end_dt = record.get("end")
                 collected_utc = _coerce_utc(start_dt, tzinfo)
                 end_utc = _coerce_utc(end_dt, tzinfo) if end_dt else None
                 if end_utc and end_utc < collected_utc:
                     raise ValueError("end cannot be before start")
-            except Exception:
-                duplicates += 1
+            except Exception as exc:
+                errors.append({"dedupe_key": dedupe_key, "error": str(exc)})
                 continue
 
             record_payload = {
@@ -334,8 +330,8 @@ def process_wearable_batch(records: list, user_id: int) -> Tuple[int, int]:
             }
             try:
                 payload_json = json.dumps(record_payload)
-            except (TypeError, ValueError):
-                duplicates += 1
+            except (TypeError, ValueError) as exc:
+                errors.append({"dedupe_key": dedupe_key, "error": str(exc)})
                 continue
 
             inserted = insert_wearable_raw(
@@ -345,12 +341,20 @@ def process_wearable_batch(records: list, user_id: int) -> Tuple[int, int]:
                 collected_utc.isoformat(),
                 now_iso,
                 payload_json,
-                record.get("dedupe_key"),
+                dedupe_key,
                 now_iso,
             )
             if inserted:
                 accepted += 1
+                dedupes.append(dedupe_key)
             else:
                 duplicates += 1
 
-    return accepted, duplicates
+    summary = {
+        "accepted": accepted,
+        "duplicates": duplicates,
+        "errors": errors,
+        "dedupes": dedupes,
+    }
+    status = 201 if accepted > 0 else 200
+    return summary, status

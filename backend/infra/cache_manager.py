@@ -2,6 +2,7 @@ import copy
 import time
 from threading import Lock
 from typing import Callable, Dict, NamedTuple, Optional, Tuple
+from typing import Callable, Dict, NamedTuple, Optional, Tuple
 
 
 class CacheScope(NamedTuple):
@@ -13,6 +14,7 @@ CacheEntry = Tuple[float, object, Optional[CacheScope]]
 
 _cache_storage: Dict[str, CacheEntry] = {}
 _cache_lock = Lock()
+_time_provider: Callable[[], float] = time.time
 _time_provider: Callable[[], float] = time.time
 
 TODAY_CACHE_TTL = 60
@@ -44,6 +46,7 @@ def cache_get(prefix: str, key_parts: Tuple, *, scope: Optional[CacheScope] = No
         if not entry:
             return None
         expires_at, value, entry_scope = entry
+        if expires_at <= _time_provider():
         if expires_at <= _time_provider():
             del _cache_storage[key]
             return None
