@@ -131,9 +131,7 @@ def get_active_activities_for_today(
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [date]
-        where_clause = (
-            "WHERE active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at)"
-        )
+        where_clause = "WHERE (active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at))"
         if user_id is not None:
             where_clause += (
                 f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"

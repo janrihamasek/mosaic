@@ -10,13 +10,13 @@ tests/test_activities_repo.py ...                                        [  3%]
 tests/test_activities_service_unit.py ..                                 [  6%]
 tests/test_api.py ............................                           [ 39%]
 tests/test_auth.py .....                                                 [ 45%]
-tests/test_backup_manager.py ....                                        [ 50%]
-tests/test_cache_namespace.py F                                          [ 51%]
+tests/test_backup_manager.py ..s.                                        [ 50%]
+tests/test_cache_namespace.py .                                          [ 51%]
 tests/test_entries_repo.py ...                                           [ 55%]
 tests/test_export.py ....                                                [ 60%]
 tests/test_health.py ...                                                 [ 63%]
 tests/test_idempotent_writes.py ..                                       [ 66%]
-tests/test_import_validation.py ..s                                      [ 69%]
+tests/test_import_validation.py ...                                      [ 69%]
 tests/test_metrics.py ..                                                 [ 72%]
 tests/test_stats_repo.py ..                                              [ 74%]
 tests/test_stream_proxy.py ....                                          [ 79%]
@@ -27,52 +27,6 @@ tests/test_wearable_read.py ....                                         [ 97%]
 tests/test_wearable_repo.py .                                            [ 98%]
 tests/test_wearable_service_unit.py .                                    [100%]
 
-=================================== FAILURES ===================================
-__________________ test_cache_entries_are_namespaced_per_user __________________
-
-client = <FlaskClient <MosaicFlask 'app'>>
-
->   ???
-E   AssertionError: assert [{'active': 1...r user', ...}] == []
-E     
-E     Left contains one more item: {'active': 1, 'activity': 'Namespaced Activity', 'activity_category': 'Cache', 'activity_description': 'Ensures cache scoped per user', ...}
-E     Use -v to get more diff
-
-/home/jan/Dokumenty/code/mosaic/backend/tests/test_cache_namespace.py:72: AssertionError
------------------------------ Captured stdout call -----------------------------
-{"event_type": "auth.register", "user_id": 1, "message": "User registered", "context": {"username": "user_e9cd0e19"}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.018531Z"}
-{"method": "POST", "path": "/register", "status_code": 201, "duration_ms": 313.74, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.020850Z"}
-{"event_type": "auth.login", "user_id": 1, "message": "User logged in", "context": {"username": "user_e9cd0e19", "is_admin": false}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.178561Z"}
-{"method": "POST", "path": "/login", "status_code": 200, "duration_ms": 175.22, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.196832Z"}
-{"event_type": "auth.register", "user_id": 2, "message": "User registered", "context": {"username": "user_26ebc2c9"}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.396709Z"}
-{"method": "POST", "path": "/register", "status_code": 201, "duration_ms": 211.59, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.411069Z"}
-{"event_type": "auth.login", "user_id": 2, "message": "User logged in", "context": {"username": "user_26ebc2c9", "is_admin": false}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.600925Z"}
-{"method": "POST", "path": "/login", "status_code": 200, "duration_ms": 207.24, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.619640Z"}
-{"event_type": "activity.create", "user_id": 1, "message": "Activity created", "context": {"name": "Namespaced Activity", "category": "Cache"}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.633024Z"}
-{"method": "POST", "path": "/add_activity", "status_code": 201, "duration_ms": 16.92, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.637811Z"}
-{"method": "POST", "path": "/add_entry", "status_code": 201, "duration_ms": 14.1, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.653318Z"}
-{"method": "GET", "path": "/today", "status_code": 200, "duration_ms": 6.25, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.662102Z"}
-{"method": "GET", "path": "/stats/progress", "status_code": 200, "duration_ms": 5.75, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.669297Z"}
-{"method": "GET", "path": "/today", "status_code": 200, "duration_ms": 0.25, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.671566Z"}
-{"method": "GET", "path": "/stats/progress", "status_code": 200, "duration_ms": 0.26, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.672757Z"}
-{"method": "GET", "path": "/today", "status_code": 200, "duration_ms": 9.29, "user_id": 2, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.683363Z"}
------------------------------- Captured log call -------------------------------
-INFO     mosaic.audit:audit.py:124 {"event_type": "auth.register", "user_id": 1, "message": "User registered", "context": {"username": "user_e9cd0e19"}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.018531Z"}
-INFO     mosaic.backend:app.py:313 {"method": "POST", "path": "/register", "status_code": 201, "duration_ms": 313.74, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.020850Z"}
-INFO     mosaic.audit:audit.py:124 {"event_type": "auth.login", "user_id": 1, "message": "User logged in", "context": {"username": "user_e9cd0e19", "is_admin": false}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.178561Z"}
-INFO     mosaic.backend:app.py:313 {"method": "POST", "path": "/login", "status_code": 200, "duration_ms": 175.22, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.196832Z"}
-INFO     mosaic.audit:audit.py:124 {"event_type": "auth.register", "user_id": 2, "message": "User registered", "context": {"username": "user_26ebc2c9"}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.396709Z"}
-INFO     mosaic.backend:app.py:313 {"method": "POST", "path": "/register", "status_code": 201, "duration_ms": 211.59, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.411069Z"}
-INFO     mosaic.audit:audit.py:124 {"event_type": "auth.login", "user_id": 2, "message": "User logged in", "context": {"username": "user_26ebc2c9", "is_admin": false}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.600925Z"}
-INFO     mosaic.backend:app.py:313 {"method": "POST", "path": "/login", "status_code": 200, "duration_ms": 207.24, "user_id": null, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.619640Z"}
-INFO     mosaic.audit:audit.py:124 {"event_type": "activity.create", "user_id": 1, "message": "Activity created", "context": {"name": "Namespaced Activity", "category": "Cache"}, "event": "activity_event", "level": "info", "timestamp": "2025-11-18T22:37:22.633024Z"}
-INFO     mosaic.backend:app.py:313 {"method": "POST", "path": "/add_activity", "status_code": 201, "duration_ms": 16.92, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.637811Z"}
-INFO     mosaic.backend:app.py:313 {"method": "POST", "path": "/add_entry", "status_code": 201, "duration_ms": 14.1, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.653318Z"}
-INFO     mosaic.backend:app.py:313 {"method": "GET", "path": "/today", "status_code": 200, "duration_ms": 6.25, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.662102Z"}
-INFO     mosaic.backend:app.py:313 {"method": "GET", "path": "/stats/progress", "status_code": 200, "duration_ms": 5.75, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.669297Z"}
-INFO     mosaic.backend:app.py:313 {"method": "GET", "path": "/today", "status_code": 200, "duration_ms": 0.25, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.671566Z"}
-INFO     mosaic.backend:app.py:313 {"method": "GET", "path": "/stats/progress", "status_code": 200, "duration_ms": 0.26, "user_id": 1, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.672757Z"}
-INFO     mosaic.backend:app.py:313 {"method": "GET", "path": "/today", "status_code": 200, "duration_ms": 9.29, "user_id": 2, "event": "request.completed", "level": "info", "timestamp": "2025-11-18T22:37:22.683363Z"}
 =============================== warnings summary ===============================
 tests/test_activities_repo.py::test_insert_activity_and_overwrite
 tests/test_activities_repo.py::test_update_activity_propagates_entries
@@ -102,6 +56,4 @@ tests/test_wearable_repo.py::test_ingest_wearable_batch_creates_source_and_raw
     user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-=========================== short test summary info ============================
-FAILED tests/test_cache_namespace.py::test_cache_entries_are_namespaced_per_user
-============ 1 failed, 81 passed, 1 skipped, 11 warnings in 35.55s =============
+================= 82 passed, 1 skipped, 11 warnings in 34.71s ==================
