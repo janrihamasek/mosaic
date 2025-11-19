@@ -2,15 +2,23 @@
 ```
 ├── .github
 │   └── workflows
+├── .pytest_cache
+│   └── v
+│       └── cache
+├── .vscode
 ├── backend
 │   ├── .pytest_cache
 │   │   └── v
 │   │       └── cache
 │   ├── backups
+│   ├── controllers
 │   ├── database
+│   ├── infra
 │   ├── migrations
 │   │   └── versions
+│   ├── repositories
 │   ├── routes
+│   ├── services
 │   └── tests
 ├── certs
 ├── docs
@@ -133,4 +141,7 @@
 │   │       └── src
 │   └── src
 └── scripts
+    └── .pytest_cache
+        └── v
+            └── cache
 ```
