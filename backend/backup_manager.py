@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import structlog
-from db_utils import transactional_connection
-from extensions import db
 from repositories import backup_repo
 from sqlalchemy.exc import ProgrammingError
 
@@ -161,23 +159,7 @@ class BackupManager:
     # ------------------------------------------------------------------ internal helpers
     def _ensure_settings_row(self) -> None:
         with self.app.app_context():
-            with transactional_connection(db.engine) as conn:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS backup_settings (
-                        id SERIAL PRIMARY KEY,
-                        enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                        interval_minutes INTEGER NOT NULL DEFAULT 60,
-                        last_run TIMESTAMPTZ
-                    )
-                    """
-                )
-                has_row = conn.execute("SELECT 1 FROM backup_settings LIMIT 1").scalar()
-                if not has_row:
-                    conn.execute(
-                        "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
-                        (False, 60),
-                    )
+            backup_repo.ensure_settings_row()
 
     def _ensure_scheduler(self) -> None:
         if self._thread and self._thread.is_alive():
