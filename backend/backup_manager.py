@@ -26,11 +26,18 @@ class BackupManager:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self._ensure_settings_row()
-        self._ensure_scheduler()
+        self._initialized = False
+
+    def _ensure_initialized(self) -> None:
+        """Lazy initialization - only connect to DB when actually needed."""
+        if not self._initialized:
+            self._ensure_settings_row()
+            self._ensure_scheduler()
+            self._initialized = True
 
     # ------------------------------------------------------------------ public API
     def create_backup(self, *, initiated_by: str = "manual") -> Dict[str, object]:
+        self._ensure_initialized()
         with self._lock:
             now = datetime.now(timezone.utc)
             timestamp = now.strftime("%Y%m%d-%H%M%S")
@@ -85,6 +92,7 @@ class BackupManager:
         return backups
 
     def get_status(self) -> Dict[str, object]:
+        self._ensure_initialized()
         row: Optional[Dict[str, object]] = None
 
         with self.app.app_context():
@@ -121,6 +129,7 @@ class BackupManager:
     def toggle(
         self, enabled: Optional[bool] = None, interval_minutes: Optional[int] = None
     ) -> Dict[str, object]:
+        self._ensure_initialized()
         if interval_minutes is not None:
             interval_minutes = max(int(interval_minutes), 5)
 
