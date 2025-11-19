@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
-from app import CacheScope, _cache_storage, build_cache_key
+from infra.cache_manager import CacheScope, _cache_storage, build_cache_key
 
 
 @pytest.fixture

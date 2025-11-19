@@ -3,7 +3,8 @@ import uuid
 
 import jwt
 import pytest
-from app import app, cache_get, cache_set, invalidate_cache
+from app import app
+from infra.cache_manager import cache_get, cache_set, invalidate_cache
 
 
 def test_register_and_login_flow(client):

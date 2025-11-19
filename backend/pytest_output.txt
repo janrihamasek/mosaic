@@ -56,4 +56,4 @@ tests/test_wearable_repo.py::test_ingest_wearable_batch_creates_source_and_raw
     user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 83 passed, 11 warnings in 40.17s =======================
+======================= 83 passed, 11 warnings in 35.37s =======================

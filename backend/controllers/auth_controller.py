@@ -1,6 +1,7 @@
 from typing import Any, Dict
 
 from flask import Blueprint, current_app, g, jsonify, request
+from infra.cache_manager import invalidate_cache
 from security import error_response, jwt_required, rate_limit
 from services import auth_service
 
@@ -68,9 +69,6 @@ def delete_current_user():
     current_user = getattr(g, "current_user", None)
     if not current_user:
         return error_response("unauthorized", "Unauthorized", 401)
-
-    # Lazy import to avoid circulars during app setup
-    from app import invalidate_cache  # type: ignore
 
     result, status = auth_service.delete_user(
         current_user["id"], invalidate_cache_cb=invalidate_cache

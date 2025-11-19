@@ -13,15 +13,7 @@ from flask.cli import with_appcontext
 from flask_cors import CORS
 from https_utils import resolve_ssl_context
 from infra import health_service, metrics_manager
-from infra.cache_manager import (
-    CacheScope,
-    _cache_storage,
-    build_cache_key,
-    cache_get,
-    cache_set,
-    invalidate_cache,
-    set_time_provider,
-)
+from infra.cache_manager import invalidate_cache, set_time_provider
 from models import Activity, Entry  # noqa: F401 - ensure models registered
 from services import nightmotion_service
 from werkzeug.exceptions import HTTPException
