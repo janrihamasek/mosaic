@@ -10,7 +10,7 @@ tests/test_activities_repo.py ...                                        [  3%]
 tests/test_activities_service_unit.py ..                                 [  6%]
 tests/test_api.py ............................                           [ 39%]
 tests/test_auth.py .....                                                 [ 45%]
-tests/test_backup_manager.py ..s.                                        [ 50%]
+tests/test_backup_manager.py ....                                        [ 50%]
 tests/test_cache_namespace.py .                                          [ 51%]
 tests/test_entries_repo.py ...                                           [ 55%]
 tests/test_export.py ....                                                [ 60%]
@@ -56,4 +56,4 @@ tests/test_wearable_repo.py::test_ingest_wearable_batch_creates_source_and_raw
     user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-================= 82 passed, 1 skipped, 11 warnings in 34.71s ==================
+======================= 83 passed, 11 warnings in 40.17s =======================

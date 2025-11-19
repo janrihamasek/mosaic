@@ -1,13 +1,16 @@
 import time
 from typing import Dict, Tuple
 
+from extensions import db
 from infra import cache_manager, metrics_manager
-from repositories import health_repo
+from sqlalchemy import text
 
 
 def check_db_connection() -> bool:
     try:
-        return health_repo.check_database_connection()
+        with db.engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
     except Exception as exc:
         metrics_manager.logger.warning("health.db_check_failed", error=str(exc))
         return False

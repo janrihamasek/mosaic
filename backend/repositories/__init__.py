@@ -5,7 +5,6 @@ from . import (
     admin_repo,
     backup_repo,
     entries_repo,
-    health_repo,
     stats_repo,
     users_repo,
     wearable_repo,
@@ -19,5 +18,4 @@ __all__ = [
     "stats_repo",
     "wearable_repo",
     "backup_repo",
-    "health_repo",
 ]
