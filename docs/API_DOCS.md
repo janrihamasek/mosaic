@@ -5,10 +5,11 @@ Comprehensive reference for the Mosaic backend REST API. The service powers the 
 ---
 
 ## Base URL
-- Development: `http://localhost:5000`
-- Docker/Compose production: `http://localhost:5001`
+- Development: `https://10.0.1.31:5000`
+- Docker/Compose production: `https://10.0.1.31:5001`
+- Staging (optional): `https://10.0.1.31:5002`
 
-Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend) to target other environments. All URLs in this document are relative to the backend base.
+All environments use HTTPS with self-signed certificates for PWA compatibility and modern browser requirements (Service Workers, Geolocation, Camera access). Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend) to target other environments. All URLs in this document are relative to the backend base.
 
 ---
 
@@ -31,6 +32,7 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
 | `/entries/<id>` (DELETE) | 90 | 60 |
 | `/finalize_day` | 10 | 60 |
 | `/import_csv` | 5 | 300 |
+| `/ingest/wearable/batch` | 60 | 60 |
 | `/login` | 10 | 60 |
 | `/register` | 5 | 3600 |
 | `/api/stream-proxy` | 2 | 60 |
@@ -43,8 +45,7 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
 - **`GET /`** — Health probe that returns:
   ```json
   {
-    "message": "Backend běží!",
-    "database": "postgresql+psycopg2://mosaic:***@postgres:5432/mosaic_dev"
+    "status": "ok"
   }
   ```
 
@@ -222,11 +223,53 @@ Configure `REACT_APP_API_URL` (frontend) or `DATABASE_URL`/`POSTGRES_*` (backend
   - Deduplicates via `dedupe_key`, persists to `wearable_raw`, and kicks off ETL (`process_wearable_raw_by_dedupe_keys`) to normalize into canonical tables.
   - Response contains `{ "accepted": N, "duplicates": M, "errors": [], "etl": { ... } }`.
 
+### Wearable Data Retrieval
+- **`GET /wearable/day`** — Returns aggregated wearable data for a specific day.
+  - Query params: `date` (YYYY-MM-DD, defaults to today).
+  - Requires JWT authentication.
+  - Response example:
+    ```json
+    {
+      "date": "2025-11-22",
+      "steps": 8750,
+      "sleep_seconds": 25200,
+      "resting_heart_rate": 58,
+      "sleep": {
+        "total_seconds": 25200,
+        "avg_score": 82.5,
+        "session_count": 1
+      },
+      "heart_rate": {
+        "avg_bpm": 72,
+        "min_bpm": 58,
+        "max_bpm": 145,
+        "sample_count": 288
+      }
+    }
+    ```
+- **`GET /wearable/trends`** — Returns time-series trends for wearable metrics.
+  - Query params: `metric` (steps, sleep, resting_hr, avg_hr), `window` (days, default 7).
+  - Requires JWT authentication.
+  - Response example:
+    ```json
+    {
+      "metric": "steps",
+      "window": 7,
+      "average": 8234.5,
+      "values": [
+        {"date": "2025-11-16", "value": 7800},
+        {"date": "2025-11-17", "value": 9100},
+        {"date": "2025-11-18", "value": null}
+      ]
+    }
+    ```
+
 ### NightMotion Stream Proxy
 - **`GET /api/stream-proxy`** — Proxies MJPEG/RTSP streams through the backend so the browser never sees camera credentials.
   - Query params: `url=rtsp://host/stream`, `username`, `password`.
   - Requires JWT + API key (if enabled). Rate limited (`2/min`).
   - Response is `multipart/x-mixed-replace` MJPEG. Errors: `401` (invalid camera creds), `500` (FFmpeg failure), `400` (invalid URL).
+  - Example: `curl -k "https://10.0.1.31:5000/api/stream-proxy?url=rtsp://10.0.1.39:554/stream1&username=admin&password=pass" -H "Authorization: Bearer <token>"`
 
 ### Logs & Observability
 | Endpoint | Description |
@@ -254,7 +297,7 @@ Refer to `docs/LOGGING.md` and `docs/METRICS.md` for field-level audit and telem
 | Endpoint | Description |
 | --- | --- |
 | **`GET /healthz`** | Returns system health snapshot used by the Admin → Health panel. Example: `{ "uptime_s": 86400.0, "db_ok": true, "cache_ok": true, "req_per_min": 3.2, "error_rate": 0.001, "last_metrics_update": "2025-11-03T07:42:11Z" }`. HTTP 200 when healthy, 503 otherwise. |
-| **`GET /metrics`** | Prometheus-compatible text by default; pass `?format=json` for the JSON representation. JSON payload:
+| **`GET /metrics`** | Returns JSON metrics by default; pass `?format=text` for Prometheus-compatible text format. JSON payload:
   ```json
   {
     "requests_total": 1523,
@@ -278,12 +321,6 @@ Refer to `docs/LOGGING.md` and `docs/METRICS.md` for field-level audit and telem
   }
   ```
   Text output exports the same counters using `mosaic_*` Prometheus metrics.
-
-### NightMotion Stream Proxy
-- **`GET /api/stream-proxy`** — MJPEG proxy for camera feeds.
-  - Query params: `url` (RTSP URL, required), `username`, `password` (optional; injected into URL when provided).
-  - Requires a valid Mosaic session (JWT + CSRF + API key if configured) and is rate-limited to 2 requests/minute per user/IP.
-  - Response: `multipart/x-mixed-replace; boundary=frame` suitable for `<img>`/`<video>` tags. Errors return JSON envelopes with friendly messages.
 
 ---
 
