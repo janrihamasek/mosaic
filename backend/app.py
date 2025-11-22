@@ -99,7 +99,11 @@ def _resolve_cors_origins() -> list[str]:
         parsed = [origin.strip() for origin in raw.split(",") if origin.strip()]
         if parsed:
             return parsed
-    return ["http://localhost:3000", "http://127.0.0.1:3000"]
+    return [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://10.0.1.31:3000",
+    ]
 
 
 CORS(
