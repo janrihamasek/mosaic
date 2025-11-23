@@ -5,7 +5,7 @@ from typing import Optional
 
 import structlog
 from extensions import db
-from wearable_service import WearableAggregator
+from ingest import WearableAggregator
 
 logger = structlog.get_logger("wearable.agg_jobs")
 

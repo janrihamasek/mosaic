@@ -5,6 +5,7 @@ import app as app_module
 import pytest
 from app import app, get_metrics_json, get_metrics_text, reset_metrics_state
 from infra import metrics_manager
+from infra.metrics_manager import EndpointSnapshot, MetricsSnapshot
 
 
 @app.get("/__metrics_test__/boom", endpoint="metrics_test_boom")
@@ -15,7 +16,7 @@ def metrics_test_boom():
 app.config["PUBLIC_ENDPOINTS"].add("metrics_test_boom")
 
 
-def _find_endpoint_metrics(snapshot: Dict[str, Any], endpoint: str) -> Dict[str, Any]:
+def _find_endpoint_metrics(snapshot: MetricsSnapshot, endpoint: str) -> EndpointSnapshot:
     return next(
         entry for entry in snapshot["endpoints"] if entry["endpoint"] == endpoint
     )
@@ -33,7 +34,7 @@ def test_metrics_counts_and_latency(client, monkeypatch):
     assert client.get("/").status_code == 200
     assert client.get("/").status_code == 200
 
-    snapshot: Dict[str, Any] = get_metrics_json()
+    snapshot: MetricsSnapshot = get_metrics_json()
     assert snapshot["requests_total"] == 2
     home_metrics = _find_endpoint_metrics(snapshot, "home")
     assert home_metrics["count"] == 2
@@ -52,7 +53,7 @@ def test_metrics_error_counters(client):
     response = client.get("/__metrics_test__/boom")
     assert response.status_code == 500
 
-    snapshot: Dict[str, Any] = get_metrics_json()
+    snapshot: MetricsSnapshot = get_metrics_json()
     assert snapshot["errors_total"]["4xx"] == 1
     assert snapshot["errors_total"]["5xx"] == 1
     register_metrics = _find_endpoint_metrics(snapshot, "register")

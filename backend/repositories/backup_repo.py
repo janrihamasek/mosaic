@@ -116,7 +116,8 @@ def count_export_entries(user_id: Optional[int], is_admin: bool) -> int:
         return 0
     # RowMapping may not support numeric indexing; use first value
     values = list(row.values()) if hasattr(row, "values") else list(row)
-    return int(values[0]) if values else 0
+    count_value = values[0] if values else 0
+    return int(count_value) if count_value is not None else 0  # type: ignore[arg-type]
 
 
 def count_export_activities(user_id: Optional[int], is_admin: bool) -> int:
@@ -135,7 +136,8 @@ def count_export_activities(user_id: Optional[int], is_admin: bool) -> int:
     if not row:
         return 0
     values = list(row.values()) if hasattr(row, "values") else list(row)
-    return int(values[0]) if values else 0
+    count_value = values[0] if values else 0
+    return int(count_value) if count_value is not None else 0  # type: ignore[arg-type]
 
 
 def ensure_settings_row() -> None:

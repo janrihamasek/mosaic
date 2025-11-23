@@ -1,7 +1,7 @@
 """Repository handling wearable device data integrations."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo as TzInfo
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -254,7 +254,7 @@ def insert_wearable_raw(
     return result.rowcount
 
 
-def _coerce_utc(dt_value: datetime, tzinfo: ZoneInfo) -> datetime:
+def _coerce_utc(dt_value: datetime, tzinfo: TzInfo) -> datetime:
     """Convert a datetime to UTC using provided timezone when naive."""
     if dt_value.tzinfo is None:
         aware = dt_value.replace(tzinfo=tzinfo)

@@ -716,7 +716,7 @@ def _upsert_entry_for_import(
     """Insert or update a single entry during CSV import."""
     activity_category = parsed_row.get("category") or activity_row.get("category") or ""
     activity_goal = (
-        float(parsed_row.get("goal")) if parsed_row.get("goal") is not None else float(activity_row.get("goal") or 0)
+        float(parsed_row.get("goal")) if parsed_row.get("goal") is not None else float(activity_row.get("goal") or 0)  # type: ignore[arg-type]
     )
     description = parsed_row.get("description") or activity_row.get("description") or ""
     activity_type_value = activity_row.get("activity_type") or "positive"

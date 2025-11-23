@@ -111,25 +111,21 @@ def assign_user_data(username: str, make_admin: bool) -> None:
                     {"user_id": user_id},
                 )
 
-            updated_activities = int(
-                session.execute(
-                    sa.text(
-                        "UPDATE activities SET user_id = :user_id WHERE user_id IS NULL"
-                    ),
-                    {"user_id": user_id},
-                ).rowcount
-                or 0
+            result_activities = session.execute(
+                sa.text(
+                    "UPDATE activities SET user_id = :user_id WHERE user_id IS NULL"
+                ),
+                {"user_id": user_id},
             )
+            updated_activities = result_activities.rowcount or 0  # type: ignore[attr-defined]
 
-            updated_entries = int(
-                session.execute(
-                    sa.text(
-                        "UPDATE entries SET user_id = :user_id WHERE user_id IS NULL"
-                    ),
-                    {"user_id": user_id},
-                ).rowcount
-                or 0
+            result_entries = session.execute(
+                sa.text(
+                    "UPDATE entries SET user_id = :user_id WHERE user_id IS NULL"
+                ),
+                {"user_id": user_id},
             )
+            updated_entries = result_entries.rowcount or 0  # type: ignore[attr-defined]
 
             session.commit()
         except Exception as exc:

@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 
 def _create_user(username: str = "activity_user") -> User:
-    user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
+    user = User(username=username, password_hash="hash", created_at=datetime.utcnow())  # type: ignore
     db.session.add(user)
     db.session.commit()
     return user
@@ -28,7 +28,7 @@ def test_insert_activity_and_overwrite():
             "frequency_per_day": 1,
             "frequency_per_week": 7,
         }
-        response, status = activities_repo.insert_activity(user.id, payload)
+        response, status = activities_repo.insert_activity(user.id, payload)  # type: ignore[arg-type]
         assert status == 201
         assert response["message"]
 
@@ -38,11 +38,11 @@ def test_insert_activity_and_overwrite():
         assert row.category == "Leisure"
 
         with pytest.raises(activities_repo.ConflictError):
-            activities_repo.insert_activity(user.id, payload, overwrite_existing=False)
+            activities_repo.insert_activity(user.id, payload, overwrite_existing=False)  # type: ignore[arg-type]
 
         payload["category"] = "Updated"
         response, status = activities_repo.insert_activity(
-            user.id, payload, overwrite_existing=True
+            user.id, payload, overwrite_existing=True  # type: ignore[arg-type]
         )
         assert status == 200
         updated = db.session.execute(
@@ -55,7 +55,7 @@ def test_insert_activity_and_overwrite():
 def test_update_activity_propagates_entries():
     with app.app_context():
         user = _create_user("update_user")
-        activity = Activity(
+        activity = Activity(  # type: ignore
             name="Exercise",
             category="Health",
             activity_type="positive",
@@ -66,7 +66,7 @@ def test_update_activity_propagates_entries():
             frequency_per_week=7,
             user_id=user.id,
         )
-        entry = Entry(
+        entry = Entry(  # type: ignore
             date="2024-01-01",
             activity="Exercise",
             description="Gym",
@@ -81,8 +81,8 @@ def test_update_activity_propagates_entries():
         db.session.commit()
 
         response, status = activities_repo.update_activity(
-            activity.id,
-            user.id,
+            activity.id,  # type: ignore[arg-type]
+            user.id,  # type: ignore[arg-type]
             False,
             {"description": "Updated", "category": "Fitness", "goal": 5.0},
         )
@@ -101,7 +101,7 @@ def test_update_activity_propagates_entries():
 def test_activate_deactivate_and_delete():
     with app.app_context():
         user = _create_user("state_user")
-        activity = Activity(
+        activity = Activity(  # type: ignore
             name="Yoga",
             category="Health",
             activity_type="positive",
@@ -117,27 +117,27 @@ def test_activate_deactivate_and_delete():
 
         # cannot delete active
         with pytest.raises(activities_repo.ConflictError):
-            activities_repo.delete_activity(activity.id, user.id, False)
+            activities_repo.delete_activity(activity.id, user.id, False)  # type: ignore[arg-type]
 
         resp, status = activities_repo.deactivate_activity(
-            activity.id, "2024-01-02", user.id, False
+            activity.id, "2024-01-02", user.id, False  # type: ignore[arg-type]
         )
         assert status == 200
         assert resp["message"]
 
         with pytest.raises(activities_repo.ConflictError):
-            activities_repo.deactivate_activity(activity.id, "2024-01-03", user.id, False)
+            activities_repo.deactivate_activity(activity.id, "2024-01-03", user.id, False)  # type: ignore[arg-type]
 
-        resp, status = activities_repo.activate_activity(activity.id, user.id, False)
+        resp, status = activities_repo.activate_activity(activity.id, user.id, False)  # type: ignore[arg-type]
         assert status == 200
         assert resp["message"]
 
         resp, status = activities_repo.deactivate_activity(
-            activity.id, "2024-01-04", user.id, False
+            activity.id, "2024-01-04", user.id, False  # type: ignore[arg-type]
         )
         assert status == 200
 
-        resp, status = activities_repo.delete_activity(activity.id, user.id, False)
+        resp, status = activities_repo.delete_activity(activity.id, user.id, False)  # type: ignore[arg-type]
         assert status == 200
         assert resp["message"]
 

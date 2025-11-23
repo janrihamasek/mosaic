@@ -43,5 +43,5 @@ def test_ingest_batch_calls_repo_and_etl(monkeypatch):
 
     assert status == 201
     assert response["accepted"] == 1
-    assert response["etl"]["processed"] == 1
+    assert response["etl"]["processed"] == 1  # type: ignore[index]
     assert etl_calls["keys"] == ["d1"]

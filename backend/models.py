@@ -42,6 +42,9 @@ class Activity(db.Model):
 
     user: Mapped[Optional["User"]] = relationship(back_populates="activities")
 
+    def __init__(self, **kwargs) -> None:  # type: ignore
+        super().__init__(**kwargs)
+
     def __repr__(self) -> str:  # pragma: no cover - convenience
         status = "active" if self.active else f"inactive since {self.deactivated_at}"
         return f"<Activity {self.name} ({status})>"
@@ -75,6 +78,9 @@ class Entry(db.Model):
 
     user: Mapped[Optional["User"]] = relationship(back_populates="entries")
 
+    def __init__(self, **kwargs) -> None:  # type: ignore
+        super().__init__(**kwargs)
+
     def __repr__(self) -> str:  # pragma: no cover - convenience
         return f"<Entry {self.date} {self.activity}>"
 
@@ -101,6 +107,9 @@ class User(db.Model):
         back_populates="user",
         passive_deletes=True,
     )
+
+    def __init__(self, **kwargs) -> None:  # type: ignore
+        super().__init__(**kwargs)
     activity_logs: DynamicMapped["ActivityLog"] = relationship(
         "ActivityLog",
         back_populates="user",

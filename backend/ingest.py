@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from datetime import date
+from typing import Iterable, Optional, Sequence
 
 import structlog
 from extensions import db
@@ -44,3 +45,37 @@ def process_wearable_raw_by_ids(raw_ids: Iterable[int]) -> dict:
     result = service.process_raw_by_ids(ids)
     db.session.commit()
     return result
+
+
+class WearableAggregator:
+    """Aggregator for rebuilding daily wearable aggregates."""
+
+    def __init__(self, session, log=logger):
+        self.session = session
+        self.log = log
+
+    def rebuild_range(
+        self,
+        *,
+        user_id: int,
+        start_date: date,
+        end_date: date,
+        source_id: Optional[int] = None,
+    ) -> None:
+        """
+        Rebuild daily aggregates for a user within a date range.
+        
+        This is a placeholder implementation that can be expanded to:
+        - Query WearableRaw records for the user and date range
+        - Process and aggregate the data
+        - Update WearableDailyAgg records
+        """
+        self.log.info(
+            "wearable.rebuild_range",
+            user_id=user_id,
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
+            source_id=source_id,
+        )
+        # TODO: Implement actual aggregation logic
+        # For now, this is a placeholder that logs the operation

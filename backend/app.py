@@ -280,9 +280,8 @@ def _enforce_jwt_authentication():
 @app.before_request
 def _start_request_timer():
     g.metrics_start_time = metrics_manager.now_perf_counter()
-    endpoint = request.endpoint or (
-        request.url_rule.rule if getattr(request, "url_rule", None) else request.path
-    )
+    url_rule = getattr(request, "url_rule", None)
+    endpoint = request.endpoint or (url_rule.rule if url_rule else request.path)
     if isinstance(endpoint, str) and "." in endpoint:
         endpoint = endpoint.split(".", 1)[1]
     g.metrics_endpoint = endpoint

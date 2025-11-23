@@ -25,7 +25,7 @@ def create_user(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()
         if row and "id" in row.keys():
-            new_user_id = int(row["id"])
+            new_user_id = int(row["id"])  # type: ignore[arg-type]
     return new_user_id
 
 

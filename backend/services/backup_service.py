@@ -60,7 +60,7 @@ def toggle_backup(
         )
     if interval is not None:
         try:
-            interval = int(interval)
+            interval = int(interval)  # type: ignore[arg-type]
         except (TypeError, ValueError):
             raise ValidationError(
                 "interval_minutes must be an integer", code="invalid_input", status=400
@@ -117,7 +117,7 @@ def fetch_export_data(
     total_entries = backup_repo.count_export_entries(user_id, is_admin)
     total_activities = backup_repo.count_export_activities(user_id, is_admin)
 
-    return entries, activities, int(total_entries), int(total_activities)
+    return entries, activities, int(total_entries), int(total_activities)  # type: ignore[arg-type]
 
 
 def build_export_payload(
