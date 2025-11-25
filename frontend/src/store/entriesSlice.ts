@@ -9,6 +9,8 @@ import {
 } from "../api";
 import { submitOfflineMutation } from "../offline/queue";
 import { readTodaySnapshot, saveTodaySnapshot } from "../offline/snapshots";
+import * as entriesMutations from "../services/mutations/entries";
+import { emitMutationCompleted } from "../services/mutations/events";
 import type { RootState, AppDispatch } from "./index";
 import type {
   EntriesFilters,
@@ -204,23 +206,39 @@ export const saveDirtyTodayRows = createAsyncThunk<
     return { saved: 0, date: today.date };
   }
   try {
-    for (const row of entriesToSave) {
+    // Use mutation service for batch create/update
+    const entryPayloads = entriesToSave.map((row) => ({
+      date: today.date,
+      activity: row.name,
+      value: Number(row.value) || 0,
+      note: row.note || "",
+    }));
+
+    // Still use offline queue for offline support (temporary fallback)
+    for (const payload of entryPayloads) {
       await submitOfflineMutation({
         action: "add_entry",
         endpoint: "/add_entry",
         method: "POST",
-        payload: {
-          date: today.date,
-          activity: row.name,
-          value: Number(row.value) || 0,
-          note: row.note || "",
-        },
+        payload,
       });
     }
+
+    // Save snapshot
     await saveTodaySnapshot(today.date, today.rows);
+
+    // Emit mutation event for each entry
+    entryPayloads.forEach((payload) => {
+      emitMutationCompleted("entry.created", payload, {
+        source: "saveDirtyTodayRows",
+      });
+    });
+
+    // Trigger cascading refreshes (temporary - will be replaced by listeners)
     dispatch(loadToday(today.date));
     dispatch(loadEntries(filters));
     dispatch(loadStats({ date: stats.date }));
+    
     return { saved: entriesToSave.length, date: today.date };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
@@ -233,10 +251,23 @@ export const deleteEntry = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("entries/deleteEntry", async (id, { rejectWithValue, dispatch, getState }) => {
   try {
-    await deleteEntryApi(id);
+    // Use mutation service
+    const result = await entriesMutations.deleteEntry(id);
+    
+    if (!result.success) {
+      throw result.error || new Error("Failed to delete entry");
+    }
+
+    // Emit mutation event
+    emitMutationCompleted("entry.deleted", { id }, {
+      source: "deleteEntry",
+    });
+
+    // Trigger cascading refreshes (temporary - will be replaced by listeners)
     const state = getState();
     dispatch(loadStats({ date: state.entries.stats.date }));
     dispatch(loadToday(state.entries.today.date));
+    
     return id;
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
@@ -266,7 +297,18 @@ export const finalizeToday = createAsyncThunk<
   { rejectValue: FriendlyError }
 >("entries/finalizeToday", async (date, { rejectWithValue }) => {
   try {
-    await finalizeDayApi(date);
+    // Use mutation service
+    const result = await entriesMutations.finalizeDay(date);
+    
+    if (!result.success) {
+      throw result.error || new Error("Failed to finalize day");
+    }
+
+    // Emit mutation event
+    emitMutationCompleted("entry.finalized", { date }, {
+      source: "finalizeToday",
+    });
+
     return { date };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));

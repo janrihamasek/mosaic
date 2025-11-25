@@ -6,6 +6,8 @@ import type { ActivitiesState, FriendlyError } from "../types/store";
 import type { Activity, ActivityType } from "../types/api";
 import { submitOfflineMutation } from "../offline/queue";
 import { readActivitiesSnapshot, saveActivitiesSnapshot } from "../offline/snapshots";
+import * as activitiesMutations from "../services/mutations/activities";
+import { emitMutationCompleted } from "../services/mutations/events";
 
 type ActivityMutationPayload = Record<string, unknown>;
 
@@ -110,6 +112,7 @@ export const createActivity = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/createActivity", async (payload, { dispatch, rejectWithValue, getState }) => {
   try {
+    // Still use offline queue for offline support (temporary fallback)
     const result = await submitOfflineMutation({
       action: "add_activity",
       endpoint: "/add_activity",
@@ -131,6 +134,13 @@ export const createActivity = createAsyncThunk<
         return { active: nextActive, all: nextAll };
       });
     }
+
+    // Emit mutation event
+    emitMutationCompleted("activity.created", payload, {
+      source: "createActivity",
+    });
+
+    // Trigger cascading refreshes (temporary - will be replaced by listeners)
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -146,6 +156,7 @@ export const updateActivityDetails = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/updateActivityDetails", async ({ id, payload }, { dispatch, rejectWithValue, getState }) => {
   try {
+    // Still use offline queue for offline support (temporary fallback)
     const result = await submitOfflineMutation({
       action: "update_activity",
       endpoint: `/activities/${id}`,
@@ -159,6 +170,13 @@ export const updateActivityDetails = createAsyncThunk<
         return { active: mapper(lists.active), all: mapper(lists.all) };
       });
     }
+
+    // Emit mutation event
+    emitMutationCompleted("activity.updated", { id, ...payload }, {
+      source: "updateActivityDetails",
+    });
+
+    // Trigger cascading refreshes (temporary - will be replaced by listeners)
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -174,6 +192,7 @@ export const activateActivity = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/activateActivity", async (id, { dispatch, rejectWithValue, getState }) => {
   try {
+    // Still use offline queue for offline support (temporary fallback)
     const result = await submitOfflineMutation({
       action: "activate_activity",
       endpoint: `/activities/${id}/activate`,
@@ -188,6 +207,13 @@ export const activateActivity = createAsyncThunk<
         return { active: mapper(lists.active), all: mapper(lists.all) };
       });
     }
+
+    // Emit mutation event
+    emitMutationCompleted("activity.activated", { id }, {
+      source: "activateActivity",
+    });
+
+    // Trigger cascading refreshes (temporary - will be replaced by listeners)
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
@@ -203,6 +229,7 @@ export const deactivateActivity = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("activities/deactivateActivity", async (id, { dispatch, rejectWithValue, getState }) => {
   try {
+    // Still use offline queue for offline support (temporary fallback)
     const result = await submitOfflineMutation({
       action: "deactivate_activity",
       endpoint: `/activities/${id}/deactivate`,
@@ -218,6 +245,13 @@ export const deactivateActivity = createAsyncThunk<
         return { active: mapper(lists.active), all: mapper(lists.all) };
       });
     }
+
+    // Emit mutation event
+    emitMutationCompleted("activity.deactivated", { id }, {
+      source: "deactivateActivity",
+    });
+
+    // Trigger cascading refreshes (temporary - will be replaced by listeners)
     dispatch(loadActivities());
     dispatch(loadToday(undefined));
     dispatch(loadEntries(getState().entries.filters));
