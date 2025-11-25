@@ -4,33 +4,55 @@ import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { useCompactLayout } from "../utils/useBreakpoints";
 import {
-  selectTodayState,
+  selectTodayDate,
+  selectTodayRows,
+  selectTodayStatus,
+  selectDirtyTodayRows,
+  selectDirtyTodayCount,
+  selectTodaySavingStatus,
+  selectTodayError,
+  selectStatsState,
+  selectStatsSnapshot,
+  selectStatsDate,
   setTodayDate,
   loadToday,
   updateTodayRow,
   saveDirtyTodayRows,
   finalizeToday,
-  selectStatsState,
   loadStats,
 } from "../store/entriesSlice";
+import type { AppDispatch } from "../store";
+import type { TodayRow } from "../types/store";
 import Loading from "./Loading";
 import ErrorState from "./ErrorState";
 
-const toLocalDateString = (dateObj) => {
+interface TodayProps {
+  onNotify?: (message: string, type: "success" | "error" | "info") => void;
+}
+
+const toLocalDateString = (dateObj: Date): string => {
   const tzOffset = dateObj.getTimezoneOffset();
   const adjusted = new Date(dateObj.getTime() - tzOffset * 60000);
   return adjusted.toISOString().slice(0, 10);
 };
 
-export default function Today({ onNotify }) {
-  const dispatch = useDispatch();
-  const { date, rows, status, dirty, savingStatus, error: todayError } = useSelector(selectTodayState);
+export default function Today({ onNotify }: TodayProps) {
+  const dispatch = useDispatch<AppDispatch>();
+  
+  // Use granular selectors for better performance
+  const date = useSelector(selectTodayDate);
+  const rows = useSelector(selectTodayRows);
+  const status = useSelector(selectTodayStatus);
+  const dirty = useSelector(selectDirtyTodayRows);
+  const dirtyCount = useSelector(selectDirtyTodayCount);
+  const savingStatus = useSelector(selectTodaySavingStatus);
+  const todayError = useSelector(selectTodayError);
   const statsState = useSelector(selectStatsState);
+  
   const loading = status === "loading";
   const autoSaving = savingStatus === "loading";
-  const dirtyCount = Object.keys(dirty || {}).length;
-  const dirtyRef = useRef(dirty || {});
-  const debounceRef = useRef(null);
+  const dirtyRef = useRef<Record<string, TodayRow>>(dirty || {});
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const NOTE_SAVE_DELAY_MS = 5000;
 
   useEffect(() => {
@@ -90,11 +112,12 @@ export default function Today({ onNotify }) {
       clearTimeout(debounceRef.current);
     }
     debounceRef.current = setTimeout(() => {
-      flushDirtyRows();
+      void flushDirtyRows();
     }, NOTE_SAVE_DELAY_MS);
-  }, [autoSaving, flushDirtyRows]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSaving]);
 
-  const handleValueChange = (row, newValue) => {
+  const handleValueChange = useCallback((row: TodayRow, newValue: string | number) => {
     const numericValue = Number(newValue) || 0;
     if (numericValue === (Number(row.value) || 0)) {
       return;
@@ -113,9 +136,10 @@ export default function Today({ onNotify }) {
       })
     );
     void flushDirtyRows();
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch]);
 
-  const handleNoteChange = (row, newNote) => {
+  const handleNoteChange = useCallback((row: TodayRow, newNote: string) => {
     const limitedNote = newNote.slice(0, 100);
     dirtyRef.current = {
       ...dirtyRef.current,
@@ -131,9 +155,9 @@ export default function Today({ onNotify }) {
       })
     );
     scheduleNoteAutoSave();
-  };
+  }, [dispatch, scheduleNoteAutoSave]);
 
-  const handleNoteKeyDown = (row, event) => {
+  const handleNoteKeyDown = useCallback((row: TodayRow, event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
     const trimmedNote = event.currentTarget.value.slice(0, 100);
@@ -156,7 +180,8 @@ export default function Today({ onNotify }) {
       })
     );
     void flushDirtyRows();
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch]);
 
   const todayString = useMemo(() => toLocalDateString(new Date()), []);
 
@@ -175,7 +200,7 @@ export default function Today({ onNotify }) {
   );
 
   const shiftDay = useCallback(
-    (offset) => {
+    (offset: number) => {
       const base = new Date(`${date}T00:00:00`);
       if (Number.isNaN(base.getTime())) {
         return;

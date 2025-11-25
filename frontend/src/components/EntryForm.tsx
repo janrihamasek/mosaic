@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useForm } from "react-hook-form";
 import { styles } from "../styles/common";
@@ -6,22 +6,40 @@ import { selectAllActivities } from "../store/activitiesSlice";
 import { loadEntries, selectEntriesFilters, selectEntriesList } from "../store/entriesSlice";
 import { formatError } from "../utils/errors";
 import FormWrapper from "./shared/FormWrapper";
+import type { AppDispatch } from "../store";
+import type { EntriesFilters } from "../types/store";
 
-const toLocalDateString = (dateObj) => {
+interface EntryFormProps {
+  onNotify?: (message: string, type: "success" | "error" | "info") => void;
+}
+
+type DateMode = "all" | "single" | "month" | "range";
+
+interface FormValues {
+  dateMode: DateMode;
+  singleDate: string;
+  month: string;
+  rangeStart: string;
+  rangeEnd: string;
+  activity: string;
+  category: string;
+}
+
+const toLocalDateString = (dateObj: Date): string => {
   const tzOffset = dateObj.getTimezoneOffset();
   const adjusted = new Date(dateObj.getTime() - tzOffset * 60000);
   return adjusted.toISOString().slice(0, 10);
 };
 
 const dateModes = [
-  { value: "all", label: "All time" },
-  { value: "single", label: "Single day" },
-  { value: "month", label: "Month" },
-  { value: "range", label: "Range" },
+  { value: "all" as const, label: "All time" },
+  { value: "single" as const, label: "Single day" },
+  { value: "month" as const, label: "Month" },
+  { value: "range" as const, label: "Range" },
 ];
 
-export default function EntryForm({ onNotify }) {
-  const dispatch = useDispatch();
+export default function EntryForm({ onNotify }: EntryFormProps) {
+  const dispatch = useDispatch<AppDispatch>();
   const activities = useSelector(selectAllActivities);
   const entries = useSelector(selectEntriesList);
   const filters = useSelector(selectEntriesFilters);
@@ -40,7 +58,7 @@ export default function EntryForm({ onNotify }) {
     getValues,
     trigger,
     formState: { errors, isValid, isSubmitting },
-  } = useForm({
+  } = useForm<FormValues>({
     mode: "onChange",
     reValidateMode: "onChange",
     shouldUnregister: true,
@@ -61,8 +79,8 @@ export default function EntryForm({ onNotify }) {
 
   useEffect(() => {
     const { startDate, endDate } = filters;
-    const nextValues = {
-      dateMode: "all",
+    const nextValues: FormValues = {
+      dateMode: "all" as DateMode,
       singleDate: defaultSingleDate,
       month: defaultMonth,
       rangeStart: "",
@@ -73,7 +91,7 @@ export default function EntryForm({ onNotify }) {
 
     if (startDate || endDate) {
       if (startDate && endDate && startDate === endDate) {
-        nextValues.dateMode = "single";
+        nextValues.dateMode = "single" as DateMode;
         nextValues.singleDate = startDate;
       } else if (startDate && endDate) {
         const start = new Date(`${startDate}T00:00:00`);
@@ -85,15 +103,15 @@ export default function EntryForm({ onNotify }) {
           toLocalDateString(new Date(start.getFullYear(), start.getMonth() + 1, 0)) === endDate;
 
         if (isSameMonth) {
-          nextValues.dateMode = "month";
+          nextValues.dateMode = "month" as DateMode;
           nextValues.month = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
         } else {
-          nextValues.dateMode = "range";
+          nextValues.dateMode = "range" as DateMode;
           nextValues.rangeStart = startDate;
           nextValues.rangeEnd = endDate;
         }
       } else {
-        nextValues.dateMode = "range";
+        nextValues.dateMode = "range" as DateMode;
         if (startDate) nextValues.rangeStart = startDate;
         if (endDate) nextValues.rangeEnd = endDate;
       }
@@ -122,7 +140,7 @@ export default function EntryForm({ onNotify }) {
   }, [activities]);
 
   const categoryOptions = useMemo(() => {
-    const unique = new Set();
+    const unique = new Set<string>();
     activities.forEach((activity) => {
       const category = activity?.category?.trim();
       if (category) unique.add(category);
@@ -140,7 +158,7 @@ export default function EntryForm({ onNotify }) {
     ];
   }, [activities, entries]);
 
-  const buildInputStyle = (hasError, overrides) => ({
+  const buildInputStyle = (hasError: boolean, overrides?: React.CSSProperties): React.CSSProperties => ({
     ...styles.input,
     border: hasError ? "1px solid #d93025" : styles.input.border,
     ...(overrides || {}),

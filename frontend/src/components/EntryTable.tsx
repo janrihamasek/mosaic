@@ -2,15 +2,35 @@ import React, { useCallback, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
-import { deleteEntry, loadEntries, selectEntriesList, selectEntriesState } from "../store/entriesSlice";
+import { 
+  deleteEntry, 
+  loadEntries, 
+  selectEntriesList, 
+  selectEntriesStatus,
+  selectEntriesError,
+  selectDeletingEntryId
+} from "../store/entriesSlice";
+import type { AppDispatch } from "../store";
+import type { Entry } from "../types/api";
 import Loading from "./Loading";
 import ErrorState from "./ErrorState";
 import DataTable from "./shared/DataTable";
 
-export default function EntryTable({ onNotify }) {
-  const dispatch = useDispatch();
+interface EntryTableProps {
+  onNotify?: (message: string, type: "success" | "error" | "info") => void;
+}
+
+interface EntryWithIndex extends Entry {
+  _rowIndex: number;
+}
+
+export default function EntryTable({ onNotify }: EntryTableProps) {
+  const dispatch = useDispatch<AppDispatch>();
   const entries = useSelector(selectEntriesList);
-  const { deletingId, status, error } = useSelector(selectEntriesState);
+  const status = useSelector(selectEntriesStatus);
+  const error = useSelector(selectEntriesError);
+  const deletingId = useSelector(selectDeletingEntryId);
+  
   const loading = status === "loading";
   const refreshing = loading && entries.length > 0;
   const handleDelete = useCallback(
@@ -26,7 +46,7 @@ export default function EntryTable({ onNotify }) {
     [deletingId, dispatch, onNotify]
   );
 
-  const actionCellStyle = useMemo(
+  const actionCellStyle = useMemo<React.CSSProperties>(
     () => ({
       display: "flex",
       gap: "0.5rem",
@@ -35,14 +55,16 @@ export default function EntryTable({ onNotify }) {
     }),
     []
   );
+  
   const resolveRowStyle = useCallback(
-    (entry) => (entry.activity_type === "negative" ? styles.negativeRow : styles.positiveRow),
+    (entry: Entry | EntryWithIndex) => 
+      (entry.activity_type === "negative" ? styles.negativeRow : styles.positiveRow),
     []
   );
 
-  const tableData = useMemo(
+  const tableData = useMemo<EntryWithIndex[]>(
     () =>
-      entries.map((entry, index) => ({
+      entries.map((entry, index): EntryWithIndex => ({
         ...entry,
         activity_type: entry.activity_type === "negative" ? "negative" : "positive",
         _rowIndex: index,
@@ -131,7 +153,7 @@ export default function EntryTable({ onNotify }) {
     return (
       <ErrorState
         message={message}
-        onRetry={() => dispatch(loadEntries())}
+        onRetry={() => dispatch(loadEntries({}))}
         actionLabel="Retry load"
       />
     );

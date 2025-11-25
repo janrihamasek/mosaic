@@ -1,4 +1,4 @@
-import { createAsyncThunk, createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import { createAsyncThunk, createSelector, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import {
   fetchEntries,
   deleteEntry as deleteEntryApi,
@@ -412,10 +412,264 @@ const entriesSlice = createSlice({
 export const { setTodayDate, updateTodayRow, clearTodayDirty, clearEntriesError } =
   entriesSlice.actions;
 
+// ===============================
+// Base selectors
+// ===============================
 export const selectEntriesState = (state: RootState) => state.entries;
 export const selectEntriesList = (state: RootState) => state.entries.items;
 export const selectEntriesFilters = (state: RootState) => state.entries.filters;
 export const selectTodayState = (state: RootState) => state.entries.today;
 export const selectStatsState = (state: RootState) => state.entries.stats;
+
+// ===============================
+// Memoized derived selectors
+// ===============================
+
+/**
+ * Select today's date
+ */
+export const selectTodayDate = createSelector(
+  [selectTodayState],
+  (today) => today.date
+);
+
+/**
+ * Select today's rows (activities + entries for the day)
+ */
+export const selectTodayRows = createSelector(
+  [selectTodayState],
+  (today) => today.rows
+);
+
+/**
+ * Select dirty (unsaved) today rows
+ */
+export const selectDirtyTodayRows = createSelector(
+  [selectTodayState],
+  (today) => today.dirty
+);
+
+/**
+ * Select count of dirty today rows
+ */
+export const selectDirtyTodayCount = createSelector(
+  [selectDirtyTodayRows],
+  (dirty) => Object.keys(dirty).length
+);
+
+/**
+ * Check if there are any unsaved changes in today
+ */
+export const selectHasDirtyToday = createSelector(
+  [selectDirtyTodayCount],
+  (count) => count > 0
+);
+
+/**
+ * Select today's loading status
+ */
+export const selectTodayStatus = createSelector(
+  [selectTodayState],
+  (today) => today.status
+);
+
+/**
+ * Select today's saving status
+ */
+export const selectTodaySavingStatus = createSelector(
+  [selectTodayState],
+  (today) => today.savingStatus
+);
+
+/**
+ * Select if today is loading
+ */
+export const selectIsTodayLoading = createSelector(
+  [selectTodayStatus],
+  (status) => status === "loading"
+);
+
+/**
+ * Select if today is saving
+ */
+export const selectIsTodaySaving = createSelector(
+  [selectTodaySavingStatus],
+  (status) => status === "loading"
+);
+
+/**
+ * Select today's error
+ */
+export const selectTodayError = createSelector(
+  [selectTodayState],
+  (today) => today.error
+);
+
+/**
+ * Select stats snapshot
+ */
+export const selectStatsSnapshot = createSelector(
+  [selectStatsState],
+  (stats) => stats.snapshot
+);
+
+/**
+ * Select stats date
+ */
+export const selectStatsDate = createSelector(
+  [selectStatsState],
+  (stats) => stats.date
+);
+
+/**
+ * Select stats status
+ */
+export const selectStatsStatus = createSelector(
+  [selectStatsState],
+  (stats) => stats.status
+);
+
+/**
+ * Select if stats are loading
+ */
+export const selectIsStatsLoading = createSelector(
+  [selectStatsStatus],
+  (status) => status === "loading"
+);
+
+/**
+ * Select stats error
+ */
+export const selectStatsError = createSelector(
+  [selectStatsState],
+  (stats) => stats.error
+);
+
+/**
+ * Select entries status
+ */
+export const selectEntriesStatus = createSelector(
+  [selectEntriesState],
+  (entries) => entries.status
+);
+
+/**
+ * Select if entries are loading
+ */
+export const selectIsEntriesLoading = createSelector(
+  [selectEntriesStatus],
+  (status) => status === "loading"
+);
+
+/**
+ * Select entry being deleted (ID)
+ */
+export const selectDeletingEntryId = createSelector(
+  [selectEntriesState],
+  (entries) => entries.deletingId
+);
+
+/**
+ * Select entries error
+ */
+export const selectEntriesError = createSelector(
+  [selectEntriesState],
+  (entries) => entries.error
+);
+
+/**
+ * Select import status
+ */
+export const selectImportStatus = createSelector(
+  [selectEntriesState],
+  (entries) => entries.importStatus
+);
+
+/**
+ * Select if import is in progress
+ */
+export const selectIsImporting = createSelector(
+  [selectImportStatus],
+  (status) => status === "loading"
+);
+
+/**
+ * Select finalize status
+ */
+export const selectFinalizeStatus = createSelector(
+  [selectEntriesState],
+  (entries) => entries.finalizeStatus
+);
+
+/**
+ * Select if finalize is in progress
+ */
+export const selectIsFinalizing = createSelector(
+  [selectFinalizeStatus],
+  (status) => status === "loading"
+);
+
+// ===============================
+// Complex derived selectors
+// ===============================
+
+/**
+ * Compute today's progress statistics from rows
+ */
+export const selectTodayProgress = createSelector(
+  [selectTodayRows],
+  (rows) => {
+    return rows.reduce(
+      (acc, row) => {
+        const value = Number(row.value) || 0;
+        const goal = Number(row.goal) || 0;
+        
+        // Skip negative activities for progress calculation
+        if (row.activity_type === "negative") {
+          return acc;
+        }
+        
+        if (goal > 0) {
+          acc.total += goal;
+          acc.completed += Math.min(value, goal);
+          acc.goalCount += 1;
+          if (value >= goal) {
+            acc.metCount += 1;
+          }
+        }
+        
+        return acc;
+      },
+      { total: 0, completed: 0, goalCount: 0, metCount: 0 }
+    );
+  }
+);
+
+/**
+ * Compute today's completion percentage
+ */
+export const selectTodayCompletionPercent = createSelector(
+  [selectTodayProgress],
+  (progress) => {
+    if (progress.total === 0) return 0;
+    return (progress.completed / progress.total) * 100;
+  }
+);
+
+/**
+ * Count of activities with goals met today
+ */
+export const selectTodayGoalsMetCount = createSelector(
+  [selectTodayProgress],
+  (progress) => progress.metCount
+);
+
+/**
+ * Count of activities with goals defined today
+ */
+export const selectTodayGoalsCount = createSelector(
+  [selectTodayProgress],
+  (progress) => progress.goalCount
+);
 
 export default entriesSlice.reducer;

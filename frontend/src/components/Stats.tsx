@@ -4,10 +4,62 @@ import { Loading } from "./Loading";
 import { ErrorState } from "./ErrorState";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
-import { loadStats, selectStatsState } from "../store/entriesSlice";
+import { 
+  loadStats, 
+  selectStatsSnapshot, 
+  selectStatsStatus, 
+  selectStatsError,
+  selectStatsDate 
+} from "../store/entriesSlice";
 import { selectAllActivities } from "../store/activitiesSlice";
 import { fetchEntries } from "../api";
 import { useCompactLayout } from "../utils/useBreakpoints";
+import type { AppDispatch } from "../store";
+import type { 
+  Activity, 
+  Entry, 
+  StatsSnapshot,
+  ActivityDistributionBucket,
+  CategoryAverageGoalFulfilment,
+  ConsistentActivitiesByCategory 
+} from "../types/api";
+
+interface StatsProps {
+  onNotify?: (message: string, type: "success" | "error" | "info") => void;
+}
+
+interface ProgressRow {
+  key: string;
+  label: string;
+  percent: number;
+  percentLabel: string;
+  ratioLabel: string;
+  totalGoal: number;
+  totalValue: number;
+}
+
+interface ActivityMeta {
+  goalPerDay: number;
+  category: string;
+}
+
+interface DistributionWithColor extends ActivityDistributionBucket {
+  color: string;
+}
+
+interface LineChartPoint {
+  x: number;
+  y: number;
+  label: string;
+  value: number;
+}
+
+interface LineChartData {
+  points: LineChartPoint[];
+  path: string;
+  width: number;
+  height: number;
+}
 
 const pieColors = ["#3a7bd5", "#f1b24a", "#8b1e3f", "#43cea2", "#8f36ff", "#9ba3af"];
 
@@ -86,30 +138,35 @@ const analysisListStyle = {
   gap: "0.85rem",
 };
 
-const toNumber = (value, fallback = 0) => {
+const toNumber = (value: unknown, fallback = 0): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const formatPercent = (value) => `${toNumber(value).toFixed(1)}%`;
-const normaliseIndex = (index, length) => {
+const formatPercent = (value: number | unknown): string => `${toNumber(value).toFixed(1)}%`;
+
+const normaliseIndex = (index: number, length: number): number => {
   if (!length) return 0;
   const mod = index % length;
   return mod >= 0 ? mod : mod + length;
 };
 
-const METRIC_OPTIONS = ["Progress"];
-const ENTITY_OPTIONS = ["Activity", "Category"];
-const WINDOW_OPTIONS = ["30 days", "90 days"];
+const METRIC_OPTIONS = ["Progress"] as const;
+const ENTITY_OPTIONS = ["Activity", "Category"] as const;
+const WINDOW_OPTIONS = ["30 days", "90 days"] as const;
 const UNCATEGORISED_LABEL = "Uncategorised";
 
-const toLocalDateString = (dateObj) => {
+type MetricOption = typeof METRIC_OPTIONS[number];
+type EntityOption = typeof ENTITY_OPTIONS[number];
+type WindowOption = typeof WINDOW_OPTIONS[number];
+
+const toLocalDateString = (dateObj: Date): string => {
   const tzOffset = dateObj.getTimezoneOffset();
   const adjusted = new Date(dateObj.getTime() - tzOffset * 60000);
   return adjusted.toISOString().slice(0, 10);
 };
 
-const navButtonStyle = {
+const navButtonStyle: React.CSSProperties = {
   backgroundColor: "#1f2024",
   border: "1px solid #38393e",
   color: "#e6e6e6",
@@ -119,17 +176,23 @@ const navButtonStyle = {
   transition: "opacity 160ms ease-in-out",
 };
 
-export default function Stats({ onNotify }) {
-  const dispatch = useDispatch();
-  const { snapshot, status, error, date } = useSelector(selectStatsState);
+export default function Stats({ onNotify }: StatsProps) {
+  const dispatch = useDispatch<AppDispatch>();
+  
+  // Use granular selectors
+  const snapshot = useSelector(selectStatsSnapshot);
+  const status = useSelector(selectStatsStatus);
+  const error = useSelector(selectStatsError);
+  const date = useSelector(selectStatsDate);
   const activities = useSelector(selectAllActivities);
+  
   const { isCompact } = useCompactLayout();
-  const [statMetric, setStatMetric] = useState("Progress");
-  const [statEntity, setStatEntity] = useState("Activity");
-  const [statWindow, setStatWindow] = useState("30 days");
-  const [analysisEntries, setAnalysisEntries] = useState([]);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [analysisError, setAnalysisError] = useState(null);
+  const [statMetric, setStatMetric] = useState<MetricOption>("Progress");
+  const [statEntity, setStatEntity] = useState<EntityOption>("Activity");
+  const [statWindow, setStatWindow] = useState<WindowOption>("30 days");
+  const [analysisEntries, setAnalysisEntries] = useState<Entry[]>([]);
+  const [analysisLoading, setAnalysisLoading] = useState<boolean>(false);
+  const [analysisError, setAnalysisError] = useState<unknown>(null);
 
   const refetchStats = async () => {
     try {
@@ -139,7 +202,7 @@ export default function Stats({ onNotify }) {
     }
   };
 
-  const distributionWithColors = useMemo(() => {
+  const distributionWithColors = useMemo<DistributionWithColor[]>(() => {
     if (!snapshot?.activity_distribution?.length) {
       return [];
     }
@@ -149,7 +212,7 @@ export default function Stats({ onNotify }) {
     }));
   }, [snapshot]);
 
-  const pieBackground = useMemo(() => {
+  const pieBackground = useMemo<string>(() => {
     if (!distributionWithColors.length) {
       return "#2f3034";
     }
@@ -168,7 +231,7 @@ export default function Stats({ onNotify }) {
     return `conic-gradient(${segments.join(", ")})`;
   }, [distributionWithColors]);
 
-  const lineChart = useMemo(() => {
+  const lineChart = useMemo<LineChartData>(() => {
     const last7 = toNumber(snapshot?.avg_goal_fulfillment?.last_7_days);
     const last30 = toNumber(snapshot?.avg_goal_fulfillment?.last_30_days);
     const values = [last7, last30];
@@ -178,7 +241,7 @@ export default function Stats({ onNotify }) {
     const padding = 18;
     const drawableHeight = height - padding * 2;
     const step = values.length > 1 ? (width - padding * 2) / (values.length - 1) : 0;
-    const points = values.map((value, index) => {
+    const points: LineChartPoint[] = values.map((value, index) => {
       const x = padding + index * step;
       const y = height - padding - (Math.min(100, Math.max(0, value)) / 100) * drawableHeight;
       return { x, y, label: labels[index], value };
@@ -187,8 +250,8 @@ export default function Stats({ onNotify }) {
     return { points, path, width, height };
   }, [snapshot]);
 
-  const activityMeta = useMemo(() => {
-    const map = new Map();
+  const activityMeta = useMemo<Map<string, ActivityMeta>>(() => {
+    const map = new Map<string, ActivityMeta>();
     (activities || []).forEach((activity) => {
       const perDay = toNumber(activity.frequency_per_day, 0);
       const perWeek = toNumber(activity.frequency_per_week, 0);
@@ -267,7 +330,7 @@ export default function Stats({ onNotify }) {
     };
   }, [statMetric, statWindow]);
 
-  const progressRows = useMemo(() => {
+  const progressRows = useMemo<ProgressRow[]>(() => {
     if (statMetric !== "Progress") return [];
     const days = statWindow === "90 days" ? 90 : 30;
     const filteredEntries = analysisEntries || [];
@@ -277,7 +340,13 @@ export default function Stats({ onNotify }) {
     }
 
     if (statEntity === "Activity") {
-      const perActivity = new Map();
+      interface ActivityRecord {
+        name: string;
+        totalValue: number;
+        goalPerDay: number;
+      }
+      
+      const perActivity = new Map<string, ActivityRecord>();
       filteredEntries.forEach((entry) => {
         const activityName = entry?.activity || "Unknown activity";
         const meta = activityMeta.get(activityName);
@@ -292,7 +361,7 @@ export default function Stats({ onNotify }) {
             goalPerDay,
           });
         }
-        const record = perActivity.get(activityName);
+        const record = perActivity.get(activityName)!;
         record.totalValue += value;
         if (goalPerDay > 0) {
           record.goalPerDay = goalPerDay;
@@ -300,7 +369,7 @@ export default function Stats({ onNotify }) {
       });
 
       return Array.from(perActivity.values())
-        .map((record) => {
+        .map((record): ProgressRow => {
           const totalGoal = record.goalPerDay > 0 ? record.goalPerDay * days : 0;
           const percent = totalGoal > 0 ? Math.min(100, (record.totalValue / totalGoal) * 100) : 0;
           return {
@@ -323,7 +392,14 @@ export default function Stats({ onNotify }) {
         });
     }
 
-    const perCategory = new Map();
+    interface CategoryRecord {
+      name: string;
+      totalValue: number;
+      goalPerDaySum: number;
+      seenActivities: Set<string>;
+    }
+    
+    const perCategory = new Map<string, CategoryRecord>();
     filteredEntries.forEach((entry) => {
       const activityName = entry?.activity || "Unknown activity";
       const meta = activityMeta.get(activityName);
@@ -341,7 +417,7 @@ export default function Stats({ onNotify }) {
           seenActivities: new Set(),
         });
       }
-      const record = perCategory.get(categoryName);
+      const record = perCategory.get(categoryName)!;
       record.totalValue += value;
       if (!record.seenActivities.has(activityName)) {
         record.seenActivities.add(activityName);
@@ -352,7 +428,7 @@ export default function Stats({ onNotify }) {
     });
 
     return Array.from(perCategory.values())
-      .map((record) => {
+      .map((record): ProgressRow => {
         const totalGoal = record.goalPerDaySum > 0 ? record.goalPerDaySum * days : 0;
         const percent = totalGoal > 0 ? Math.min(100, (record.totalValue / totalGoal) * 100) : 0;
         return {
@@ -375,17 +451,17 @@ export default function Stats({ onNotify }) {
       });
   }, [activityMeta, analysisEntries, statEntity, statMetric, statWindow]);
 
-  const analysisRows = statMetric === "Progress" ? progressRows : [];
+  const analysisRows: ProgressRow[] = statMetric === "Progress" ? progressRows : [];
 
-  const activeRatio = snapshot?.active_days_ratio || {};
-  const activeDays = toNumber(activeRatio.active_days, 0);
-  const totalDays = toNumber(activeRatio.total_days, 0) || 30;
-  const activePercent = toNumber(activeRatio.percent, 0);
+  const activeRatio = snapshot?.active_days_ratio;
+  const activeDays = toNumber(activeRatio?.active_days, 0);
+  const totalDays = toNumber(activeRatio?.total_days, 0) || 30;
+  const activePercent = toNumber(activeRatio?.percent, 0);
 
-  const polarity = snapshot?.positive_vs_negative || {};
-  const positiveCount = toNumber(polarity.positive, 0);
-  const negativeCount = toNumber(polarity.negative, 0);
-  const polarityRatio = toNumber(polarity.ratio, 0);
+  const polarity = snapshot?.positive_vs_negative;
+  const positiveCount = toNumber(polarity?.positive, 0);
+  const negativeCount = toNumber(polarity?.negative, 0);
+  const polarityRatio = toNumber(polarity?.ratio, 0);
   const totalPolarity = positiveCount + negativeCount;
   const positiveWidth = totalPolarity ? (positiveCount / totalPolarity) * 100 : 0;
   const negativeWidth = totalPolarity ? (negativeCount / totalPolarity) * 100 : 0;
