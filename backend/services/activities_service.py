@@ -201,7 +201,14 @@ def delete_activity(
         )
     except activities_repo.NotFoundError:
         raise ValidationError("Aktivita nenalezena", code="not_found", status=404)
-    except activities_repo.ConflictError:
+    except activities_repo.ConflictError as e:
+        error_str = str(e).lower()
+        if "system" in error_str:
+            raise ValidationError(
+                "Systémové aktivity nelze smazat",
+                code="system_activity",
+                status=422,
+            )
         raise ValidationError(
             "Aktivita musí být deaktivována před smazáním",
             code="invalid_state",

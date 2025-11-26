@@ -57,8 +57,11 @@ export default function EntryTable({ onNotify }: EntryTableProps) {
   );
   
   const resolveRowStyle = useCallback(
-    (entry: Entry | EntryWithIndex) => 
-      (entry.activity_type === "negative" ? styles.negativeRow : styles.positiveRow),
+    (entry: Entry | EntryWithIndex) => {
+      if (entry.activity_type === "negative") return styles.negativeRow;
+      if (entry.activity_type === "neutral") return styles.neutralRow;
+      return styles.positiveRow;
+    },
     []
   );
 
@@ -66,7 +69,7 @@ export default function EntryTable({ onNotify }: EntryTableProps) {
     () =>
       entries.map((entry, index): EntryWithIndex => ({
         ...entry,
-        activity_type: entry.activity_type === "negative" ? "negative" : "positive",
+        activity_type: entry.activity_type || "positive",
         _rowIndex: index,
       })),
     [entries]

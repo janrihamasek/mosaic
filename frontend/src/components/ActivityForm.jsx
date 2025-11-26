@@ -60,7 +60,7 @@ export default function ActivityForm({ onNotify }) {
   }, [frequencyPerDay, frequencyPerWeek]);
 
   useEffect(() => {
-    if (activityType === 'negative') {
+    if (activityType === 'negative' || activityType === 'neutral') {
       setValue('frequencyPerDay', 1, { shouldDirty: false, shouldValidate: true });
       setValue('frequencyPerWeek', 1, { shouldDirty: false, shouldValidate: true });
     }
@@ -77,7 +77,7 @@ export default function ActivityForm({ onNotify }) {
         description: data.description.trim(),
         activity_type: data.activityType,
       };
-      if (data.activityType === 'negative') {
+      if (data.activityType === 'negative' || data.activityType === 'neutral') {
         payload.goal = 0;
       }
       // Backend derives `goal` server-side; avoid sending it because the schema forbids extra fields.
@@ -162,12 +162,13 @@ export default function ActivityForm({ onNotify }) {
           <label style={{ fontSize: 13, fontWeight: 600 }}>Activity type</label>
           <select
             {...register('activityType', {
-              validate: (value) => (value === 'positive' || value === 'negative') || 'Select a valid activity type.',
+              validate: (value) => ['positive', 'neutral', 'negative'].includes(value) || 'Select a valid activity type.',
             })}
             style={buildInputStyle(!!errors.activityType)}
             aria-invalid={errors.activityType ? 'true' : 'false'}
           >
             <option value="positive">Positive</option>
+            <option value="neutral">Neutral</option>
             <option value="negative">Negative</option>
           </select>
           {errors.activityType && <span style={errorTextStyle}>{errors.activityType.message}</span>}

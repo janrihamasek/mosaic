@@ -290,6 +290,9 @@ export const styles = {
   positiveRow: {
     backgroundColor: "#243528",
   },
+  neutralRow: {
+    backgroundColor: "#2b2e33",
+  },
   negativeRow: {
     backgroundColor: "#3b2325",
   },

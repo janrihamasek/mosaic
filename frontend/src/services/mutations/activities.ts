@@ -11,7 +11,7 @@ export interface ActivityPayload {
   name: string;
   category: string;
   goal: number;
-  activity_type: "positive" | "negative";
+  activity_type: "positive" | "negative" | "neutral";
   description?: string;
   frequency_per_day?: number;
   frequency_per_week?: number;
@@ -21,7 +21,7 @@ export interface ActivityUpdatePayload {
   name?: string;
   category?: string;
   goal?: number;
-  activity_type?: "positive" | "negative";
+  activity_type?: "positive" | "negative" | "neutral";
   description?: string;
   frequency_per_day?: number;
   frequency_per_week?: number;

@@ -320,6 +320,8 @@ def delete_activity(
         row = _fetch_activity_by_id(conn, activity_id, user_id, is_admin)
         if not row:
             raise NotFoundError("not_found")
+        if row.get("is_system"):
+            raise ConflictError("system_activity")
         if row.get("active"):
             raise ConflictError("active")
 

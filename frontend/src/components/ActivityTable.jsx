@@ -22,7 +22,11 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
   const loading = status === 'loading';
   const refreshing = loading && activities.length > 0;
   const resolveRowStyle = useCallback(
-    (activity) => (activity.activity_type === 'negative' ? styles.negativeRow : styles.positiveRow),
+    (activity) => {
+      if (activity.activity_type === 'negative') return styles.negativeRow;
+      if (activity.activity_type === 'neutral') return styles.neutralRow;
+      return styles.positiveRow;
+    },
     []
   );
 
@@ -97,17 +101,22 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
         label: 'Goal',
         width: '15%',
         render: (activity) =>
-          activity.activity_type === 'negative'
-            ? '0.00'
-            : typeof activity.goal === 'number'
+          activity.activity_type === 'positive'
+            ? typeof activity.goal === 'number'
               ? activity.goal.toFixed(2)
-              : Number(activity.goal ?? 0).toFixed(2),
+              : Number(activity.goal ?? 0).toFixed(2)
+            : '0.00',
       },
       {
         key: 'activity_type',
         label: 'Type',
         width: '10%',
-        render: (activity) => (activity.activity_type === 'negative' ? 'Negative' : 'Positive'),
+        render: (activity) => {
+          if (activity.activity_type === 'negative') return 'Negative';
+          if (activity.activity_type === 'neutral') return 'Neutral';
+          if (activity.activity_type === 'neutral') return 'Neutral';
+          return 'Positive';
+        },
       },
       {
         key: 'status',

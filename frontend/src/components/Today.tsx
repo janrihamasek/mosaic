@@ -220,7 +220,8 @@ export default function Today({ onNotify }: TodayProps) {
       (acc, row) => {
         const value = Number(row.value) || 0;
         const goal = Number(row.goal) || 0;
-        if (row.activity_type === "negative") {
+        // Only positive activities count towards goals (not negative or neutral)
+        if (row.activity_type !== "positive") {
           return acc;
         }
         return {
@@ -303,6 +304,8 @@ export default function Today({ onNotify }: TodayProps) {
               Number(r.value) > 0
                 ? r.activity_type === "negative"
                   ? styles.negativeRow
+                  : r.activity_type === "neutral"
+                  ? styles.neutralRow
                   : styles.positiveRow
                 : {};
             return (
@@ -383,6 +386,8 @@ export default function Today({ onNotify }: TodayProps) {
               Number(r.value) > 0
                 ? r.activity_type === "negative"
                   ? styles.negativeRow
+                  : r.activity_type === "neutral"
+                  ? styles.neutralRow
                   : styles.positiveRow
                 : {};
             return (

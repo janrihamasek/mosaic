@@ -98,11 +98,12 @@ def get_progress_stats(
     except SQLAlchemyError as exc:
         raise ValidationError(str(exc), code="database_error", status=500)
 
+    # Only positive entries count towards goals (not negative or neutral)
     positive_entries = [
-        e for e in entries if (e.get("activity_type") or "positive") != "negative"
+        e for e in entries if e.get("activity_type") == "positive"
     ]
     negative_entries = [
-        e for e in entries if (e.get("activity_type") or "positive") == "negative"
+        e for e in entries if e.get("activity_type") == "negative"
     ]
 
     def ratio(total_value: float, total_goal: float) -> float:

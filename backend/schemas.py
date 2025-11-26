@@ -59,7 +59,7 @@ class EntryPayload(BaseModel):
             raise ValueError("value must be a number")
 
 
-ALLOWED_ACTIVITY_TYPES = {"positive", "negative"}
+ALLOWED_ACTIVITY_TYPES = {"positive", "negative", "neutral"}
 
 
 class ActivityCreatePayload(BaseModel):
@@ -70,6 +70,7 @@ class ActivityCreatePayload(BaseModel):
     description: str = ""
     goal: Optional[float] = None
     activity_type: str = Field(default="positive")
+    is_system: bool = Field(default=False)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -147,6 +148,9 @@ class ActivityCreatePayload(BaseModel):
 
     @property
     def computed_goal(self) -> float:
+        # Neutral and negative activities always have goal=0
+        if self.activity_type in ("neutral", "negative"):
+            return 0.0
         return (self.frequency_per_day * self.frequency_per_week) / 7
 
 
@@ -249,8 +253,22 @@ class ActivityUpdatePayload(BaseModel):
         data = self.model_dump(exclude_none=True, exclude_unset=True)
         freq_day = data.get("frequency_per_day")
         freq_week = data.get("frequency_per_week")
+        activity_type = data.get("activity_type")
+        
+        # Only compute goal for positive activities
+        # Neutral and negative activities always have goal=0
         if freq_day is not None and freq_week is not None:
-            data["goal"] = (freq_day * freq_week) / 7
+            if activity_type == "positive" or (activity_type is None and "goal" not in data):
+                # Compute goal if activity is positive, or if type is not being changed
+                # and goal is not explicitly set
+                data["goal"] = (freq_day * freq_week) / 7
+            elif activity_type in ("neutral", "negative"):
+                # Force goal to 0 for neutral/negative
+                data["goal"] = 0
+        elif activity_type in ("neutral", "negative"):
+            # If only activity_type is being changed to neutral/negative, set goal=0
+            data["goal"] = 0
+            
         return data
 
 

@@ -33,6 +33,7 @@ class Activity(db.Model):
         db.Integer, nullable=False, default=1
     )
     deactivated_at: Mapped[Optional[str]] = mapped_column(db.String(32), nullable=True)
+    is_system: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=False, server_default="0")
     user_id: Mapped[Optional[int]] = mapped_column(
         db.Integer,
         db.ForeignKey("users.id", ondelete="CASCADE"),

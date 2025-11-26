@@ -165,6 +165,7 @@ def get_active_positive_goals_by_category(
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = []
+        # Only positive activities count towards goals (not negative or neutral)
         where_clause = "WHERE active = TRUE AND activity_type = 'positive'"
         if user_id is not None:
             where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=include_unassigned)}"

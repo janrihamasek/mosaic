@@ -45,8 +45,11 @@ const cloneLists = (state: ActivitiesState): ActivityLists => ({
 });
 
 const tempId = () => -Math.floor(Math.random() * 1_000_000 + Date.now());
-const toActivityType = (value: unknown): ActivityType =>
-  value === "negative" ? "negative" : "positive";
+const toActivityType = (value: unknown): ActivityType => {
+  if (value === "negative") return "negative";
+  if (value === "neutral") return "neutral";
+  return "positive";
+};
 
 async function applyAndPersistActivitiesSnapshot(
   getState: () => RootState,

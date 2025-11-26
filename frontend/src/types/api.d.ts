@@ -1,4 +1,4 @@
-export type ActivityType = "positive" | "negative";
+export type ActivityType = "positive" | "negative" | "neutral";
 
 export interface ApiResponse<T> {
   data: T;
@@ -19,6 +19,7 @@ export interface Activity {
   goal: number;
   active: boolean;
   activity_type: ActivityType;
+  is_system?: boolean;
   description?: string;
   frequency_per_day?: number;
   frequency_per_week?: number;

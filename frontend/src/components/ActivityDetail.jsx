@@ -35,7 +35,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
   }, [initialState]);
 
   useEffect(() => {
-    if (activityType === "negative") {
+    if (activityType === "negative" || activityType === "neutral") {
       setFrequencyPerDay(1);
       setFrequencyPerWeek(1);
     }
@@ -70,14 +70,15 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
         throw new Error("Frequency per week must be between 1 and 7");
       }
 
-      const goalPayload = activityType === "negative" ? 0 : avgGoalPerDay;
+      // Only positive activities have goals, negative and neutral have goal=0
+      const goalPayload = activityType === "positive" ? avgGoalPerDay : 0;
       await dispatch(
         updateActivityDetails({
           id: activity.id,
           payload: {
             category: category.trim(),
-            frequency_per_day: activityType === "negative" ? 1 : perDay,
-            frequency_per_week: activityType === "negative" ? 1 : perWeek,
+            frequency_per_day: activityType === "positive" ? perDay : 1,
+            frequency_per_week: activityType === "positive" ? perWeek : 1,
             goal: goalPayload,
             description: description.trim(),
             activity_type: activityType,
@@ -162,6 +163,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
               style={styles.input}
             >
               <option value="positive">Positive</option>
+              <option value="neutral">Neutral</option>
               <option value="negative">Negative</option>
             </select>
           </label>
