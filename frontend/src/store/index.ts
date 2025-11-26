@@ -10,6 +10,7 @@ import offlineReducer from "./offlineSlice";
 import wearableReducer from "./wearableSlice";
 import { subscribe as subscribeAuthChanges, getAuthState } from "../services/authService";
 import { initOfflineSync } from "../offline/syncManager";
+import { dailyTrackingListenersMiddleware } from "./listeners/dailyTrackingListeners";
 
 export const store = configureStore({
   reducer: {
@@ -22,6 +23,8 @@ export const store = configureStore({
     offline: offlineReducer,
     wearable: wearableReducer,
   },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(dailyTrackingListenersMiddleware),
 });
 
 // Sync auth storage updates (login/logout in other tabs)

@@ -233,11 +233,6 @@ export const saveDirtyTodayRows = createAsyncThunk<
         source: "saveDirtyTodayRows",
       });
     });
-
-    // Trigger cascading refreshes (temporary - will be replaced by listeners)
-    dispatch(loadToday(today.date));
-    dispatch(loadEntries(filters));
-    dispatch(loadStats({ date: stats.date }));
     
     return { saved: entriesToSave.length, date: today.date };
   } catch (error) {
@@ -262,11 +257,6 @@ export const deleteEntry = createAsyncThunk<
     emitMutationCompleted("entry.deleted", { id }, {
       source: "deleteEntry",
     });
-
-    // Trigger cascading refreshes (temporary - will be replaced by listeners)
-    const state = getState();
-    dispatch(loadStats({ date: state.entries.stats.date }));
-    dispatch(loadToday(state.entries.today.date));
     
     return id;
   } catch (error) {
@@ -281,6 +271,8 @@ export const importEntries = createAsyncThunk<
 >("entries/importEntries", async (file, { getState, dispatch, rejectWithValue }) => {
   try {
     const response = await importEntriesCsv(file);
+    // Note: Import is a bulk operation that doesn't emit individual mutation events
+    // We manually refresh here because emitting events for each entry would be inefficient
     const state = getState();
     dispatch(loadEntries(state.entries.filters));
     dispatch(loadStats({ date: state.entries.stats.date }));

@@ -139,11 +139,6 @@ export const createActivity = createAsyncThunk<
     emitMutationCompleted("activity.created", payload, {
       source: "createActivity",
     });
-
-    // Trigger cascading refreshes (temporary - will be replaced by listeners)
-    dispatch(loadActivities());
-    dispatch(loadToday(undefined));
-    dispatch(loadEntries(getState().entries.filters));
     return { ok: true };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
@@ -175,11 +170,6 @@ export const updateActivityDetails = createAsyncThunk<
     emitMutationCompleted("activity.updated", { id, ...payload }, {
       source: "updateActivityDetails",
     });
-
-    // Trigger cascading refreshes (temporary - will be replaced by listeners)
-    dispatch(loadActivities());
-    dispatch(loadToday(undefined));
-    dispatch(loadEntries(getState().entries.filters));
     return { id };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
@@ -212,11 +202,6 @@ export const activateActivity = createAsyncThunk<
     emitMutationCompleted("activity.activated", { id }, {
       source: "activateActivity",
     });
-
-    // Trigger cascading refreshes (temporary - will be replaced by listeners)
-    dispatch(loadActivities());
-    dispatch(loadToday(undefined));
-    dispatch(loadEntries(getState().entries.filters));
     return { id };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
@@ -250,11 +235,6 @@ export const deactivateActivity = createAsyncThunk<
     emitMutationCompleted("activity.deactivated", { id }, {
       source: "deactivateActivity",
     });
-
-    // Trigger cascading refreshes (temporary - will be replaced by listeners)
-    dispatch(loadActivities());
-    dispatch(loadToday(undefined));
-    dispatch(loadEntries(getState().entries.filters));
     return { id };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
@@ -278,9 +258,11 @@ export const removeActivity = createAsyncThunk<
         all: lists.all.filter((item) => item.id !== id),
       }));
     }
-    dispatch(loadActivities());
-    dispatch(loadToday(undefined));
-    dispatch(loadEntries(getState().entries.filters));
+    
+    // Emit mutation event
+    emitMutationCompleted("activity.deleted", { id }, {
+      source: "removeActivity",
+    });
     return { id };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
