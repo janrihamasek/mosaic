@@ -30,7 +30,9 @@ def test_insert_activity_and_overwrite():
         }
         response, status = activities_repo.insert_activity(user.id, payload)  # type: ignore[arg-type]
         assert status == 201
-        assert response["message"]
+        assert response["name"] == "Reading"
+        assert response["category"] == "Leisure"
+        assert response["goal"] == pytest.approx(1.0)
 
         row = db.session.execute(
             select(Activity).where(Activity.name == "Reading", Activity.user_id == user.id)
@@ -45,6 +47,8 @@ def test_insert_activity_and_overwrite():
             user.id, payload, overwrite_existing=True  # type: ignore[arg-type]
         )
         assert status == 200
+        assert response["category"] == "Updated"
+        assert response["goal"] == pytest.approx(1.0)
         updated = db.session.execute(
             select(Activity.category).where(Activity.name == "Reading")
         ).scalar_one()

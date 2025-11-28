@@ -16,12 +16,21 @@ import AppVersion from "./components/AppVersion";
 import { styles } from "./styles/common";
 import { useCompactLayout } from "./utils/useBreakpoints";
 import { fetchCurrentUserProfile, selectAuth, selectIsAuthenticated } from "./store/authSlice";
-import { loadEntries, loadStats, loadToday, setTodayDate } from "./store/entriesSlice";
+import { 
+  loadEntries, 
+  loadStats, 
+  loadToday, 
+  setTodayDate,
+  selectEntriesState,
+  selectTodayState,
+  selectStatsState,
+} from "./store/entriesSlice";
 import {
   loadActivities,
   selectAllActivities,
   selectActivity,
   selectSelectedActivityId,
+  selectActivitiesState,
 } from "./store/activitiesSlice";
 import { API_BACKEND_LABEL, API_BASE_URL } from "./config";
 import { selectOfflineState } from "./store/offlineSlice";
@@ -64,19 +73,31 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   const auth = useSelector(selectAuth);
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const offlineState = useSelector(selectOfflineState);
-  const availableTabs = useMemo(() => TABS, []);
+  const { isCompact, isMobile } = useCompactLayout();
+  
+  // On mobile, hide Entries and Wearables tabs
+  const availableTabs = useMemo(() => {
+    if (isMobile) {
+      return TABS.filter(tab => tab !== "Entries" && tab !== "Wearables");
+    }
+    return TABS;
+  }, [isMobile]);
+  
   const [activeTab, setActiveTab] = useState(() => resolveInitialTab(initialTab, availableTabs));
   const [tabRenderKeys, setTabRenderKeys] = useState(() =>
     Object.fromEntries(TABS.map((tab) => [tab, 0]))
   );
   const [notification, setNotification] = useState({ message: "", type: "info", visible: false });
   const notificationTimerRef = useRef(null);
-  const { isCompact, isMobile } = useCompactLayout();
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [canInstall, setCanInstall] = useState(false);
 
   const activities = useSelector(selectAllActivities);
   const selectedActivityId = useSelector(selectSelectedActivityId);
+  const entriesState = useSelector(selectEntriesState);
+  const todayState = useSelector(selectTodayState);
+  const statsState = useSelector(selectStatsState);
+  const activitiesState = useSelector(selectActivitiesState);
 
   const selectedActivity = useMemo(
     () => activities.find((activity) => activity.id === selectedActivityId) || null,
@@ -116,11 +137,17 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
   }, [showNotification]);
 
   useEffect(() => {
+    // Initial load for default tab (Today)
+    if (activeTab === "Today") {
+      const todayIso = getTodayIso();
+      dispatch(setTodayDate(todayIso));
+      dispatch(loadToday(todayIso));
+      dispatch(loadStats({ date: todayIso }));
+      dispatch(loadEntries({ startDate: todayIso, endDate: todayIso }));
+    }
+    // Always load activities on mount (needed for dropdowns)
     dispatch(loadActivities());
-    dispatch(loadEntries());
-    dispatch(loadToday());
-    dispatch(loadStats());
-  }, [dispatch]);
+  }, [dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isAuthenticated && auth.accessToken && auth.userId == null) {
@@ -139,6 +166,13 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       setActiveTab(availableTabs[0] || DEFAULT_TAB);
     }
   }, [activeTab, availableTabs]);
+
+  // Refresh tab data when switching tabs
+  useEffect(() => {
+    if (isAuthenticated && availableTabs.includes(activeTab)) {
+      refreshTab(activeTab);
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -342,23 +376,50 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
       if (!availableTabs.includes(tabName)) {
         return;
       }
+
+      const FRESHNESS_WINDOW_MS = 60 * 1000; // 60 seconds
+      const now = Date.now();
+      
+      const isDataFresh = (lastFetchTime) => {
+        return lastFetchTime && (now - lastFetchTime) < FRESHNESS_WINDOW_MS;
+      };
+
       if (tabName === "Today") {
         const todayIso = getTodayIso();
         dispatch(setTodayDate(todayIso));
-        dispatch(loadToday(todayIso));
-        dispatch(loadStats({ date: todayIso }));
-    } else if (tabName === "Wearables") {
-      dispatch(fetchWearableDay());
-      dispatch(fetchWearableTrends({ metric: "steps", window: 7 }));
-    } else if (tabName === "Entries") {
-        dispatch(
-          loadEntries({
-            startDate: null,
-            endDate: null,
-            activity: "all",
-            category: "all",
-          })
-        );
+        
+        // Load Today data if stale or not fresh
+        if (todayState.stale || !isDataFresh(todayState.lastFetchTime)) {
+          dispatch(loadToday(todayIso));
+        }
+        
+        // Load Entries for "today" filters if stale or not fresh
+        if (entriesState.stale || !isDataFresh(entriesState.lastFetchTime)) {
+          dispatch(loadEntries({ startDate: todayIso, endDate: todayIso }));
+        }
+        
+        // Load Stats if stale or not fresh
+        if (statsState.stale || !isDataFresh(statsState.lastFetchTime)) {
+          dispatch(loadStats({ date: todayIso }));
+        }
+      } else if (tabName === "Entries") {
+        // Load Entries with current filters if stale or not fresh
+        if (entriesState.stale || !isDataFresh(entriesState.lastFetchTime)) {
+          dispatch(loadEntries(entriesState.filters));
+        }
+      } else if (tabName === "Stats") {
+        // Load Stats if stale or not fresh
+        if (statsState.stale || !isDataFresh(statsState.lastFetchTime)) {
+          dispatch(loadStats({ date: statsState.date }));
+        }
+      } else if (tabName === "Activities") {
+        // Load Activities if stale or not fresh
+        if (activitiesState.stale || !isDataFresh(activitiesState.lastFetchTime)) {
+          dispatch(loadActivities());
+        }
+      } else if (tabName === "Wearables") {
+        dispatch(fetchWearableDay());
+        dispatch(fetchWearableTrends({ metric: "steps", window: 7 }));
       }
 
       setTabRenderKeys((prev) => ({
@@ -366,7 +427,7 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
         [tabName]: (prev?.[tabName] ?? 0) + 1,
       }));
     },
-    [availableTabs, dispatch]
+    [availableTabs, dispatch, todayState, entriesState, statsState, activitiesState]
   );
 
   const handleTabSelect = useCallback(
@@ -472,7 +533,11 @@ export default function Dashboard({ initialTab = DEFAULT_TAB }) {
 
       {activeTab === "Today" && (
         <div style={sectionWrapperStyle}>
-          <Today key={tabRenderKeys.Today} onNotify={showNotification} />
+          <Today 
+            key={tabRenderKeys.Today} 
+            onNotify={showNotification}
+            onNavigateToActivities={() => handleTabSelect("Activities")}
+          />
         </div>
       )}
 

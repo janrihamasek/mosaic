@@ -28,6 +28,20 @@ def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
     return clause
 
 
+def _serialize_activity_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize DB activity rows for API responses."""
+    item = dict(row)
+    if "active" in item:
+        item["active"] = 1 if bool(item["active"]) else 0
+    return item
+
+
+def _build_activity_response(row: Dict[str, Any], message: str) -> Dict[str, Any]:
+    payload = _serialize_activity_row(row)
+    payload["message"] = message
+    return payload
+
+
 def list_activities(
     user_id: Optional[int],
     is_admin: bool,
@@ -64,13 +78,7 @@ def list_activities(
     finally:
         conn.close()
 
-    payload: List[dict] = []
-    for row in rows:
-        item = dict(row)
-        if "active" in item:
-            item["active"] = 1 if bool(item["active"]) else 0
-        payload.append(item)
-    return payload
+    return [_serialize_activity_row(dict(row)) for row in rows]
 
 
 def _fetch_activity_by_id(
@@ -102,6 +110,29 @@ def _fetch_activity_by_id(
         WHERE {where_clause}
         """,
         params,
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _fetch_activity_by_name(conn, name: str) -> Optional[dict]:
+    row = conn.execute(
+        """
+        SELECT
+            id,
+            name,
+            user_id,
+            active,
+            category,
+            activity_type,
+            goal,
+            description,
+            frequency_per_day,
+            frequency_per_week,
+            deactivated_at
+        FROM activities
+        WHERE name = ?
+        """,
+        (name,),
     ).fetchone()
     return dict(row) if row else None
 
@@ -187,7 +218,10 @@ def insert_activity(
                 """,
                 params,
             )
-            return {"message": "Kategorie aktualizována"}, 200
+            row = _fetch_activity_by_name(conn, name)
+            if not row:
+                raise RepositoryError("Activity not found after overwrite")
+            return _build_activity_response(row, "Kategorie aktualizována"), 200
 
         try:
             conn.execute(
@@ -208,7 +242,10 @@ def insert_activity(
                 """,
                 params,
             )
-            return {"message": "Kategorie přidána"}, 201
+            row = _fetch_activity_by_name(conn, name)
+            if not row:
+                raise RepositoryError("Activity not found after insert")
+            return _build_activity_response(row, "Kategorie přidána"), 201
         except IntegrityError:
             raise ConflictError("exists")
 

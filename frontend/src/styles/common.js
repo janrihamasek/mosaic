@@ -2,6 +2,60 @@ export const MOBILE_WIDTH = "30rem";
 export const TABLET_WIDTH = "48rem";
 export const DESKTOP_MIN_WIDTH = "48.0625rem";
 
+// Valence and Mood color constants (dark-mode baseline)
+export const VALENCE_COLORS = {
+  positive: "#22aa5e",
+  negative: "#b74444",
+  neutral: "#858486",
+  mood: "#6b7280",
+};
+
+/**
+ * Get color for activity type (valence)
+ * @param {string} activityType - "positive", "negative", or "neutral"
+ * @returns {string} Hex color
+ */
+export function getValenceColor(activityType) {
+  if (activityType === "negative") return VALENCE_COLORS.negative;
+  if (activityType === "neutral") return VALENCE_COLORS.neutral;
+  return VALENCE_COLORS.positive;
+}
+
+/**
+ * Get background color for valence display
+ * @param {string} activityType - "positive", "negative", or "neutral"
+ * @param {number} opacity - Opacity value 0-1
+ * @returns {string} RGBA color
+ */
+export function getValenceBackground(activityType, opacity = 0.15) {
+  const color = getValenceColor(activityType);
+  // Convert hex to RGB and apply opacity
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+/**
+ * Get styles for valence cell/indicator
+ * @param {string} activityType - "positive", "negative", or "neutral"
+ * @param {boolean} isMood - True if this is a Mood activity
+ * @returns {object} Style object
+ */
+export function getValenceStyles(activityType, isMood = false) {
+  const color = isMood ? VALENCE_COLORS.mood : getValenceColor(activityType);
+  const bgColor = isMood 
+    ? getValenceBackground("neutral", 0.15) 
+    : getValenceBackground(activityType, 0.15);
+  
+  return {
+    color,
+    backgroundColor: bgColor,
+    borderLeft: `3px solid ${color}`,
+    paddingLeft: "0.5rem",
+  };
+}
+
 export const BREAKPOINTS = {
   mobile: {
     min: "0rem",
@@ -288,13 +342,20 @@ export const styles = {
     }),
   },
   positiveRow: {
-    backgroundColor: "#243528",
+    backgroundColor: getValenceBackground("positive", 0.1),
+    borderLeft: `3px solid ${VALENCE_COLORS.positive}`,
   },
   neutralRow: {
-    backgroundColor: "#2b2e33",
+    backgroundColor: getValenceBackground("neutral", 0.1),
+    borderLeft: `3px solid ${VALENCE_COLORS.neutral}`,
   },
   negativeRow: {
-    backgroundColor: "#3b2325",
+    backgroundColor: getValenceBackground("negative", 0.1),
+    borderLeft: `3px solid ${VALENCE_COLORS.negative}`,
+  },
+  moodRow: {
+    backgroundColor: getValenceBackground("neutral", 0.1),
+    borderLeft: `3px solid ${VALENCE_COLORS.mood}`,
   },
   highlightRow: {
     boxShadow: "inset 0 0 0 1px rgba(111, 221, 133, 0.65)",

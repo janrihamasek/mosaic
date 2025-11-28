@@ -19,6 +19,8 @@ const initialState: ActivitiesState = {
   mutationStatus: "idle",
   mutationError: null,
   selectedActivityId: null,
+  lastFetchTime: null,
+  stale: true,
 };
 
 function serialiseError(error: unknown): FriendlyError | null {
@@ -289,6 +291,9 @@ const activitiesSlice = createSlice({
       state.active = action.payload.active;
       state.all = action.payload.all;
     },
+    markActivitiesStale(state) {
+      state.stale = true;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -301,6 +306,8 @@ const activitiesSlice = createSlice({
         state.active = action.payload.active || [];
         state.all = action.payload.all || [];
         state.error = null;
+        state.lastFetchTime = Date.now();
+        state.stale = false;
       })
       .addCase(loadActivities.rejected, (state, action) => {
         state.status = "failed";
@@ -337,7 +344,7 @@ const activitiesSlice = createSlice({
   },
 });
 
-export const { selectActivity, clearActivitiesError, setActivitiesFromSnapshot } = activitiesSlice.actions;
+export const { selectActivity, clearActivitiesError, setActivitiesFromSnapshot, markActivitiesStale } = activitiesSlice.actions;
 
 export const selectActivitiesState = (state: RootState) => state.activities;
 export const selectAllActivities = (state: RootState) => state.activities.all;

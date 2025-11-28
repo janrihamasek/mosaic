@@ -38,6 +38,8 @@ const initialState: EntriesState = {
   deletingId: null,
   error: null,
   importStatus: "idle",
+  lastFetchTime: null,
+  stale: true,
   today: {
     date: initialTodayDate,
     rows: [],
@@ -46,12 +48,16 @@ const initialState: EntriesState = {
     dirty: {},
     savingStatus: "idle",
     saveError: null,
+    lastFetchTime: null,
+    stale: true,
   },
   stats: {
     snapshot: null,
     status: "idle",
     error: null,
     date: null,
+    lastFetchTime: null,
+    stale: true,
   },
   finalizeStatus: "idle",
 };
@@ -340,6 +346,20 @@ const entriesSlice = createSlice({
       state.today.saveError = null;
       state.stats.error = null;
     },
+    markEntriesStale(state) {
+      state.stale = true;
+    },
+    markTodayStale(state) {
+      state.today.stale = true;
+    },
+    markStatsStale(state) {
+      state.stats.stale = true;
+    },
+    markAllStale(state) {
+      state.stale = true;
+      state.today.stale = true;
+      state.stats.stale = true;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -352,6 +372,8 @@ const entriesSlice = createSlice({
         state.items = action.payload.items;
         state.filters = action.payload.filters;
         state.error = null;
+        state.lastFetchTime = Date.now();
+        state.stale = false;
       })
       .addCase(loadEntries.rejected, (state, action) => {
         state.status = "failed";
@@ -384,6 +406,8 @@ const entriesSlice = createSlice({
         state.today.dirty = {};
         state.today.error = null;
         state.today.saveError = null;
+        state.today.lastFetchTime = Date.now();
+        state.today.stale = false;
       })
       .addCase(loadToday.rejected, (state, action) => {
         state.today.status = "failed";
@@ -424,6 +448,8 @@ const entriesSlice = createSlice({
         state.stats.snapshot = action.payload.snapshot;
         state.stats.date = action.payload.date ?? null;
         state.stats.error = null;
+        state.stats.lastFetchTime = Date.now();
+        state.stats.stale = false;
       })
       .addCase(loadStats.rejected, (state, action) => {
         state.stats.status = "failed";
@@ -443,8 +469,16 @@ const entriesSlice = createSlice({
   },
 });
 
-export const { setTodayDate, updateTodayRow, clearTodayDirty, clearEntriesError } =
-  entriesSlice.actions;
+export const { 
+  setTodayDate, 
+  updateTodayRow, 
+  clearTodayDirty, 
+  clearEntriesError,
+  markEntriesStale,
+  markTodayStale,
+  markStatsStale,
+  markAllStale,
+} = entriesSlice.actions;
 
 // ===============================
 // Base selectors

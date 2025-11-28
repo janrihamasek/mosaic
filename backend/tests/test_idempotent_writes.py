@@ -82,7 +82,9 @@ def test_add_activity_idempotent_and_overwrite(client):
     )
     assert overwrite.status_code == 200
     data = overwrite.get_json()
-    assert data["message"] == "Kategorie aktualizována"
+    assert data["name"] == payload["name"]
+    assert float(data["goal"]) == overwrite_payload["goal"]
+    assert data["description"] == overwrite_payload["description"]
 
     activities = client.get("/activities?all=true", headers=headers)
     assert activities.status_code == 200

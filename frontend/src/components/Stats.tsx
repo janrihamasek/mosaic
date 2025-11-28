@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Loading } from "./Loading";
 import { ErrorState } from "./ErrorState";
+import EmptyState from "./EmptyState";
 import { styles } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { 
@@ -510,7 +511,19 @@ export default function Stats({ onNotify }: StatsProps) {
         <ErrorState
           message={formatError(error, "Failed to load stats.")}
           onRetry={refetchStats}
-          actionLabel="Retry"
+          actionLabel="Reload"
+        />
+      </div>
+    );
+  }
+
+  // Show empty state when no data
+  if (!snapshot && status === "succeeded") {
+    return (
+      <div style={containerStyle}>
+        <EmptyState
+          message="No statistics available for selected period"
+          hint="Stats will appear after several days of logging activities."
         />
       </div>
     );
@@ -533,12 +546,6 @@ export default function Stats({ onNotify }: StatsProps) {
           Refresh
         </button>
       </div>
-
-      {!snapshot && status === "succeeded" && (
-        <div style={{ color: "#9ba3af", fontStyle: "italic" }}>
-          No statistics available yet. Log a few activities to get insights.
-        </div>
-      )}
 
       {status === "succeeded" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>

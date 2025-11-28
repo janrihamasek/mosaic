@@ -125,14 +125,29 @@ const DataTable: React.FC<DataTableProps> = ({
   }
 
   return (
-    <table style={styles.table}>
+    <table style={{ ...styles.table, tableLayout: "fixed" }}>
       <thead>
         <tr style={styles.tableHeader}>
-          {columnMeta.map((column) => (
-            <th key={column._id} style={{ width: column.width }}>
-              {column.label}
-            </th>
-          ))}
+          {columnMeta.map((column) => {
+            // Determine text alignment based on column key
+            const textAlign = 
+              column.key === "value" || column.key === "goal" ? "right" :
+              column.key === "type" || column.key === "actions" ? "center" :
+              "left";
+            
+            return (
+              <th 
+                key={column._id} 
+                style={{ 
+                  width: column.width,
+                  textAlign,
+                  padding: "0.75rem",
+                }}
+              >
+                {column.label}
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody>
@@ -142,11 +157,25 @@ const DataTable: React.FC<DataTableProps> = ({
             style={{ ...styles.tableRow, ...baseRowStyle, ...(resolveRowStyle(row) ?? {}) }}
             onClick={() => onRowClick?.(row)}
           >
-            {columnMeta.map((column) => (
-              <td key={column._id} style={{ width: column.width }}>
-                {resolveCellValue(row, column)}
-              </td>
-            ))}
+            {columnMeta.map((column) => {
+              const textAlign = 
+                column.key === "value" || column.key === "goal" ? "right" :
+                column.key === "type" || column.key === "actions" ? "center" :
+                "left";
+              
+              return (
+                <td 
+                  key={column._id} 
+                  style={{ 
+                    width: column.width,
+                    textAlign,
+                    padding: "0.75rem",
+                  }}
+                >
+                  {resolveCellValue(row, column)}
+                </td>
+              );
+            })}
           </tr>
         ))}
       </tbody>

@@ -254,21 +254,17 @@ class ActivityUpdatePayload(BaseModel):
         freq_day = data.get("frequency_per_day")
         freq_week = data.get("frequency_per_week")
         activity_type = data.get("activity_type")
-        
-        # Only compute goal for positive activities
-        # Neutral and negative activities always have goal=0
+
+        # Always derive goal from frequency pair; neutral/negative activities stay at 0
         if freq_day is not None and freq_week is not None:
-            if activity_type == "positive" or (activity_type is None and "goal" not in data):
-                # Compute goal if activity is positive, or if type is not being changed
-                # and goal is not explicitly set
-                data["goal"] = (freq_day * freq_week) / 7
-            elif activity_type in ("neutral", "negative"):
-                # Force goal to 0 for neutral/negative
+            if activity_type in ("neutral", "negative"):
                 data["goal"] = 0
+            else:
+                data["goal"] = (freq_day * freq_week) / 7
         elif activity_type in ("neutral", "negative"):
             # If only activity_type is being changed to neutral/negative, set goal=0
             data["goal"] = 0
-            
+
         return data
 
 

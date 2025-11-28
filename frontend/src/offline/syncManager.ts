@@ -14,6 +14,13 @@ async function runSync() {
   if (!storeRef) {
     return;
   }
+  // Check if user is authenticated before attempting sync
+  const state = storeRef.getState() as { auth?: { accessToken?: string | null } };
+  const isAuthenticated = Boolean(state.auth?.accessToken);
+  if (!isAuthenticated) {
+    // User is not logged in, skip sync
+    return;
+  }
   if (!isNavigatorOnline()) {
     storeRef.dispatch(setOnlineStatus(false));
     return;

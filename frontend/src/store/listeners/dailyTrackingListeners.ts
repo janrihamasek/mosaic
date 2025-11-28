@@ -21,10 +21,16 @@ import type { AppDispatch, RootState } from "../index";
 import { onAnyMutation, type MutationEvent } from "../../services/mutations/events";
 
 // Import thunks that need to be dispatched
-import { loadToday } from "../entriesSlice";
-import { loadEntries } from "../entriesSlice";
-import { loadStats } from "../entriesSlice";
-import { loadActivities } from "../activitiesSlice";
+import { 
+  loadToday, 
+  loadEntries, 
+  loadStats,
+  markAllStale,
+  markTodayStale,
+  markEntriesStale,
+  markStatsStale,
+} from "../entriesSlice";
+import { loadActivities, markActivitiesStale } from "../activitiesSlice";
 
 /**
  * Extract date from mutation event payload
@@ -54,52 +60,35 @@ function extractDate(event: MutationEvent): string | null {
 
 /**
  * Handles entry mutations (create, update, delete, finalize)
- * Triggers: loadToday, loadEntries, loadStats
+ * Marks data as stale instead of immediately reloading
  */
 async function handleEntryMutation(
   event: MutationEvent,
   dispatch: AppDispatch,
   getState: () => RootState
 ): Promise<void> {
-  const state = getState();
-  const mutationDate = extractDate(event);
-  const todayDate = state.entries.today.date;
-  const currentFilters = state.entries.filters;
-
-  // Always reload stats when entries change
-  dispatch(loadStats({}));
-
-  // Reload today view if mutation affects today's date
-  if (mutationDate === todayDate) {
-    dispatch(loadToday(todayDate));
-  }
-
-  // Reload entries table based on current filters
-  // This ensures the table stays in sync regardless of which date was mutated
-  dispatch(loadEntries(currentFilters));
+  // Mark all entry-related data as stale
+  // The Dashboard will reload them when the user switches to the relevant tab
+  dispatch(markTodayStale());
+  dispatch(markEntriesStale());
+  dispatch(markStatsStale());
 }
 
 /**
  * Handles activity mutations (create, update, activate, deactivate, delete)
- * Triggers: loadActivities, loadToday, loadEntries
+ * Marks data as stale instead of immediately reloading
  */
 async function handleActivityMutation(
   event: MutationEvent,
   dispatch: AppDispatch,
   getState: () => RootState
 ): Promise<void> {
-  const state = getState();
-  const todayDate = state.entries.today.date;
-  const currentFilters = state.entries.filters;
-
-  // Reload activities list (affects dropdowns and stats)
-  dispatch(loadActivities());
-
-  // Reload today view (activities affect available rows)
-  dispatch(loadToday(todayDate));
-
-  // Reload entries table (activities affect display and filtering)
-  dispatch(loadEntries(currentFilters));
+  // Mark all activity-related data as stale
+  // The Dashboard will reload them when the user switches to the relevant tab
+  dispatch(markActivitiesStale());
+  dispatch(markTodayStale());
+  dispatch(markEntriesStale());
+  dispatch(markStatsStale());
 }
 
 /**

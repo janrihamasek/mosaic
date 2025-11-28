@@ -55,6 +55,8 @@ export interface EntriesState {
   deletingId: number | null;
   error: FriendlyError | null;
   importStatus: AsyncRequestStatus;
+  lastFetchTime: number | null;
+  stale: boolean;
   today: {
     date: string;
     rows: TodayRow[];
@@ -63,12 +65,16 @@ export interface EntriesState {
     dirty: Record<string, TodayRow>;
     savingStatus: AsyncRequestStatus;
     saveError: FriendlyError | null;
+    lastFetchTime: number | null;
+    stale: boolean;
   };
   stats: {
     snapshot: StatsSnapshot | null;
     status: AsyncRequestStatus;
     error: FriendlyError | null;
     date: string | null;
+    lastFetchTime: number | null;
+    stale: boolean;
   };
   finalizeStatus: AsyncRequestStatus;
 }
@@ -81,6 +87,8 @@ export interface ActivitiesState {
   mutationStatus: AsyncRequestStatus;
   mutationError: FriendlyError | null;
   selectedActivityId: number | null;
+  lastFetchTime: number | null;
+  stale: boolean;
 }
 
 export {};

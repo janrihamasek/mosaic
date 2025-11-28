@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { styles } from "../styles/common";
+import { styles, VALENCE_COLORS, getValenceColor } from "../styles/common";
 import { formatError } from "../utils/errors";
 import { useCompactLayout } from "../utils/useBreakpoints";
 import {
@@ -25,9 +25,12 @@ import type { AppDispatch } from "../store";
 import type { TodayRow } from "../types/store";
 import Loading from "./Loading";
 import ErrorState from "./ErrorState";
+import EmptyState from "./EmptyState";
+import SkeletonTable from "./SkeletonTable";
 
 interface TodayProps {
   onNotify?: (message: string, type: "success" | "error" | "info") => void;
+  onNavigateToActivities?: () => void;
 }
 
 const toLocalDateString = (dateObj: Date): string => {
@@ -36,7 +39,7 @@ const toLocalDateString = (dateObj: Date): string => {
   return adjusted.toISOString().slice(0, 10);
 };
 
-export default function Today({ onNotify }: TodayProps) {
+export default function Today({ onNotify, onNavigateToActivities }: TodayProps) {
   const dispatch = useDispatch<AppDispatch>();
   
   // Use granular selectors for better performance
@@ -158,28 +161,46 @@ export default function Today({ onNotify }: TodayProps) {
   }, [dispatch, scheduleNoteAutoSave]);
 
   const handleNoteKeyDown = useCallback((row: TodayRow, event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    const trimmedNote = event.currentTarget.value.slice(0, 100);
-    const pendingRow = dirtyRef.current?.[row.name];
-    const latestNote = pendingRow ? pendingRow.note : row.note;
-    if (!pendingRow && trimmedNote === latestNote) {
-      return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const trimmedNote = event.currentTarget.value.slice(0, 100);
+      const pendingRow = dirtyRef.current?.[row.name];
+      const latestNote = pendingRow ? pendingRow.note : row.note;
+      if (!pendingRow && trimmedNote === latestNote) {
+        return;
+      }
+      dirtyRef.current = {
+        ...dirtyRef.current,
+        [row.name]: {
+          ...row,
+          note: trimmedNote,
+        },
+      };
+      dispatch(
+        updateTodayRow({
+          name: row.name,
+          changes: { note: trimmedNote },
+        })
+      );
+      void flushDirtyRows();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      // Discard changes and revert to original note value
+      const originalNote = row.note;
+      event.currentTarget.value = originalNote;
+      dispatch(
+        updateTodayRow({
+          name: row.name,
+          changes: { note: originalNote },
+        })
+      );
+      // Remove from dirtyRef
+      if (dirtyRef.current?.[row.name]) {
+        const { [row.name]: _, ...rest } = dirtyRef.current;
+        dirtyRef.current = rest;
+      }
+      event.currentTarget.blur();
     }
-    dirtyRef.current = {
-      ...dirtyRef.current,
-      [row.name]: {
-        ...row,
-        note: trimmedNote,
-      },
-    };
-    dispatch(
-      updateTodayRow({
-        name: row.name,
-        changes: { note: trimmedNote },
-      })
-    );
-    void flushDirtyRows();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
@@ -220,8 +241,9 @@ export default function Today({ onNotify }: TodayProps) {
       (acc, row) => {
         const value = Number(row.value) || 0;
         const goal = Number(row.goal) || 0;
-        // Only positive activities count towards goals (not negative or neutral)
-        if (row.activity_type !== "positive") {
+        const isMood = row.name.toLowerCase() === "mood";
+        // Only positive activities count towards goals (not negative, neutral, or Mood)
+        if (row.activity_type !== "positive" || isMood) {
           return acc;
         }
         return {
@@ -265,6 +287,13 @@ export default function Today({ onNotify }: TodayProps) {
     }
     return parsed.toLocaleDateString();
   }, [date]);
+
+  // Extract Mood value for header display
+  const moodValue = useMemo(() => {
+    const moodRow = rows.find(row => row.name.toLowerCase() === "mood");
+    return moodRow ? Number(moodRow.value) : null;
+  }, [rows]);
+
   const { isCompact, isDesktop } = useCompactLayout();
 
   const navigationButtonStyle = {
@@ -300,9 +329,12 @@ export default function Today({ onNotify }: TodayProps) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {rows.map((r, idx) => {
+            const isMood = r.name.toLowerCase() === "mood";
             const highlightStyle =
               Number(r.value) > 0
-                ? r.activity_type === "negative"
+                ? isMood
+                  ? styles.moodRow
+                  : r.activity_type === "negative"
                   ? styles.negativeRow
                   : r.activity_type === "neutral"
                   ? styles.neutralRow
@@ -319,8 +351,16 @@ export default function Today({ onNotify }: TodayProps) {
                   ...highlightStyle,
                 }}
               >
-              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "0.5rem" }}>
-                <span style={{ ...styles.textHeading, fontSize: "1.125rem" }}>{r.name}</span>
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ 
+                    fontSize: "1.2rem",
+                    color: isMood ? VALENCE_COLORS.mood : getValenceColor(r.activity_type),
+                  }}>
+                    {isMood ? "🌙" : r.activity_type === "positive" ? "✓" : r.activity_type === "negative" ? "✗" : "−"}
+                  </span>
+                  <span style={{ ...styles.textHeading, fontSize: "1.125rem" }}>{r.name}</span>
+                </div>
                 <span style={{ ...styles.textMuted, fontSize: "0.8125rem" }}>
                   {r.category ? `Category: ${r.category}` : "Category: N/A"}
                 </span>
@@ -354,8 +394,9 @@ export default function Today({ onNotify }: TodayProps) {
                       handleNoteKeyDown(r, e);
                     }}
                     style={{ ...styles.input, ...styles.inputMobile }}
-                    placeholder="Note (max 100 chars). For save Note press Enter"
+                    placeholder="Note (press Enter to save)"
                     disabled={autoSaving}
+                    maxLength={100}
                   />
                 </label>
               </div>
@@ -372,19 +413,23 @@ export default function Today({ onNotify }: TodayProps) {
     }
 
     return (
-      <table style={styles.table}>
+      <table style={{ ...styles.table, tableLayout: "fixed" }}>
         <thead>
           <tr style={styles.tableHeader}>
-            <th>Activity</th>
-            <th>Value</th>
-            <th>Note</th>
+            <th style={{ width: "25%", textAlign: "left", padding: "0.75rem" }}>Activity</th>
+            <th style={{ width: "15%", textAlign: "right", padding: "0.75rem" }}>Value</th>
+            <th style={{ width: "10%", textAlign: "center", padding: "0.75rem" }}>Type</th>
+            <th style={{ width: "50%", textAlign: "left", padding: "0.75rem" }}>Note</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, idx) => {
+            const isMood = r.name.toLowerCase() === "mood";
             const highlightStyle =
               Number(r.value) > 0
-                ? r.activity_type === "negative"
+                ? isMood
+                  ? styles.moodRow
+                  : r.activity_type === "negative"
                   ? styles.negativeRow
                   : r.activity_type === "neutral"
                   ? styles.neutralRow
@@ -393,19 +438,21 @@ export default function Today({ onNotify }: TodayProps) {
             return (
               <tr
                 key={r.activity_id ?? idx}
-                style={{
-                  ...styles.tableRow,
-                  ...highlightStyle,
-                }}
+                style={{ ...styles.tableRow, ...highlightStyle }}
               >
-              <td title={r.category ? `Category: ${r.category}` : "Category: N/A"}>{r.name}</td>
-              <td style={{ width: "12rem" }}>
+              <td 
+                title={r.category ? `Category: ${r.category}` : "Category: N/A"}
+                style={{ padding: "0.75rem", textAlign: "left" }}
+              >
+                {r.name}
+              </td>
+              <td style={{ padding: "0.75rem", textAlign: "right" }}>
                 <select
                   value={r.value}
                   onChange={(e) => {
                     handleValueChange(r, e.target.value);
                   }}
-                  style={{ ...styles.input, width: "100%" }}
+                  style={{ ...styles.input, width: "100%", maxWidth: "5rem", marginLeft: "auto", display: "block" }}
                   disabled={autoSaving}
                 >
                   {[0, 1, 2, 3, 4, 5].map((v) => (
@@ -415,7 +462,15 @@ export default function Today({ onNotify }: TodayProps) {
                   ))}
                 </select>
               </td>
-              <td>
+              <td style={{ padding: "0.75rem", textAlign: "center" }}>
+                <span style={{ 
+                  fontSize: "1.2rem",
+                  color: isMood ? VALENCE_COLORS.mood : getValenceColor(r.activity_type),
+                }}>
+                  {isMood ? "🌙" : r.activity_type === "positive" ? "✓" : r.activity_type === "negative" ? "✗" : "−"}
+                </span>
+              </td>
+              <td style={{ padding: "0.75rem" }}>
                 <input
                   value={r.note}
                   onChange={(e) => {
@@ -425,8 +480,9 @@ export default function Today({ onNotify }: TodayProps) {
                     handleNoteKeyDown(r, e);
                   }}
                   style={{ ...styles.input, width: "100%" }}
-                  placeholder="Note (max 100 chars). For save Note press Enter"
+                  placeholder="Note (press Enter to save)"
                   disabled={autoSaving}
+                  maxLength={100}
                 />
               </td>
             </tr>
@@ -455,9 +511,20 @@ export default function Today({ onNotify }: TodayProps) {
     );
   }
 
+  // Show skeleton on initial load
   if (loading && rows.length === 0) {
-    return <Loading message="Loading day overview…" />;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        <div style={{ ...styles.textMuted, fontSize: "0.875rem" }}>
+          Loading today's activities...
+        </div>
+        <SkeletonTable rows={5} columns={5} />
+      </div>
+    );
   }
+
+  // Show empty state when no active activities
+  const showEmptyState = !loading && rows.length === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -541,6 +608,17 @@ export default function Today({ onNotify }: TodayProps) {
                   {selectedDateLabel}
                 </span>
               )}
+              {moodValue !== null && (
+                <span style={{ 
+                  ...styles.textMuted, 
+                  fontSize: "0.75rem", 
+                  textTransform: "none",
+                  color: VALENCE_COLORS.mood,
+                  fontWeight: 500,
+                }}>
+                  Mood: {moodValue}/5
+                </span>
+              )}
             </div>
             {statsLoading && <span style={{ ...styles.textMuted, fontSize: "0.75rem" }}>Loading…</span>}
           </div>
@@ -583,7 +661,7 @@ export default function Today({ onNotify }: TodayProps) {
           )}
         </div>
         <div style={{ display: "flex", justifyContent: isDesktop ? "flex-end" : "flex-start" }}>
-          {autoSaving && <div style={styles.loadingText}>💾 Auto-saving...</div>}
+          {autoSaving && <div style={styles.loadingText}>💾 Saving…</div>}
           {!autoSaving && dirtyCount > 0 && (
             <div style={statusMessageStyle}>{dirtyCount} change(s) pending...</div>
           )}
@@ -592,7 +670,17 @@ export default function Today({ onNotify }: TodayProps) {
 
       {loading && <div style={styles.loadingText}>⏳ Loading today&apos;s activities...</div>}
 
-      {renderActivityContent()}
+      {showEmptyState ? (
+        <EmptyState
+          message="No activities for today"
+          action={{
+            label: "Add activity",
+            onClick: () => onNavigateToActivities?.(),
+          }}
+        />
+      ) : (
+        renderActivityContent()
+      )}
     </div>
   );
 }

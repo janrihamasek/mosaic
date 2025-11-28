@@ -4,25 +4,26 @@ rootdir: /app
 configfile: pytest.ini
 testpaths: tests
 plugins: cov-5.0.0
-collected 83 items
+collected 86 items
 
 tests/test_activities_repo.py ...                                        [  3%]
-tests/test_activities_service_unit.py ..                                 [  6%]
-tests/test_api.py ............................                           [ 39%]
-tests/test_auth.py .....                                                 [ 45%]
-tests/test_backup_manager.py ....                                        [ 50%]
-tests/test_cache_namespace.py .                                          [ 51%]
-tests/test_entries_repo.py ...                                           [ 55%]
-tests/test_export.py ....                                                [ 60%]
-tests/test_health.py ...                                                 [ 63%]
-tests/test_idempotent_writes.py ..                                       [ 66%]
-tests/test_import_validation.py ...                                      [ 69%]
-tests/test_metrics.py ..                                                 [ 72%]
-tests/test_stats_repo.py ..                                              [ 74%]
-tests/test_stream_proxy.py ....                                          [ 79%]
-tests/test_transactions.py .                                             [ 80%]
-tests/test_users_repo.py .                                               [ 81%]
-tests/test_validation.py .........                                       [ 92%]
+tests/test_activities_service_unit.py ..                                 [  5%]
+tests/test_api.py ............................                           [ 38%]
+tests/test_auth.py .....                                                 [ 44%]
+tests/test_backup_manager.py ....                                        [ 48%]
+tests/test_cache_namespace.py .                                          [ 50%]
+tests/test_entries_repo.py ...                                           [ 53%]
+tests/test_export.py ....                                                [ 58%]
+tests/test_health.py ...                                                 [ 61%]
+tests/test_idempotent_writes.py ..                                       [ 63%]
+tests/test_import_validation.py ...                                      [ 67%]
+tests/test_metrics.py ..                                                 [ 69%]
+tests/test_neutral_activity_type.py ...                                  [ 73%]
+tests/test_stats_repo.py ..                                              [ 75%]
+tests/test_stream_proxy.py ....                                          [ 80%]
+tests/test_transactions.py .                                             [ 81%]
+tests/test_users_repo.py .                                               [ 82%]
+tests/test_validation.py .........                                       [ 93%]
 tests/test_wearable_read.py ....                                         [ 97%]
 tests/test_wearable_repo.py .                                            [ 98%]
 tests/test_wearable_service_unit.py .                                    [100%]
@@ -31,14 +32,12 @@ tests/test_wearable_service_unit.py .                                    [100%]
 tests/test_activities_repo.py::test_insert_activity_and_overwrite
 tests/test_activities_repo.py::test_update_activity_propagates_entries
 tests/test_activities_repo.py::test_activate_deactivate_and_delete
-  /app/tests/test_activities_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
-    user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
+  /home/jan/Dokumenty/code/mosaic/backend/tests/test_activities_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
 
 tests/test_entries_repo.py::test_upsert_creates_and_updates_entry
 tests/test_entries_repo.py::test_upsert_adopts_shared_entry
 tests/test_entries_repo.py::test_create_missing_entries_for_day
-  /app/tests/test_entries_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
-    user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
+  /home/jan/Dokumenty/code/mosaic/backend/tests/test_entries_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
 
 tests/test_stats_repo.py::test_get_today_entries_and_goals
 tests/test_stats_repo.py::test_daily_positive_totals
@@ -52,8 +51,7 @@ tests/test_users_repo.py::test_users_repo_crud
   /home/jan/Dokumenty/code/mosaic/backend/tests/test_users_repo.py:14: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
 
 tests/test_wearable_repo.py::test_ingest_wearable_batch_creates_source_and_raw
-  /app/tests/test_wearable_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
-    user = User(username=username, password_hash="hash", created_at=datetime.utcnow())
+  /home/jan/Dokumenty/code/mosaic/backend/tests/test_wearable_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 83 passed, 11 warnings in 35.37s =======================
+======================= 86 passed, 11 warnings in 46.84s =======================

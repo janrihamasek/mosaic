@@ -134,6 +134,12 @@ async function processRecord(record: PendingWriteRecord): Promise<boolean> {
     return true;
   } catch (error) {
     const status = (error as { response?: { status?: number } })?.response?.status;
+    // If unauthorized (401) or forbidden (403), delete the record - user needs to re-login
+    if (status && (status === 401 || status === 403)) {
+      console.warn("Unauthorized sync attempt, discarding pending write:", record);
+      await deletePendingWrite(record.id!);
+      return true;
+    }
     if (status && (status === 409 || status === 422)) {
       await sendWrite(record, { forceOverwrite: true });
       await deletePendingWrite(record.id!);
