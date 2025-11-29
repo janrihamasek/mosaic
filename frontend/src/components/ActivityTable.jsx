@@ -9,6 +9,7 @@ import {
   deactivateActivity,
   removeActivity,
   loadActivities,
+  batchUpdateActivities,
 } from '../store/activitiesSlice';
 import Loading from './Loading';
 import ErrorState from './ErrorState';
@@ -19,6 +20,8 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
   const { status, error } = useSelector(selectActivitiesState);
   const activities = useSelector(selectAllActivities);
   const [actionId, setActionId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [batchAction, setBatchAction] = useState(null);
   const loading = status === 'loading';
   const refreshing = loading && activities.length > 0;
   const resolveRowStyle = useCallback(
@@ -61,6 +64,52 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
     [dispatch, onNotify]
   );
 
+  const toggleSelect = useCallback(
+    (id) => {
+      setSelectedIds((prev) =>
+        prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+      );
+    },
+    []
+  );
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.length === sortedActivities.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(sortedActivities.map((item) => item.id));
+    }
+  }, [selectedIds.length, sortedActivities]);
+
+  const handleBatch = useCallback(
+    async (action) => {
+      if (!selectedIds.length) return;
+      setBatchAction(action);
+      try {
+        const result = await dispatch(
+          batchUpdateActivities({
+            action,
+            ids: selectedIds,
+          })
+        ).unwrap();
+        const processedCount = result?.processed?.length || 0;
+        const skippedCount = result?.skipped?.length || 0;
+        onNotify?.(
+          `Batch ${action} finished: processed ${processedCount}${
+            skippedCount ? `, skipped ${skippedCount}` : ''
+          }`,
+          'success'
+        );
+      } catch (err) {
+        onNotify?.(`Failed to ${action} selected: ${formatError(err)}`, 'error');
+      } finally {
+        setBatchAction(null);
+        setSelectedIds([]);
+      }
+    },
+    [dispatch, onNotify, selectedIds]
+  );
+
   const actionCellStyle = useMemo(
     () => ({
       display: 'flex',
@@ -71,12 +120,46 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
     []
   );
 
+  const isSelected = useCallback((id) => selectedIds.includes(id), [selectedIds]);
+  const anySelected = selectedIds.length > 0;
+  const allSelected = anySelected && selectedIds.length === sortedActivities.length;
+  const allSelectedInactive = anySelected
+    ? selectedIds.every((id) => {
+        const item = sortedActivities.find((row) => row.id === id);
+        return item && !item.active;
+      })
+    : false;
+
   const columns = useMemo(
     () => [
       {
+        key: 'select',
+        label: (
+          <input
+            type="checkbox"
+            aria-label="Select all activities"
+            checked={allSelected}
+            onChange={(event) => {
+              event.stopPropagation();
+              toggleSelectAll();
+            }}
+          />
+        ),
+        width: '5%',
+        render: (activity) => (
+          <input
+            type="checkbox"
+            aria-label={`Select ${activity.name}`}
+            checked={isSelected(activity.id)}
+            onClick={(event) => event.stopPropagation()}
+            onChange={() => toggleSelect(activity.id)}
+          />
+        ),
+      },
+      {
         key: 'name',
         label: 'Activity',
-        width: '25%',
+        width: '23%',
         render: (activity) => (
           <span
             style={{ cursor: 'pointer', textDecoration: 'underline' }}
@@ -127,7 +210,7 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
       {
         key: 'actions',
         label: 'Actions',
-        width: '20%',
+        width: '17%',
         render: (activity) => {
           const disabled = actionId === activity.id;
           if (activity.active) {
@@ -186,7 +269,7 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
         },
       },
     ],
-    [actionCellStyle, actionId, handleAction, onOpenDetail]
+    [actionCellStyle, actionId, allSelected, handleAction, isSelected, onOpenDetail, toggleSelect, toggleSelectAll]
   );
 
   if (status === 'failed') {
@@ -204,6 +287,32 @@ export default function ActivityTable({ onNotify, onOpenDetail }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <button
+          type="button"
+          style={{ ...styles.button, backgroundColor: '#29442f', opacity: anySelected ? 1 : 0.6 }}
+          onClick={() => handleBatch('activate')}
+          disabled={!anySelected || batchAction !== null}
+        >
+          {batchAction === 'activate' ? 'Working...' : 'Activate selected'}
+        </button>
+        <button
+          type="button"
+          style={{ ...styles.button, backgroundColor: '#8b1e3f', opacity: anySelected ? 1 : 0.6 }}
+          onClick={() => handleBatch('deactivate')}
+          disabled={!anySelected || batchAction !== null}
+        >
+          {batchAction === 'deactivate' ? 'Working...' : 'Deactivate selected'}
+        </button>
+        <button
+          type="button"
+          style={{ ...styles.button, backgroundColor: '#8b1e3f', opacity: allSelectedInactive ? 1 : 0.6 }}
+          onClick={() => handleBatch('delete')}
+          disabled={!allSelectedInactive || batchAction !== null}
+        >
+          {batchAction === 'delete' ? 'Working...' : 'Delete selected'}
+        </button>
+      </div>
       {refreshing && <Loading message="Refreshing activities…" inline />}
       <DataTable
         columns={columns}

@@ -1,10 +1,10 @@
 import { createAsyncThunk, createSlice, isAnyOf, type PayloadAction } from "@reduxjs/toolkit";
-import { fetchActivities } from "../api";
-import { loadEntries, loadToday } from "./entriesSlice";
+import { batchActivities, fetchActivities } from "../api";
+import { loadEntries, loadToday, markEntriesStale, markStatsStale, markTodayStale } from "./entriesSlice";
 import type { RootState, AppDispatch } from "./index";
 import type { ActivitiesState, FriendlyError } from "../types/store";
 import type { Activity, ActivityType } from "../types/api";
-import { submitOfflineMutation } from "../offline/queue";
+import { isOfflineError, submitOfflineMutation } from "../offline/queue";
 import { readActivitiesSnapshot, saveActivitiesSnapshot } from "../offline/snapshots";
 import * as activitiesMutations from "../services/mutations/activities";
 import { emitMutationCompleted } from "../services/mutations/events";
@@ -274,7 +274,51 @@ export const removeActivity = createAsyncThunk<
   }
 });
 
-const mutationThunks = [createActivity, updateActivityDetails, activateActivity, deactivateActivity, removeActivity];
+export type BatchAction = "activate" | "deactivate" | "delete";
+
+export const batchUpdateActivities = createAsyncThunk<
+  { processed: number[]; skipped: { id: number; reason: string }[]; action: BatchAction },
+  { action: BatchAction; ids: number[] },
+  { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
+>("activities/batchUpdateActivities", async ({ action, ids }, { dispatch, rejectWithValue }) => {
+  try {
+    let summary;
+    try {
+      summary = await batchActivities({ action, ids });
+    } catch (error) {
+      if (isOfflineError(error)) {
+        await submitOfflineMutation({
+          action: "activities_batch",
+          endpoint: "/activities/batch",
+          method: "POST",
+          payload: { action, ids },
+        });
+        summary = { processed: [], skipped: [], queued: true };
+      } else {
+        throw error;
+      }
+    }
+
+    // Mark slices stale so Dashboard refreshes on next tab switch/timeout
+    dispatch(markActivitiesStale());
+    dispatch(markTodayStale());
+    dispatch(markEntriesStale());
+    dispatch(markStatsStale());
+
+    // Emit mutation event for listeners (reuse updated event)
+    emitMutationCompleted("activity.updated", { action, ids }, { source: "batchUpdateActivities" });
+
+    return {
+      action,
+      processed: summary?.processed || [],
+      skipped: summary?.skipped || [],
+    };
+  } catch (error) {
+    return rejectWithValue(normaliseReject(error));
+  }
+});
+
+const mutationThunks = [createActivity, updateActivityDetails, activateActivity, deactivateActivity, removeActivity, batchUpdateActivities];
 
 const activitiesSlice = createSlice({
   name: "activities",

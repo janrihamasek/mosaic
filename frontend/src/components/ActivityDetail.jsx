@@ -13,6 +13,8 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
   const [description, setDescription] = useState(activity.description || "");
   const [activityType, setActivityType] = useState(activity.activity_type || "positive");
   const [isSaving, setIsSaving] = useState(false);
+  const trimmedCategory = (category || "").trim();
+  const categoryError = trimmedCategory ? null : "Category is required.";
 
   const initialState = useMemo(
     () => ({
@@ -54,6 +56,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
 
   const handleSave = async () => {
     if (isSaving) return;
+    if (categoryError) return;
     if (!hasChanges) {
       dismiss();
       return;
@@ -76,7 +79,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
         updateActivityDetails({
           id: activity.id,
           payload: {
-            category: category.trim(),
+            category: trimmedCategory,
             frequency_per_day: activityType === "positive" ? perDay : 1,
             frequency_per_week: activityType === "positive" ? perWeek : 1,
             goal: goalPayload,
@@ -128,7 +131,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
               type="button"
               style={{ ...styles.button, backgroundColor: "#2f9e44" }}
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || Boolean(categoryError)}
             >
               {isSaving ? "Saving..." : "Save"}
             </button>
@@ -150,8 +153,15 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
               type="text"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              style={styles.input}
+              style={{
+                ...styles.input,
+                border: categoryError ? "1px solid #d93025" : styles.input.border,
+              }}
+              aria-invalid={categoryError ? "true" : "false"}
             />
+            {categoryError ? (
+              <span style={{ color: "#f28b82", fontSize: 12 }}>{categoryError}</span>
+            ) : null}
           </label>
         </div>
         <div>
@@ -207,7 +217,7 @@ export default function ActivityDetail({ activity, onClose: dismiss, onNotify })
             </div>
           ) : (
             <div style={{ color: "#9ba3af", fontSize: 13 }}>
-              Negative activities always have a goal of 0. Frequency is ignored.
+              Negative or neutral activities always have a goal of 0. Frequency is ignored.
             </div>
           )}
         </div>

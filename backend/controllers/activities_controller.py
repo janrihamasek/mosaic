@@ -186,3 +186,36 @@ def delete_activity(activity_id: int):
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
     return jsonify(result), status
+
+
+@activities_bp.post("/activities/batch")
+def batch_update_activities():
+    user = getattr(g, "current_user", None)
+    user_id = user["id"] if user else None
+    is_admin = bool(user["is_admin"]) if user else False
+    if user_id is None:
+        return error_response("unauthorized", "Missing user context", 401)
+
+    limits = current_app.config["RATE_LIMITS"].get("activity_status", {"limit": 60, "window": 60})
+    limited = rate_limit("activities_batch", limits["limit"], limits["window"])
+    if limited:
+        return limited
+
+    data: Dict[str, Any] = request.get_json() or {}
+    action = data.get("action")
+    ids = data.get("ids") or []
+
+    try:
+        scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
+            prefix, CacheScope(user_id=user_id, is_admin=is_admin)
+        )
+        result, status = activities_service.batch_update_activities(
+            action=action,
+            ids=ids,
+            user_id=user_id,
+            is_admin=is_admin,
+            invalidate_cache_cb=scoped_invalidate,
+        )
+    except ValidationError as exc:
+        return error_response(exc.code, exc.message, exc.status, exc.details)
+    return jsonify(result), status

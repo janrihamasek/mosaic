@@ -54,4 +54,4 @@ tests/test_wearable_repo.py::test_ingest_wearable_batch_creates_source_and_raw
   /home/jan/Dokumenty/code/mosaic/backend/tests/test_wearable_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 86 passed, 11 warnings in 46.84s =======================
+======================= 86 passed, 11 warnings in 37.01s =======================

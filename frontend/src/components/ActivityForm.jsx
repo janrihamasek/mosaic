@@ -239,7 +239,7 @@ export default function ActivityForm({ onNotify }) {
         </div>
       ) : (
         <div style={{ ...fieldWrapperStyle, fontSize: 13, color: '#9ba3af' }}>
-          <span>Negative activities do not track a goal. Progress is optional.</span>
+          <span>Negative or neutral activities do not track a goal. Progress is optional.</span>
         </div>
       )}
     </FormWrapper>

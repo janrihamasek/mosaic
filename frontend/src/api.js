@@ -94,6 +94,11 @@ export async function deleteActivity(id) {
   return response.data;
 }
 
+export async function batchActivities(payload) {
+  const response = await apiClient.post("/activities/batch", payload);
+  return response.data;
+}
+
 // --- STATS ---
 export async function fetchProgressStats({ date } = {}) {
   const params = {};

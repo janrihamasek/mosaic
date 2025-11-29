@@ -221,3 +221,35 @@ def delete_activity(
         invalidate_cache_cb("today")
         invalidate_cache_cb("stats")
     return response, status_code
+
+
+def batch_update_activities(
+    *,
+    action: str,
+    ids: List[int],
+    user_id: Optional[int],
+    is_admin: bool,
+    invalidate_cache_cb=None,
+) -> Tuple[Dict[str, Any], int]:
+    allowed_actions = {"activate", "deactivate", "delete"}
+    if action not in allowed_actions:
+        raise ValidationError("Unsupported batch action", code="invalid_action", status=400)
+    if not isinstance(ids, list) or not ids:
+        raise ValidationError("Missing activity IDs", code="invalid_ids", status=422)
+
+    try:
+        summary = activities_repo.batch_update_activities(action, ids, user_id, is_admin)
+    except SQLAlchemyError as exc:
+        raise ValidationError(str(exc), code="database_error", status=500)
+
+    if invalidate_cache_cb and summary.get("processed"):
+        invalidate_cache_cb("today")
+        invalidate_cache_cb("stats")
+
+    log_event(
+        "activity.batch",
+        "Batch activities update",
+        user_id=user_id,
+        context={"action": action, "processed": summary.get("processed", []), "skipped": summary.get("skipped", [])},
+    )
+    return summary, 200

@@ -1,5 +1,6 @@
 """Repository managing activity-related database operations."""
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from db_utils import connection as sa_connection
@@ -373,3 +374,86 @@ def delete_activity(
             params,
         )
     return {"message": "Aktivita smazána"}, 200
+
+
+def batch_update_activities(
+    action: str, ids: List[int], user_id: Optional[int], is_admin: bool
+) -> Dict[str, Any]:
+    """
+    Perform batch activate/deactivate/delete with per-item validation.
+
+    Returns a summary with processed IDs and skipped records including reason.
+    """
+    processed: List[int] = []
+    skipped: List[Dict[str, Any]] = []
+    unique_ids = []
+    seen = set()
+    for item in ids or []:
+        try:
+            value = int(item)
+        except (TypeError, ValueError):
+            continue
+        if value <= 0 or value in seen:
+            continue
+        seen.add(value)
+        unique_ids.append(value)
+
+    if not unique_ids:
+        return {"processed": [], "skipped": []}
+
+    deactivation_date = datetime.now().strftime("%Y-%m-%d")
+    with transactional_connection(db.engine) as conn:
+        for activity_id in unique_ids:
+            row = _fetch_activity_by_id(conn, activity_id, user_id, is_admin)
+            if not row:
+                skipped.append({"id": activity_id, "reason": "not_found"})
+                continue
+            if row.get("is_system"):
+                skipped.append({"id": activity_id, "reason": "system_activity"})
+                continue
+
+            if action == "activate":
+                if row.get("active"):
+                    skipped.append({"id": activity_id, "reason": "already_active"})
+                    continue
+                params: List[Any] = [activity_id]
+                where_clause = "id = ?"
+                if not is_admin:
+                    where_clause += " AND user_id = ?"
+                    params.append(user_id)
+                conn.execute(
+                    f"UPDATE activities SET active = TRUE, deactivated_at = NULL WHERE {where_clause}",
+                    params,
+                )
+            elif action == "deactivate":
+                if not row.get("active"):
+                    skipped.append({"id": activity_id, "reason": "already_inactive"})
+                    continue
+                params = [deactivation_date, activity_id]
+                where_clause = "id = ?"
+                if not is_admin:
+                    where_clause += " AND user_id = ?"
+                    params.append(user_id)
+                conn.execute(
+                    f"UPDATE activities SET active = FALSE, deactivated_at = ? WHERE {where_clause}",
+                    params,
+                )
+            elif action == "delete":
+                if row.get("active"):
+                    skipped.append({"id": activity_id, "reason": "active"})
+                    continue
+                params = [activity_id]
+                where_clause = "id = ?"
+                if not is_admin:
+                    where_clause += " AND user_id = ?"
+                    params.append(user_id)
+                conn.execute(
+                    f"DELETE FROM activities WHERE {where_clause}",
+                    params,
+                )
+            else:
+                skipped.append({"id": activity_id, "reason": "unsupported_action"})
+                continue
+            processed.append(activity_id)
+
+    return {"processed": processed, "skipped": skipped}
