@@ -25,3 +25,6 @@ mobile/capacitor.config.json
 mobile/android/.gradle/
 mobile/android/.idea/
 mobile/android/app/build/
+*.swp
+.DS_Store
+Thumbs.db
