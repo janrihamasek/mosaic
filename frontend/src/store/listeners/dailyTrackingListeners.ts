@@ -25,12 +25,8 @@ import {
   loadToday, 
   loadEntries, 
   loadStats,
-  markAllStale,
-  markTodayStale,
-  markEntriesStale,
-  markStatsStale,
 } from "../entriesSlice";
-import { loadActivities, markActivitiesStale } from "../activitiesSlice";
+import { loadActivities } from "../activitiesSlice";
 
 /**
  * Extract date from mutation event payload
@@ -67,11 +63,20 @@ async function handleEntryMutation(
   dispatch: AppDispatch,
   getState: () => RootState
 ): Promise<void> {
-  // Mark all entry-related data as stale
-  // The Dashboard will reload them when the user switches to the relevant tab
-  dispatch(markTodayStale());
-  dispatch(markEntriesStale());
-  dispatch(markStatsStale());
+  const state = getState();
+  const eventDate = extractDate(event);
+  const todayDate = state.entries.today.date;
+  const statsDate = state.entries.stats.date;
+  const filters = state.entries.filters;
+
+  // Always refresh stats and entries
+  dispatch(loadStats({ date: statsDate }));
+  dispatch(loadEntries(filters));
+
+  // Refresh Today only if mutation affects the current day
+  if (eventDate && todayDate && eventDate === todayDate) {
+    dispatch(loadToday(todayDate));
+  }
 }
 
 /**
@@ -83,12 +88,19 @@ async function handleActivityMutation(
   dispatch: AppDispatch,
   getState: () => RootState
 ): Promise<void> {
-  // Mark all activity-related data as stale
-  // The Dashboard will reload them when the user switches to the relevant tab
-  dispatch(markActivitiesStale());
-  dispatch(markTodayStale());
-  dispatch(markEntriesStale());
-  dispatch(markStatsStale());
+  const state = getState();
+  const todayDate =
+    state.entries.today.date ||
+    new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  const statsDate = state.entries.stats.date;
+  const filters = state.entries.filters;
+
+  dispatch(loadActivities());
+  dispatch(loadToday(todayDate));
+  dispatch(loadEntries(filters));
+  dispatch(loadStats({ date: statsDate || todayDate }));
 }
 
 /**

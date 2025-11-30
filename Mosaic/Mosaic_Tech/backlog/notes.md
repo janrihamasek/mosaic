@@ -43,12 +43,10 @@
 - hlavní položka je entry, z té by melo jít získat vše
 - tlačítko "nahoru"
 - našeptávač
-- rozšíření vs studio
-- župan
 - rodina v 21 století
 - konkurenční aplikace, přístupy, filosofie
-- negativní body
 - import z health connect
 
 - myšlenková mapa
 - max users
+- today má špatný refresh

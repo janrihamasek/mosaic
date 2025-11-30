@@ -17,8 +17,8 @@
 ## Acceptance / DoD (realita)
 - [x] Backend service layer pro Activities, propagace metadat do Entries (category/goal/activity_type/description), invalidace cache `today`/`stats` pro CRUD/aktivace/deaktivace; validace frekvencí a activity_type.
 - [x] UI: single-item CRUD (create/update/activate/deactivate/delete), řazení active → category → name, kategorie zobrazena (column + tooltip), offline queue + snapshots.
-- [ ] Batch akce (multi-select activate/deactivate/delete) – chybí BE endpoints i FE UI. Merge flow pro tuto fázi neimplementujeme.
-- [ ] Okamžité refreshy Today/Entries/Stats po mutacích (aktuálně jen `stale` flag + reload při návratu na tab/po 60 s); rozhodnout, zda listener orchestruje přímo `load*` nebo přidat optimistické update.
+- [x] Batch akce (multi-select activate/deactivate/delete) – BE endpoint + FE UI hotovo. Merge flow pro tuto fázi neimplementujeme.
+- [x] Okamžité refreshy Today/Entries/Stats po mutacích (listener nyní orchestruje přímé `load*` místo pouze `stale` flagu).
 - [x] Validace/UX: FE blokuje prázdnou kategorii při editaci (in-line chyba, disable Save); `name` je neměnné (žádný rename); goal vstupy pro neutral/negative sjednoceny (goal=0, žádné frekvenční vstupy, jednotné messaging).
 - [ ] Testy: rozšířit backend coverage (activities_service/repo propagace) a frontend (activitiesSlice, listeners, ActivityDetail/Form/Table + offline queue).
 
