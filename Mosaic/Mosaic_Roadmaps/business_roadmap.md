@@ -4,16 +4,13 @@
 
 **Úkoly:**
 
-- ✅ Definovat „Mosaic narrative" (OS-for-life; daily loop; data clarity).
+- Definovat „Mosaic narrative" (OS-for-life; daily loop; data clarity).
     
-- ✅ Vytvořit stručný dokument „Purpose" (1 strana).
+- Vytvořit stručný dokument „Purpose" (1 strana).
     
-- ✅ Oddělit osobní a produktovou identitu projektu.
+- Oddělit osobní a produktovou identitu projektu.
     
-- ✅ Zjednodušit vnitřní popis projektu (pro partnerku, investora, okolí).
-    
-
-*Detailní vypracování → [B1-B3_Business_Analysis.md](../Mosaic_Business/B1-B3_Business_Analysis.md)*
+- Zjednodušit vnitřní popis projektu (pro partnerku, investora, okolí).
     
 
 ---
@@ -24,16 +21,13 @@
 
 **Úkoly:**
 
-- ✅ Vymezit 3–4 základní persony (ty sám, power-user, health-tracker, admin).
+- Vymezit 3–4 základní persony (ty sám, power-user, health-tracker, admin).
     
-- ✅ Popsat jejich motivace a očekávání.
+- Popsat jejich motivace a očekávání.
     
-- ✅ Stanovit, které persony podporujeme teď vs. později.
+- Stanovit, které persony podporujeme teď vs. později.
     
-- ✅ Omezit scope podle reálných segmentů (deep/niche, ne mainstream).
-    
-
-*Detailní vypracování → [B1-B3_Business_Analysis.md](../Mosaic_Business/B1-B3_Business_Analysis.md)*
+- Omezit scope podle reálných segmentů (deep/niche, ne mainstream).
     
 
 ---
@@ -44,16 +38,13 @@
 
 **Úkoly:**
 
-- ✅ Formulovat hlavní VP: „unified data", „analytics depth", „daily clarity".
+- Formulovat hlavní VP: „unified data", „analytics depth", „daily clarity".
     
-- ✅ Definovat sekundární VP: wearables, admin/observability, backups.
+- Definovat sekundární VP: wearables, admin/observability, backups.
     
-- ✅ Zjednodušit benefit messaging (1 věta → 1 odstavec → krátký pitch).
+- Zjednodušit benefit messaging (1 věta → 1 odstavec → krátký pitch).
     
-- ✅ Srovnat VP s konkurencí (habit apps, Notion, Google Fit, Oura).
-    
-
-*Detailní vypracování → [B1-B3_Business_Analysis.md](../Mosaic_Business/B1-B3_Business_Analysis.md)*
+- Srovnat VP s konkurencí (habit apps, Notion, Google Fit, Oura).
     
 
 ---
@@ -149,17 +140,15 @@
 
 **Úkoly:**
 
-- ✅ Sepsat reálné limity (čas, zdraví, finance).
+- Sepsat reálné limity (čas, zdraví, finance).
     
-- ✅ Definovat scope guardrails: co nedělat.
+- Definovat scope guardrails: co nedělat.
     
-- ✅ Vymezit rizika integrací (wearables, analytics, nightmotion).
+- Vymezit rizika integrací (wearables, analytics, nightmotion).
     
-- ✅ Vytvořit jednoduchý mitigation plan (co dělat, když X selže).
+- Vytvořit jednoduchý mitigation plan (co dělat, když X selže).
     
 
-*Detailní vypracování → [B1-B3_Business_Analysis.md](../Mosaic_Business/B1-B3_Business_Analysis.md)*
-    
 
 ---
 

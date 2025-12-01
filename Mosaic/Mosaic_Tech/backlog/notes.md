@@ -33,7 +33,8 @@
 - vzorník barev, hlavně buttons
 - schéma databáze
 - událost
-- časová osa, timeline
+- časová osa, timeline, přidat a odebrat na časovou orchestruje
+- grafy flexibilnější, verzatilní, práce s veličinami, ne už hotové a dost
 - počasí
 - senzory v mobilu
 - snapshoty, které bude možné sdílet
