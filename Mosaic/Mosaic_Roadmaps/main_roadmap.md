@@ -29,7 +29,7 @@ Mít Mosaic použitelný pro tebe a velmi úzký okruh (ty + max pár lidí), be
 
 - [x] T1 — Daily Tracking (core loop)
     
-- [ ] T2 — Activities Management (v rozsahu potřebném pro denní používání)
+- [x] T2 — Activities Management (v rozsahu potřebném pro denní používání; merge odloženo)
     
 - [ ] T5 — Backups / Import–Export (alespoň základní ruční zálohy, CSV)
     

@@ -2,13 +2,12 @@
 
 - Owner: Jan
 - Priority: P1
-- Status: V řešení (část dodaná)
+- Status: Hotovo (merge odloženo na později)
 - Related goals/OKRs: main_roadmap M1 (core loop), M2 (closed testing); tech_roadmap T2
 
 ## Aktuální stav
-- Backend: `activities_service` oddělené od controllerů, validace Pydantic (frekvence 1–3/den, 1–7/týden, goal=0 pro neutral/negative). Update propaguje `category`/`description`/`activity_type`/`goal` do všech entries dané aktivity, invaliduje cache `today`/`stats`; neexistují batch ani merge endpointy a `name` nelze měnit.
-- Frontend (Activities tab): `ActivityForm` vytváří aktivitu (goal pro negative/neutral = 0, frekvence fixně 1×1), `ActivityDetail` modal umožňuje editaci kategorie/typu/frekvencí/description, ale `name` je read-only. Mutace používají offline queue + snapshots, emitují mutation events; listener middleware pouze značkuje slices jako `stale`, refresh proběhne při přepnutí na tab nebo pokud data „zestárnou“ (>60 s). Žádné batch akce ani merge UI. Řazení active → category → name implementováno, kategorie se zobrazuje v tabulce i tooltipu.
-- Propagace do Today/Entries/Stats se spoléhá na staleness + refresh v `Dashboard` (nikoli na okamžité cascades v thuncích). Backend už při update doplňuje metadata v `entries`.
+- Backend: `activities_service` + repo pokrývají CRUD, activate/deactivate/delete, batch endpoint `/activities/batch`, propagaci `category`/`description`/`activity_type`/`goal` do entries a invalidují cache `today`/`stats`; `name` je neměnné; merge flow odloženo.
+- Frontend (Activities tab): `ActivityForm` a `ActivityDetail` validují kategorii (trim, goal=0 pro neutral/negative, frekvence fix 1×1 pro negative/neutral), `ActivityTable` má multi-select s batch activate/deactivate/delete, offline queue + snapshots, listener middleware ihned po mutacích dispatchuje `loadActivities/Today/Entries/Stats`. Řazení active → category → name, kategorie v column/tooltip.
 
 ## Scope
 - Dokončit chybějící části: batch akce (BE+FE), okamžitější refresh/invalidation pro Today/Entries/Stats, UX/validace při editaci, testy. Merge flow nyní mimo scope.
@@ -20,7 +19,7 @@
 - [x] Batch akce (multi-select activate/deactivate/delete) – BE endpoint + FE UI hotovo. Merge flow pro tuto fázi neimplementujeme.
 - [x] Okamžité refreshy Today/Entries/Stats po mutacích (listener nyní orchestruje přímé `load*` místo pouze `stale` flagu).
 - [x] Validace/UX: FE blokuje prázdnou kategorii při editaci (in-line chyba, disable Save); `name` je neměnné (žádný rename); goal vstupy pro neutral/negative sjednoceny (goal=0, žádné frekvenční vstupy, jednotné messaging).
-- [ ] Testy: rozšířit backend coverage (activities_service/repo propagace) a frontend (activitiesSlice, listeners, ActivityDetail/Form/Table + offline queue).
+- [x] Testy: rozšířit backend coverage (activities_service/repo propagace) a frontend (activitiesSlice, listeners, ActivityDetail/Form/Table + offline queue).
 
 ## Plan & Links
 - Milníky: M1 (základní provoz), M2 (stabilita pro testery).
@@ -29,4 +28,4 @@
 - Archiv referencí: staré denní logy říjen/listopad v `backlog/october` a `backlog/november` (detail kategorie/řazení/batch).
 
 ## Notes
-- Po implementaci aktualizovat kanban (`Mosaic_Roadmaps/roadmap_kanban.md`) a označit T2 u M1/M2 jako hotové, až DoD splněno.
+- Označit T2 u M1/M2 jako hotové, až DoD splněno.

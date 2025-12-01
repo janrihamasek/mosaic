@@ -4,42 +4,40 @@
 
 **Úkoly:**
 
-- Typizace Stats/Today (TS migration, selectors)
+- ✅ Typizace Stats/Today (TS migration, selectors)
     
-- Mutation services (nový servisní layer pro zápisy)
+- ✅ Mutation services (nový servisní layer pro zápisy)
     
-- Listener middleware (nahradit cross-slice cascades)
+- ✅ Listener middleware (nahradit cross-slice cascades)
     
-- UX: refresh při kliknutí na tab, barevné označení hodnot v Entries, layout corrections
+- ✅ UX: refresh při kliknutí na tab, barevné označení hodnot v Entries, layout corrections
     
-- Různé typy záznamů (pozitivní/negativní/neutral) – base model
+- ✅ Různé typy záznamů (pozitivní/negativní/neutral) – base model
     
-- Mood tracking / vize / krátké poznámky
+- ✅ Mood tracking 
     
-- Sloučení aktivit (merge)
-    
-- Finalize Day (stabilizace)
+- ✅ Finalize Day (stabilizace)
     
 
 ---
 
-## **T2 — Activities Management**
+## ~~**T2 — Activities Management**~~
 
 **Cíl:** čistá práce s aktivitami, správné propagace, stabilní metadata.
 
 **Úkoly:**
 
-- activities_service (přesun SQL logiky z controller layer)
+- ✅ activities_service (přesun SQL logiky z controller layer)
     
-- Propagation refactor (auto-update entries při změnách aktivit)
+- ✅ Propagation refactor (auto-update entries při změnách aktivit)
     
-- Batch actions (více položek najednou)
+- ✅ Batch actions (více položek najednou)
     
-- Sloučení aktivit (backend + frontend)
+- ↻ Sloučení aktivit (backend + frontend) – odloženo
     
-- Category metadata cleanup
+- ✅ Category metadata cleanup
     
-- UX: hover zobrazení kategorií, odstranění názvů kategorií v selectech
+- ✅ UX: hover zobrazení kategorií, odstranění názvů kategorií v selectech
     
 
 ---
