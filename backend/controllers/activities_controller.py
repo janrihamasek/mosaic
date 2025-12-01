@@ -205,6 +205,9 @@ def batch_update_activities():
     action = data.get("action")
     ids = data.get("ids") or []
 
+    if not isinstance(action, str) or not action.strip():
+        return error_response("invalid_request", "Missing or invalid 'action' (expected non-empty string)", 400)
+
     try:
         scoped_invalidate = lambda prefix: invalidate_cache_for_scope(
             prefix, CacheScope(user_id=user_id, is_admin=is_admin)

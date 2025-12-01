@@ -201,7 +201,7 @@ describe("dailyTrackingListeners", () => {
   });
 
   describe("handleActivityMutation", () => {
-    it("should dispatch loadActivities, loadToday, and loadEntries for activity.created", async () => {
+    it("should dispatch loadActivities, loadToday, loadEntries, and loadStats for activity.created", async () => {
       const { dispatch } = createMockDispatch();
       const getState = createMockGetState();
       const event: MutationEvent = {
@@ -212,8 +212,8 @@ describe("dailyTrackingListeners", () => {
 
       await handleActivityMutation(event, dispatch, getState);
 
-      // Should dispatch 3 actions: loadActivities, loadToday, loadEntries
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      // Should dispatch 4 actions: loadActivities, loadToday, loadEntries, loadStats
+      expect(dispatch).toHaveBeenCalledTimes(4);
     });
 
     it("should dispatch refreshes for activity.updated", async () => {
@@ -227,8 +227,8 @@ describe("dailyTrackingListeners", () => {
 
       await handleActivityMutation(event, dispatch, getState);
 
-      // Should dispatch 3 actions: loadActivities, loadToday, loadEntries
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      // Should dispatch 4 actions: loadActivities, loadToday, loadEntries, loadStats
+      expect(dispatch).toHaveBeenCalledTimes(4);
     });
 
     it("should dispatch refreshes for activity.activated", async () => {
@@ -242,8 +242,8 @@ describe("dailyTrackingListeners", () => {
 
       await handleActivityMutation(event, dispatch, getState);
 
-      // Should dispatch 3 actions: loadActivities, loadToday, loadEntries
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      // Should dispatch 4 actions: loadActivities, loadToday, loadEntries, loadStats
+      expect(dispatch).toHaveBeenCalledTimes(4);
     });
 
     it("should dispatch refreshes for activity.deactivated", async () => {
@@ -257,8 +257,8 @@ describe("dailyTrackingListeners", () => {
 
       await handleActivityMutation(event, dispatch, getState);
 
-      // Should dispatch 3 actions: loadActivities, loadToday, loadEntries
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      // Should dispatch 4 actions: loadActivities, loadToday, loadEntries, loadStats
+      expect(dispatch).toHaveBeenCalledTimes(4);
     });
 
     it("should dispatch refreshes for activity.deleted", async () => {
@@ -272,8 +272,8 @@ describe("dailyTrackingListeners", () => {
 
       await handleActivityMutation(event, dispatch, getState);
 
-      // Should dispatch 3 actions: loadActivities, loadToday, loadEntries
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      // Should dispatch 4 actions: loadActivities, loadToday, loadEntries, loadStats
+      expect(dispatch).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -305,9 +305,9 @@ describe("dailyTrackingListeners", () => {
 
       await handleMutationEvent(event, dispatch, getState);
 
-      // Should dispatch activity-related refreshes (loadActivities, loadToday, loadEntries)
+      // Should dispatch activity-related refreshes (loadActivities, loadToday, loadEntries, loadStats)
       expect(dispatch).toHaveBeenCalled();
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      expect(dispatch).toHaveBeenCalledTimes(4);
     });
 
     it("should handle unknown event types gracefully", async () => {
