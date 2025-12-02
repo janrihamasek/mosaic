@@ -1,5 +1,6 @@
-import csv
+import hashlib
 import json
+import re
 import threading
 import zipfile
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from typing import Any, Dict, List, Optional
 import structlog
 from repositories import backup_repo
 from sqlalchemy.exc import ProgrammingError
+from services.backup_serializers import to_csv
 
 
 class BackupManager:
@@ -67,6 +69,8 @@ class BackupManager:
                 archive.write(csv_path, arcname=csv_path.name)
 
             self._update_last_run(now)
+            sha256 = self._hash_file(zip_path)
+            size_bytes = zip_path.stat().st_size
 
             return {
                 "timestamp": timestamp,
@@ -74,6 +78,8 @@ class BackupManager:
                 "csv": csv_path.name,
                 "zip": zip_path.name,
                 "generated_at": now.isoformat(),
+                "size_bytes": size_bytes,
+                "sha256": sha256,
             }
 
     def list_backups(self) -> List[Dict[str, object]]:
@@ -87,6 +93,7 @@ class BackupManager:
                     "created_at": datetime.fromtimestamp(
                         stats.st_mtime, timezone.utc
                     ).isoformat(),
+                    "sha256": self._hash_file(path),
                 }
             )
         return backups
@@ -158,11 +165,19 @@ class BackupManager:
         return self.get_status()
 
     def get_backup_path(self, filename: str) -> Path:
-        if "/" in filename or "\\" in filename or not filename.startswith("backup-"):
+        if not self._is_valid_backup_filename(filename):
             raise ValueError("Invalid backup filename")
-        path = self.backup_dir / filename
-        if not path.exists():
+
+        candidate = self.backup_dir / filename
+        backup_root = self.backup_dir.resolve()
+        try:
+            path = candidate.resolve(strict=True)
+        except FileNotFoundError:
             raise FileNotFoundError(f"Backup {filename} not found")
+
+        # Prevent path traversal by ensuring resolved path stays under backup_dir.
+        if backup_root not in path.parents and path != backup_root:
+            raise ValueError("Invalid backup filename")
         return path
 
     # ------------------------------------------------------------------ internal helpers
@@ -223,65 +238,9 @@ class BackupManager:
         entries: List[Dict[str, object]],
         activities: List[Dict[str, object]],
     ) -> None:
+        csv_text = to_csv(entries, activities)
         with csv_path.open("w", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh)
-            writer.writerow(
-                [
-                    "dataset",
-                    "id",
-                    "date",
-                    "activity",
-                    "value",
-                    "note",
-                    "category",
-                    "goal",
-                    "activity_type",
-                ]
-            )
-            for row in entries:
-                writer.writerow(
-                    [
-                        "entries",
-                        row.get("id"),
-                        row.get("date"),
-                        row.get("activity"),
-                        row.get("value"),
-                        row.get("note"),
-                        row.get("activity_category"),
-                        row.get("activity_goal"),
-                        row.get("activity_type"),
-                    ]
-                )
-            writer.writerow([])
-            writer.writerow(
-                [
-                    "dataset",
-                    "id",
-                    "name",
-                    "category",
-                    "activity_type",
-                    "goal",
-                    "description",
-                    "active",
-                    "frequency_per_day",
-                    "frequency_per_week",
-                ]
-            )
-            for row in activities:
-                writer.writerow(
-                    [
-                        "activities",
-                        row.get("id"),
-                        row.get("name"),
-                        row.get("category"),
-                        row.get("activity_type"),
-                        row.get("goal"),
-                        row.get("description"),
-                        row.get("active"),
-                        row.get("frequency_per_day"),
-                        row.get("frequency_per_week"),
-                    ]
-                )
+            fh.write(csv_text)
 
     def _update_last_run(self, timestamp: datetime) -> None:
         with self.app.app_context():
@@ -295,3 +254,19 @@ class BackupManager:
             return datetime.fromisoformat(value)
         except ValueError:
             return None
+
+    @staticmethod
+    def _hash_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(8192), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _is_valid_backup_filename(filename: str) -> bool:
+        # Enforce backup-YYYYMMDD-HHMMSS.{json,csv,zip} pattern and reject traversal
+        if not filename or len(filename) > 64:
+            return False
+        pattern = r"^backup-\d{8}-\d{6}\.(json|csv|zip)$"
+        return bool(re.match(pattern, filename))

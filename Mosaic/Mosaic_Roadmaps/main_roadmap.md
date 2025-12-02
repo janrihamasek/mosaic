@@ -40,13 +40,13 @@ Mít Mosaic použitelný pro tebe a velmi úzký okruh (ty + max pár lidí), be
 
 **Scope – BUSINESS**
 
-- [ ] B1 – Narrative & Purpose (jasně pojmenovaný účel pro tebe + partnerku)
+- [x] B1 – Narrative & Purpose (jasně pojmenovaný účel pro tebe + partnerku)
     
-- [ ] B2 – Personas & Segments (primárně „ty“ + 1–2 modelové uživatele)
+- [x] B2 – Personas & Segments (primárně „ty“ + 1–2 modelové uživatele)
     
-- [ ] B3 – Value Proposition (co konkrétně ti Mosaic přináší v denním použití)
+- [x] B3 – Value Proposition (co konkrétně ti Mosaic přináší v denním použití)
     
-- [ ] B9 – Business Risks & Constraints (minimálně identifikace hlavních bloků: čas, peníze, zdraví)
+- [x] B9 – Business Risks & Constraints (minimálně identifikace hlavních bloků: čas, peníze, zdraví)
     
 
 **Scope – MAIN / PRÁVO / INFRA**

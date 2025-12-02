@@ -63,6 +63,8 @@ def test_backup_run_creates_files(client, auth_headers, backup_env, tmp_path):
     assert (backup_dir / backup_info["csv"]).exists()
     zip_path = backup_dir / backup_info["zip"]
     assert zip_path.exists()
+    assert backup_info["size_bytes"] > 0
+    assert len(backup_info["sha256"]) == 64
 
     # Ensure the zip contains the expected files
     with zipfile.ZipFile(zip_path, "r") as archive:
@@ -74,6 +76,7 @@ def test_backup_run_creates_files(client, auth_headers, backup_env, tmp_path):
     status = status_resp.get_json()
     assert status["last_run"] is not None
     assert status["backups"]
+    assert len(status["backups"][0]["sha256"]) == 64
 
 
 def test_backup_toggle_persistence(client, auth_headers, backup_env):
@@ -114,3 +117,16 @@ def test_backup_download_endpoint(client, auth_headers, backup_env):
     content = download_resp.data
     with zipfile.ZipFile(io.BytesIO(content), "r") as archive:
         assert backup_filename.replace(".zip", ".json") in archive.namelist()
+
+
+def test_backup_download_rejects_invalid_filename(client, auth_headers, backup_env):
+    bad_names = [
+        "../etc/passwd",
+        "backup-2023-01-01.zip",
+        "backup-20230101-010101.txt",
+        "backup-20230101-010101.zip/../../x",
+    ]
+    for name in bad_names:
+        resp = client.get(f"/backup/download/{name}", headers=auth_headers)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "invalid_input"

@@ -51,3 +51,4 @@
 - myšlenková mapa
 - max users
 - today má špatný refresh
+- metrics settings

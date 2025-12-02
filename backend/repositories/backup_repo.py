@@ -213,11 +213,38 @@ def fetch_database_payload() -> Dict[str, List[Dict[str, object]]]:
     conn = sa_connection(db.engine)
     try:
         entries_result = conn.execute(
-            "SELECT * FROM entries ORDER BY date ASC, id ASC"
+            """
+            SELECT
+                id AS entry_id,
+                date,
+                activity,
+                description AS entry_description,
+                value,
+                note,
+                activity_category,
+                activity_goal,
+                activity_type
+            FROM entries
+            ORDER BY date ASC, id ASC
+            """
         )
         entries = [dict(row) for row in entries_result.mappings().fetchall()]
         activities_result = conn.execute(
-            "SELECT * FROM activities ORDER BY name ASC"
+            """
+            SELECT
+                id AS activity_id,
+                name,
+                category,
+                activity_type,
+                goal,
+                description AS activity_description,
+                active,
+                frequency_per_day,
+                frequency_per_week,
+                deactivated_at
+            FROM activities
+            ORDER BY name ASC, id ASC
+            """
         )
         activities = [dict(row) for row in activities_result.mappings().fetchall()]
     finally:
