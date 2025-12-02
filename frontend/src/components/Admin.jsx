@@ -13,14 +13,14 @@ import { selectAuth } from "../store/authSlice";
 
 const SECTIONS = [
   { id: "user", label: "User", Component: AdminUser },
-  { id: "settings", label: "Settings", Component: AdminSettings },
+  { id: "data", label: "Data", Component: AdminSettings },
   { id: "health", label: "Health", Component: HealthPanel },
   { id: "inspector", label: "Inspector", Component: AdminHealthConnectInspector },
   { id: "logs", label: "Logs", Component: AdminLogs },
   { id: "nightMotion", label: "NightMotion", Component: AdminNightMotion },
 ];
 
-const PUBLIC_SECTION_IDS = new Set(["user", "settings"]);
+const PUBLIC_SECTION_IDS = new Set(["user", "data"]);
 
 export default function Admin({ onNotify }) {
   const auth = useSelector(selectAuth);

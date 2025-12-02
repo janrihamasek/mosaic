@@ -140,12 +140,16 @@ export async function finalizeDay(dateStr) {
 }
 
 // --- IMPORT ---
-export async function importEntriesCsv(file) {
+export async function importEntriesCsv(file, { dryRun = false } = {}) {
   const formData = new FormData();
   formData.append('file', file);
+  if (dryRun) {
+    formData.append('dry_run', 'true');
+  }
   // Backend limits imports to the signed-in user, so we never send user_id here.
   const response = await apiClient.post('/import_csv', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    params: dryRun ? { dry_run: 'true' } : {},
   });
   return response.data;
 }

@@ -289,6 +289,18 @@ export const importEntries = createAsyncThunk<
   }
 });
 
+export const importEntriesDryRun = createAsyncThunk<
+  unknown,
+  File,
+  { rejectValue: FriendlyError }
+>("entries/importEntriesDryRun", async (file, { rejectWithValue }) => {
+  try {
+    return await importEntriesCsv(file, { dryRun: true });
+  } catch (error) {
+    return rejectWithValue(normaliseReject(error));
+  }
+});
+
 export const finalizeToday = createAsyncThunk<
   { date: string },
   string,
@@ -436,6 +448,17 @@ const entriesSlice = createSlice({
         state.importStatus = "succeeded";
       })
       .addCase(importEntries.rejected, (state, action) => {
+        state.importStatus = "failed";
+        state.error = action.payload ?? serialiseError(action.error) ?? null;
+      })
+      .addCase(importEntriesDryRun.pending, (state) => {
+        state.importStatus = "loading";
+        state.error = null;
+      })
+      .addCase(importEntriesDryRun.fulfilled, (state) => {
+        state.importStatus = "succeeded";
+      })
+      .addCase(importEntriesDryRun.rejected, (state, action) => {
         state.importStatus = "failed";
         state.error = action.payload ?? serialiseError(action.error) ?? null;
       })

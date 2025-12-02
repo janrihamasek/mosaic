@@ -24,6 +24,22 @@ function formatTimestamp(isoString) {
   }
 }
 
+function formatRelative(isoString) {
+  if (!isoString) return "n/a";
+  try {
+    const target = new Date(isoString).getTime();
+    const diffMs = target - Date.now();
+    if (!Number.isFinite(diffMs)) return isoString;
+    const minutes = Math.round(diffMs / 60000);
+    if (minutes <= 0) return "due now";
+    if (minutes < 60) return `in ${minutes} min`;
+    const hours = Math.round(minutes / 60);
+    return `in ${hours}h`;
+  } catch (_err) {
+    return isoString;
+  }
+}
+
 export default function BackupPanel({ onNotify }) {
   const dispatch = useDispatch();
   const backupState = useSelector(selectBackupState);
@@ -39,6 +55,12 @@ export default function BackupPanel({ onNotify }) {
     }
     return Math.max(1, Math.round(latestBackup.size_bytes / 1024));
   }, [latestBackup]);
+
+  const schedulerLabel = useMemo(() => {
+    if (backupState.schedulerRunning) return "Scheduler: running";
+    if (backupState.enabled) return "Scheduler: enabled (starting)";
+    return "Scheduler: stopped";
+  }, [backupState.enabled, backupState.schedulerRunning]);
 
   useEffect(() => {
     if (backupState.status === "idle") {
@@ -194,10 +216,16 @@ export default function BackupPanel({ onNotify }) {
 
       <div style={infoRowStyle}>
         <span>Last run: {formatTimestamp(backupState.lastRun)}</span>
+        <span>
+          {schedulerLabel}
+          {backupState.nextRunAt ? ` · Next: ${formatTimestamp(backupState.nextRunAt)} (${formatRelative(backupState.nextRunAt)})` : ""}
+        </span>
         {hasBackups ? (
           <span>
             Latest backup: {latestBackup.filename}
             {latestBackupSizeKb !== null ? ` (${latestBackupSizeKb} kB)` : ""}
+            {latestBackup?.created_at ? ` · Created ${formatTimestamp(latestBackup.created_at)}` : ""}
+            {latestBackup?.sha256 ? ` · SHA256 ${latestBackup.sha256.slice(0, 8)}…` : ""}
           </span>
         ) : (
           <span>No backups created yet.</span>

@@ -21,7 +21,7 @@
 ## Layout & Navigation
 - Left rail renders a vertical (desktop) or horizontal (compact) button group. Items:
   1. **User** — always available.
-  2. **Settings** — admin-only.
+  2. **Data** — admin-only (backup/import/export tools).
   3. **Health** — admin-only.
   4. **Logs** — admin-only.
   5. **NightMotion** — admin-only.
@@ -38,7 +38,7 @@
 - Delete account button triggers `deleteAccount` with `window.confirm`, then navigates to `/login`.
 - Status indicators rely on `auth.status.profileUpdate` and `auth.status.deleteAccount` to disable inputs.
 
-### Settings
+### Data
 - **BackupPanel**
   - Toggle automatic backups via `toggleBackup` (button text flips between enable/disable).
   - Interval select uses dynamic options (`[15,30,60,120,240]` + stored value) and dispatches `toggleBackup` with the chosen cadence.
@@ -46,7 +46,7 @@
   - "Download latest backup" fetches blobs via `downloadBackupFile`; handles object URL clean-up.
   - Panel auto-loads status on mount via `loadBackupStatus` and reflects `backupState.status/toggling/running` in button disabled states.
 - **ImportExportPanel**
-  - `CsvImportButton` opens a file picker, validates client-side (extension/size), and dispatches `importEntries` (shared thunk). Toasts summarise the `created/updated/skipped` counts.
+  - Import CSV: button opens file picker; on file select it automatically runs a dry-run (`importEntriesDryRun`), then opens a dialog showing `created/updated/skipped` plus up to 5 detail rows with Confirm/Reset. Confirm runs the real import (`importEntries`) and refreshes entries/stats/today; Reset clears the dialog. No direct `apiClient` usage in the component.
   - Export buttons call `downloadCsvExport` / `downloadJsonExport`, constructing temporary anchors for downloads.
   - Layout adapts between stacked (compact) and inline (desktop) action rows.
 

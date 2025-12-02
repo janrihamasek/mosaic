@@ -12,6 +12,8 @@ const initialState = {
   intervalMinutes: 60,
   lastRun: null,
   backups: [],
+  schedulerRunning: false,
+  nextRunAt: null,
   running: false,
   toggling: false,
   error: null,
@@ -87,6 +89,8 @@ const backupSlice = createSlice({
         state.intervalMinutes = action.payload.interval_minutes ?? 60;
         state.lastRun = action.payload.last_run || null;
         state.backups = action.payload.backups || [];
+        state.schedulerRunning = Boolean(action.payload.scheduler_running);
+        state.nextRunAt = action.payload.next_run_at || null;
         state.error = null;
       })
       .addCase(loadBackupStatus.rejected, (state, action) => {
@@ -103,6 +107,8 @@ const backupSlice = createSlice({
         state.intervalMinutes = action.payload.interval_minutes ?? state.intervalMinutes;
         state.lastRun = action.payload.last_run || null;
         state.backups = action.payload.backups || state.backups;
+        state.schedulerRunning = Boolean(action.payload.scheduler_running);
+        state.nextRunAt = action.payload.next_run_at || state.nextRunAt;
         state.error = null;
       })
       .addCase(toggleBackup.rejected, (state, action) => {
@@ -121,6 +127,8 @@ const backupSlice = createSlice({
         state.lastRun = status.last_run || null;
         state.backups = status.backups || [];
         state.lastBackup = backup;
+        state.schedulerRunning = Boolean(status.scheduler_running);
+        state.nextRunAt = status.next_run_at || state.nextRunAt;
         state.error = null;
       })
       .addCase(runBackupNow.rejected, (state, action) => {

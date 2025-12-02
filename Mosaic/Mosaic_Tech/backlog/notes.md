@@ -52,3 +52,4 @@
 - max users
 - today má špatný refresh
 - metrics settings
+- mood musí být default pro každý účet
