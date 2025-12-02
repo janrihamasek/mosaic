@@ -19,7 +19,7 @@
 ## Acceptance / DoD
 - [x] Backup service vrací konzistentní metadata (timestamp, hash, velikost, poslední běh) a controller je jen orchestrace HTTP.
 - [x] Validace filename i import payloadu pokrývá path traversal, pattern `backup-<ts>.<ext>`, typy a limity; chyby vrací `ValidationError`.
-- [ ] Export JSON/CSV sdílí jednu schema definici; CSV/JSON klíče jsou stabilní a dokumentované.
+- [x] Export JSON/CSV sdílí jednu schema definici; CSV/JSON klíče jsou stabilní a dokumentované.
 - [ ] Scheduler respektuje `backup_settings` (enabled/interval), per-run ukládá `last_run` a loguje chyby; status endpoint zobrazuje stav.
 - [ ] Import wizard na FE: kroky upload → serverová validace/dry-run → preview → confirm, chyby zobrazí v UI; žádný přímý `apiClient` v komponentách.
 - [ ] UX backup panel: interval presets, běžící/stop scheduler indikátor, disable/loader pro „Run now“, zobrazuje metadata (hash/timestamp/size).

@@ -3,7 +3,7 @@ import json
 import re
 import threading
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -126,11 +126,28 @@ class BackupManager:
         else:
             last_run = last_run_value
 
+        scheduler_running = bool(
+            self._thread and self._thread.is_alive() and not self._stop_event.is_set()
+        )
+        now = datetime.now(timezone.utc)
+        last_run_dt = self._parse_iso(last_run) if isinstance(last_run, str) else None
+        next_run_at: Optional[str] = None
+        # Always expose a future timestamp based on interval and last_run (even if disabled)
+        if last_run_dt:
+            eta_seconds = max(
+                interval * 60 - (now - last_run_dt).total_seconds(), 0
+            )
+            next_run_at = (now + timedelta(seconds=eta_seconds)).isoformat()
+        else:
+            next_run_at = (now + timedelta(minutes=interval)).isoformat()
+
         return {
             "enabled": enabled,
             "interval_minutes": interval,
             "last_run": last_run,
             "backups": self.list_backups(),
+            "scheduler_running": scheduler_running,
+            "next_run_at": next_run_at,
         }
 
     def toggle(

@@ -137,3 +137,25 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
         assert created_row.date == "2024-03-02"
         assert created_row.activity_category == "Leisure"
         assert pytest.approx(created_row.activity_goal) == 7.0
+
+
+@pytest.mark.usefixtures("client")
+def test_import_csv_dry_run_does_not_persist(tmp_path):
+    csv_path = _write_csv(
+        tmp_path,
+        "dry_run.csv",
+        [
+            "2024-03-05,Swim,1,,Notes,Fitness,5",
+        ],
+    )
+
+    summary = cast(Dict[str, Any], import_csv(str(csv_path), dry_run=True))
+
+    assert summary["dry_run"] is True
+    assert summary["created"] == 1
+    assert summary["updated"] == 0
+    assert summary["skipped"] == 0
+
+    with app.app_context():
+        total_entries = db.session.execute(select(func.count()).select_from(Entry)).scalar()
+        assert total_entries == 0

@@ -198,6 +198,12 @@ def import_csv_endpoint():
     user_id = current_user_id()
     if user_id is None:
         return error_response("unauthorized", "Missing user context", 401)
+    dry_run_flag = (request.args.get("dry_run") or "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
     limits = current_app.config["RATE_LIMITS"]["import_csv"]
     limited = rate_limit("import_csv", limits["limit"], limits["window"])
     if limited:
@@ -212,7 +218,7 @@ def import_csv_endpoint():
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             file.save(tmp.name)
             tmp_path = tmp.name
-        summary = run_import_csv(tmp_path, user_id=user_id)
+        summary = run_import_csv(tmp_path, user_id=user_id, dry_run=dry_run_flag)
     except Exception as exc:  # pragma: no cover - defensive
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -231,9 +237,14 @@ def import_csv_endpoint():
     invalidate_cache("today")
     invalidate_cache("stats")
     log_event(
-        "import.csv",
-        "CSV import completed",
+            "import.csv",
+        "CSV import completed" if not dry_run_flag else "CSV import dry-run",
         user_id=user_id,
         context={"summary": summary, "filename": filename},
     )
+    if dry_run_flag:
+        return jsonify({"message": "CSV import dry-run", "summary": summary}), 200
+
+    invalidate_cache("today")
+    invalidate_cache("stats")
     return jsonify({"message": "CSV import completed", "summary": summary}), 200

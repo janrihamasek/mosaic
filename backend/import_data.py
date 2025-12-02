@@ -8,9 +8,8 @@ from schemas import CSVImportRow
 
 
 def _import_csv_impl(
-    csv_path: str, *, commit: bool = True, user_id: Optional[int] = None
+    csv_path: str, *, dry_run: bool = False, user_id: Optional[int] = None
 ) -> Dict[str, object]:
-    _ = commit  # retained for compatibility with previous signature
     created = 0
     updated = 0
     skipped = 0
@@ -62,7 +61,9 @@ def _import_csv_impl(
             parsed_rows.append(parsed_dict)
 
     created_rows, updated_rows, repo_skipped, repo_details = (
-        entries_repo.import_entries_from_rows(parsed_rows, user_id)
+        entries_repo.import_entries_from_rows_dry_run(parsed_rows, user_id)
+        if dry_run
+        else entries_repo.import_entries_from_rows(parsed_rows, user_id)
     )
     created += created_rows
     updated += updated_rows
@@ -74,19 +75,20 @@ def _import_csv_impl(
         "updated": updated,
         "skipped": skipped,
         "details": details,
+        "dry_run": dry_run,
     }
 
 
 def import_csv(
-    csv_path: str, *, commit: bool = True, user_id: Optional[int] = None
+    csv_path: str, *, dry_run: bool = False, user_id: Optional[int] = None
 ) -> Dict[str, object]:
     if has_app_context():
-        return _import_csv_impl(csv_path, commit=commit, user_id=user_id)
+        return _import_csv_impl(csv_path, dry_run=dry_run, user_id=user_id)
 
     from app import app  # type: ignore circular import
 
     with app.app_context():
-        return _import_csv_impl(csv_path, commit=commit, user_id=user_id)
+        return _import_csv_impl(csv_path, dry_run=dry_run, user_id=user_id)
 
 
 __all__ = ["import_csv"]

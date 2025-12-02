@@ -50,6 +50,8 @@ def test_backup_status_defaults(client, auth_headers, backup_env):
     assert data["interval_minutes"] == 60
     assert data["backups"] == []
     assert data["last_run"] is None
+    assert data["scheduler_running"] is True
+    assert data["next_run_at"]
 
 
 def test_backup_run_creates_files(client, auth_headers, backup_env, tmp_path):
@@ -77,6 +79,8 @@ def test_backup_run_creates_files(client, auth_headers, backup_env, tmp_path):
     assert status["last_run"] is not None
     assert status["backups"]
     assert len(status["backups"][0]["sha256"]) == 64
+    assert status["scheduler_running"] is True
+    assert status["next_run_at"]
 
 
 def test_backup_toggle_persistence(client, auth_headers, backup_env):
@@ -89,6 +93,8 @@ def test_backup_toggle_persistence(client, auth_headers, backup_env):
     status = toggle_resp.get_json()["status"]
     assert status["enabled"] is True
     assert status["interval_minutes"] == 15
+    assert status["scheduler_running"] is True
+    assert status["next_run_at"]
 
     # Reload settings directly from database to ensure persistence
     with app.app_context():
@@ -101,6 +107,20 @@ def test_backup_toggle_persistence(client, auth_headers, backup_env):
     )
     assert disable_resp.status_code == 200
     assert disable_resp.get_json()["status"]["enabled"] is False
+
+
+def test_backup_toggle_reports_next_run(client, auth_headers, backup_env):
+    toggle_resp = client.post(
+        "/backup/toggle",
+        json={"enabled": True, "interval_minutes": 15},
+        headers=auth_headers,
+    )
+    assert toggle_resp.status_code == 200
+    status = toggle_resp.get_json()["status"]
+    assert status["enabled"] is True
+    assert status["interval_minutes"] == 15
+    assert status["scheduler_running"] is True
+    assert status["next_run_at"], status
 
 
 def test_backup_download_endpoint(client, auth_headers, backup_env):

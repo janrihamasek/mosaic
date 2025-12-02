@@ -803,45 +803,75 @@ def import_entries_from_rows(
     if not rows:
         return 0, 0, 0, []
 
+    with transactional_connection(db.engine) as conn:
+        return _import_entries_using_connection(rows, user_id, conn)
+
+
+def import_entries_from_rows_dry_run(
+    rows: List[Dict[str, Any]], user_id: Optional[int]
+) -> Tuple[int, int, int, List[Dict[str, Any]]]:
+    """
+    Simulate CSV import within a rolled-back transaction to return validation details
+    without persisting changes.
+    """
+    if not rows:
+        return 0, 0, 0, []
+
+    from db_utils import connection as sa_connection  # local to avoid circulars
+
+    conn_wrapper = sa_connection(db.engine)
+    trans = conn_wrapper._connection.begin()
+    try:
+        created, updated, skipped, details = _import_entries_using_connection(
+            rows, user_id, conn_wrapper
+        )
+        return created, updated, skipped, details
+    finally:
+        trans.rollback()
+        conn_wrapper.close()
+
+
+def _import_entries_using_connection(
+    rows: List[Dict[str, Any]], user_id: Optional[int], conn
+) -> Tuple[int, int, int, List[Dict[str, Any]]]:
     created = 0
     updated = 0
     skipped = 0
     details: List[Dict[str, Any]] = []
 
-    with transactional_connection(db.engine) as conn:
-        for row in rows:
-            row_index = row.get("row")
-            date_value = row.get("date")
-            activity_name = row.get("activity")
-            try:
-                activity_row = _ensure_activity_for_import(row, user_id, conn)
-            except ValueError as exc:
-                skipped += 1
-                details.append(
-                    {
-                        "row": row_index,
-                        "date": date_value,
-                        "activity": activity_name,
-                        "status": "skipped",
-                        "reason": str(exc),
-                    }
-                )
-                continue
-
-            status = _upsert_entry_for_import(row, activity_row, user_id, conn)
-            if status == "created":
-                created += 1
-            else:
-                updated += 1
+    for row in rows:
+        row_index = row.get("row")
+        date_value = row.get("date")
+        activity_name = row.get("activity")
+        try:
+            activity_row = _ensure_activity_for_import(row, user_id, conn)
+        except ValueError as exc:
+            skipped += 1
             details.append(
                 {
                     "row": row_index,
                     "date": date_value,
                     "activity": activity_name,
-                    "status": status,
+                    "status": "skipped",
+                    "reason": str(exc),
                 }
             )
-            # Run a second idempotent pass to validate consistency; counters unchanged.
-            _upsert_entry_for_import(row, activity_row, user_id, conn)
+            continue
+
+        status = _upsert_entry_for_import(row, activity_row, user_id, conn)
+        if status == "created":
+            created += 1
+        else:
+            updated += 1
+        details.append(
+            {
+                "row": row_index,
+                "date": date_value,
+                "activity": activity_name,
+                "status": status,
+            }
+        )
+        # Run a second idempotent pass to validate consistency; counters unchanged.
+        _upsert_entry_for_import(row, activity_row, user_id, conn)
 
     return created, updated, skipped, details
