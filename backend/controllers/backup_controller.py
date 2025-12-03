@@ -12,7 +12,9 @@ def backup_status():
     from app import backup_manager  # local import to avoid circular init
 
     try:
-        status = backup_service.get_backup_status(backup_manager)
+        status = backup_service.get_backup_status(
+            backup_manager, user_id=current_user_id()
+        )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
     return jsonify(status)
@@ -26,7 +28,7 @@ def backup_run():
 
     try:
         result, status = backup_service.run_backup(
-            backup_manager, operator_id=operator_id
+            backup_manager, operator_id=operator_id, user_id=operator_id
         )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
@@ -55,7 +57,9 @@ def backup_download(filename: str):
     from app import backup_manager  # local import to avoid circular init
 
     try:
-        path = backup_service.resolve_backup_path(backup_manager, filename)
+        path = backup_service.resolve_backup_path(
+            backup_manager, filename, user_id=current_user_id()
+        )
     except ValidationError as exc:
         return error_response(exc.code, exc.message, exc.status, exc.details)
     return send_file(path, as_attachment=True, download_name=path.name)

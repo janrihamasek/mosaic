@@ -38,17 +38,36 @@ class BackupManager:
             self._initialized = True
 
     # ------------------------------------------------------------------ public API
-    def create_backup(self, *, initiated_by: str = "manual") -> Dict[str, object]:
+    def create_backup(
+        self,
+        *,
+        initiated_by: str = "manual",
+        user_id: Optional[int] = None,
+        is_admin: bool = False,
+    ) -> Dict[str, object]:
         self._ensure_initialized()
         with self._lock:
             now = datetime.now(timezone.utc)
             timestamp = now.strftime("%Y%m%d-%H%M%S")
-            payload = self._fetch_database_payload()
+            payload = self._fetch_database_payload(user_id=user_id, is_admin=is_admin)
 
-            json_path = self.backup_dir / f"backup-{timestamp}.json"
-            csv_path = self.backup_dir / f"backup-{timestamp}.csv"
-            zip_path = self.backup_dir / f"backup-{timestamp}.zip"
+            prefix = f"backup-u{user_id or '0'}-{timestamp}"
+            json_path = self.backup_dir / f"{prefix}.json"
+            csv_path = self.backup_dir / f"{prefix}.csv"
+            zip_path = self.backup_dir / f"{prefix}.zip"
 
+            meta = {
+                "entries": {
+                    "limit": len(payload["entries"]),
+                    "offset": 0,
+                    "total": len(payload["entries"]),
+                },
+                "activities": {
+                    "limit": len(payload["activities"]),
+                    "offset": 0,
+                    "total": len(payload["activities"]),
+                },
+            }
             with json_path.open("w", encoding="utf-8") as fh:
                 json.dump(
                     {
@@ -56,6 +75,7 @@ class BackupManager:
                         "initiated_by": initiated_by,
                         "entries": payload["entries"],
                         "activities": payload["activities"],
+                        "meta": meta,
                     },
                     fh,
                     ensure_ascii=False,
@@ -82,9 +102,10 @@ class BackupManager:
                 "sha256": sha256,
             }
 
-    def list_backups(self) -> List[Dict[str, object]]:
+    def list_backups(self, *, user_id: Optional[int] = None) -> List[Dict[str, object]]:
         backups: List[Dict[str, object]] = []
-        for path in sorted(self.backup_dir.glob("backup-*.zip"), reverse=True):
+        pattern = "backup-u*-*.zip" if user_id is None else f"backup-u{user_id}-*.zip"
+        for path in sorted(self.backup_dir.glob(pattern), reverse=True):
             stats = path.stat()
             backups.append(
                 {
@@ -98,7 +119,7 @@ class BackupManager:
             )
         return backups
 
-    def get_status(self) -> Dict[str, object]:
+    def get_status(self, *, user_id: Optional[int] = None) -> Dict[str, object]:
         self._ensure_initialized()
         row: Optional[Dict[str, object]] = None
 
@@ -145,7 +166,7 @@ class BackupManager:
             "enabled": enabled,
             "interval_minutes": interval,
             "last_run": last_run,
-            "backups": self.list_backups(),
+            "backups": self.list_backups(user_id=user_id),
             "scheduler_running": scheduler_running,
             "next_run_at": next_run_at,
         }
@@ -181,8 +202,8 @@ class BackupManager:
 
         return self.get_status()
 
-    def get_backup_path(self, filename: str) -> Path:
-        if not self._is_valid_backup_filename(filename):
+    def get_backup_path(self, filename: str, *, user_id: Optional[int] = None) -> Path:
+        if not self._is_valid_backup_filename(filename, user_id=user_id):
             raise ValueError("Invalid backup filename")
 
         candidate = self.backup_dir / filename
@@ -245,9 +266,16 @@ class BackupManager:
                 remaining = (interval * 60) - (now - last_run).total_seconds()
                 self._stop_event.wait(max(5, min(remaining, 60)))
 
-    def _fetch_database_payload(self) -> Dict[str, List[Dict[str, object]]]:
+    def _fetch_database_payload(
+        self, *, user_id: Optional[int], is_admin: bool
+    ) -> Dict[str, List[Dict[str, object]]]:
         with self.app.app_context():
-            return backup_repo.fetch_database_payload()
+            return {
+                "entries": backup_repo.get_export_entries_all(user_id, is_admin=False),
+                "activities": backup_repo.get_export_activities_all(
+                    user_id, is_admin=False
+                ),
+            }
 
     def _write_csv_dump(
         self,
@@ -281,9 +309,12 @@ class BackupManager:
         return digest.hexdigest()
 
     @staticmethod
-    def _is_valid_backup_filename(filename: str) -> bool:
-        # Enforce backup-YYYYMMDD-HHMMSS.{json,csv,zip} pattern and reject traversal
-        if not filename or len(filename) > 64:
+    def _is_valid_backup_filename(
+        filename: str, user_id: Optional[int] = None
+    ) -> bool:
+        # Enforce backup-u<id>-YYYYMMDD-HHMMSS.{json,csv,zip} pattern and reject traversal
+        if not filename or len(filename) > 96:
             return False
-        pattern = r"^backup-\d{8}-\d{6}\.(json|csv|zip)$"
+        user_part = r"u\d+" if user_id is None else f"u{user_id}"
+        pattern = rf"^backup-{user_part}-\d{{8}}-\d{{6}}\.(json|csv|zip)$"
         return bool(re.match(pattern, filename))

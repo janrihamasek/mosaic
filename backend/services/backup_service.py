@@ -15,18 +15,20 @@ from services.backup_serializers import to_csv
 from security import ValidationError
 
 
-def get_backup_status(manager: BackupManager) -> Dict:
+def get_backup_status(manager: BackupManager, *, user_id: int | None) -> Dict:
     try:
-        return manager.get_status()
+        return manager.get_status(user_id=user_id)
     except Exception as exc:
         raise ValidationError(str(exc), code="backup_error", status=500)
 
 
 def run_backup(
-    manager: BackupManager, *, operator_id: int | None
+    manager: BackupManager, *, operator_id: int | None, user_id: int | None
 ) -> Tuple[Dict[str, object], int]:
     try:
-        result = manager.create_backup(initiated_by="api")
+        result = manager.create_backup(
+            initiated_by="api", user_id=user_id, is_admin=False
+        )
     except Exception as exc:
         log_event(
             "backup.run_failed",
@@ -91,9 +93,11 @@ def toggle_backup(
     return {"message": "Backup settings updated", "status": status}, 200
 
 
-def resolve_backup_path(manager: BackupManager, filename: str) -> Path:
+def resolve_backup_path(
+    manager: BackupManager, filename: str, *, user_id: int | None
+) -> Path:
     try:
-        return manager.get_backup_path(filename)
+        return manager.get_backup_path(filename, user_id=user_id)
     except ValueError:
         raise ValidationError(
             "Invalid backup filename", code="invalid_input", status=400

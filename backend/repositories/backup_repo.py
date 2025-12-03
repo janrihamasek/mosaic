@@ -1,7 +1,7 @@
 """Repository managing backup and restore database interactions."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from db_utils import connection as sa_connection
 from db_utils import transactional_connection
@@ -59,6 +59,11 @@ def get_export_entries(
     return [dict(row) for row in rows]
 
 
+def get_export_entries_all(user_id: Optional[int], is_admin: bool) -> List[dict]:
+    """Fetch all entries for backup/export (no pagination)."""
+    return get_export_entries(user_id, is_admin, limit=10_000_000, offset=0)
+
+
 def get_export_activities(
     user_id: Optional[int], is_admin: bool, limit: int, offset: int
 ) -> List[dict]:
@@ -97,6 +102,10 @@ def get_export_activities(
     finally:
         conn.close()
     return [dict(row) for row in rows]
+
+
+def get_export_activities_all(user_id: Optional[int], is_admin: bool) -> List[dict]:
+    return get_export_activities(user_id, is_admin, limit=10_000_000, offset=0)
 
 
 def count_export_entries(user_id: Optional[int], is_admin: bool) -> int:
@@ -206,47 +215,3 @@ def update_last_run(timestamp: datetime) -> None:
             "UPDATE backup_settings SET last_run = ?, enabled = enabled",
             (timestamp,),
         )
-
-
-def fetch_database_payload() -> Dict[str, List[Dict[str, object]]]:
-    """Return entries and activities ordered for backup export."""
-    conn = sa_connection(db.engine)
-    try:
-        entries_result = conn.execute(
-            """
-            SELECT
-                id AS entry_id,
-                date,
-                activity,
-                description AS entry_description,
-                value,
-                note,
-                activity_category,
-                activity_goal,
-                activity_type
-            FROM entries
-            ORDER BY date ASC, id ASC
-            """
-        )
-        entries = [dict(row) for row in entries_result.mappings().fetchall()]
-        activities_result = conn.execute(
-            """
-            SELECT
-                id AS activity_id,
-                name,
-                category,
-                activity_type,
-                goal,
-                description AS activity_description,
-                active,
-                frequency_per_day,
-                frequency_per_week,
-                deactivated_at
-            FROM activities
-            ORDER BY name ASC, id ASC
-            """
-        )
-        activities = [dict(row) for row in activities_result.mappings().fetchall()]
-    finally:
-        conn.close()
-    return {"entries": entries, "activities": activities}
