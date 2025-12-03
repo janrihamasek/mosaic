@@ -199,6 +199,22 @@ def delete_user(
     if rowcount == 0:
         raise ValidationError("User not found", code="not_found", status=404)
 
+    counts = users_repo.get_user_data_counts(user_id)
+    if any(counts.values()):
+        log_event(
+            "auth.delete_user_residual_data",
+            "User deleted but related data remains",
+            user_id=user_id,
+            level="warning",
+            context=counts,
+        )
+    else:
+        log_event(
+            "auth.delete_user",
+            "User deleted with cascading cleanup",
+            user_id=user_id,
+        )
+
     if invalidate_cache_cb:
         invalidate_cache_cb("today")
         invalidate_cache_cb("stats")

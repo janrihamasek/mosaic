@@ -19,16 +19,6 @@ class NotFoundError(RepositoryError):
 class ConflictError(RepositoryError):
     """Raised when a repository action conflicts with existing data."""
 
-
-
-def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
-    """Build a WHERE clause fragment for user scoping with optional unassigned inclusion."""
-    clause = f"{column} = ?"
-    if include_unassigned:
-        clause = f"({clause} OR {column} IS NULL)"
-    return clause
-
-
 def list_entries(
     user_id: int,
     is_admin: bool,
@@ -41,7 +31,7 @@ def list_entries(
     *,
     cache_scope=None,
 ) -> List[dict]:
-    """List entries with activity metadata joins and filtering."""
+    """List entries with activity metadata joins and filtering scoped to user."""
     conn = sa_connection(db.engine)
     try:
         clauses: List[str] = []
@@ -58,9 +48,8 @@ def list_entries(
         if category_filter:
             clauses.append("COALESCE(a.category, e.activity_category, '') = ?")
             params.append(category_filter)
-        if user_id is not None:
-            clauses.append(_user_scope_clause("e.user_id", include_unassigned=is_admin))
-            params.append(user_id)
+        clauses.append("e.user_id = ?")
+        params.append(user_id)
 
         where_sql = ""
         if clauses:
@@ -75,7 +64,7 @@ def list_entries(
             FROM entries e
             LEFT JOIN activities a
               ON a.name = e.activity
-             AND (a.user_id = e.user_id OR a.user_id IS NULL)
+             AND a.user_id = e.user_id
             {where_sql}
             ORDER BY e.date DESC, e.activity ASC
             LIMIT ? OFFSET ?
@@ -91,7 +80,7 @@ def list_entries(
 def get_activity_metadata(
     activity_name: str, user_id: int, conn: Optional[Any] = None
 ) -> Optional[dict]:
-    """Fetch activity metadata for a user-scoped or unassigned activity."""
+    """Fetch activity metadata for a user-scoped activity."""
     managed_conn = conn or sa_connection(db.engine)
     try:
         row = managed_conn.execute(
@@ -102,15 +91,6 @@ def get_activity_metadata(
             """,
             (activity_name, user_id),
         ).fetchone()
-        if not row:
-            row = managed_conn.execute(
-                """
-                SELECT category, goal, description, activity_type
-                FROM activities
-                WHERE name = ? AND user_id IS NULL
-                """,
-                (activity_name,),
-            ).fetchone()
     finally:
         if conn is None:
             managed_conn.close()
@@ -121,7 +101,7 @@ def get_activity_metadata(
 def get_existing_entry(
     date: str, activity: str, user_id: int, conn: Optional[Any] = None
 ) -> Optional[dict]:
-    """Fetch an existing entry by date/activity scoped to user or unassigned."""
+    """Fetch an existing entry by date/activity scoped to user."""
     managed_conn = conn or sa_connection(db.engine)
     try:
         row = managed_conn.execute(
@@ -132,15 +112,6 @@ def get_existing_entry(
             """,
             (date, activity, user_id),
         ).fetchone()
-        if not row:
-            row = managed_conn.execute(
-                """
-                SELECT activity_category, activity_goal, activity_type
-                FROM entries
-                WHERE date = ? AND activity = ? AND user_id IS NULL
-                """,
-                (date, activity),
-            ).fetchone()
     finally:
         if conn is None:
             managed_conn.close()
@@ -202,11 +173,11 @@ def create_activity_for_entry(
 def update_entry_by_date_and_activity(
     date: str,
     activity: str,
-    user_id: Optional[int],
+    user_id: int,
     updates: Dict[str, Any],
     conn: Optional[Any] = None,
 ) -> int:
-    """Update an entry scoped by date/activity/user (or unassigned) and return affected row count."""
+    """Update an entry scoped by date/activity/user and return affected row count."""
     allowed_keys = {
         "value",
         "note",
@@ -226,12 +197,8 @@ def update_entry_by_date_and_activity(
     if not assignments:
         return 0
 
-    params.extend([date, activity])
+    params.extend([date, activity, user_id])
     user_clause = "user_id = ?"
-    if user_id is None:
-        user_clause = "user_id IS NULL"
-    else:
-        params.append(user_id)
 
     def _execute(target_conn):
         result = target_conn.execute(
@@ -376,12 +343,6 @@ def upsert_entry(
         if rowcount > 0:
             return "updated", rowcount
 
-        rowcount = update_entry_by_date_and_activity(
-            date, activity, None, updates, conn=conn
-        )
-        if rowcount > 0:
-            return "updated", rowcount
-
         create_entry(
             date,
             activity,
@@ -420,10 +381,8 @@ def upsert_entry_with_metadata_check(
 def delete_entry(entry_id: int, requester_user_id: int, is_admin: bool) -> Tuple[Dict[str, str], int]:
     """Delete an entry by id with optional user scoping."""
     params: List[Any] = [entry_id]
-    query = "DELETE FROM entries WHERE id = ?"
-    if not is_admin:
-        query += " AND user_id = ?"
-        params.append(requester_user_id)
+    query = "DELETE FROM entries WHERE id = ? AND user_id = ?"
+    params.append(requester_user_id)
 
     with transactional_connection(db.engine) as conn:
         result = conn.execute(query, params)
@@ -442,18 +401,15 @@ def delete_entry_by_id(entry_id: int, user_id: int, is_admin: bool) -> int:
 
 
 def get_active_activities_for_date(
-    date: str, user_id: Optional[int], is_admin: bool, conn: Optional[Any] = None
+    date: str, user_id: int, is_admin: bool, conn: Optional[Any] = None
 ) -> List[dict]:
     """Fetch active or not-yet-deactivated activities for a given date and user scope."""
     managed_conn = conn or sa_connection(db.engine)
     try:
         params: List[Any] = [date]
         where_clause = "WHERE (active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at))"
-        if user_id is not None:
-            where_clause += (
-                f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
-            )
-            params.append(user_id)
+        where_clause += " AND user_id = ?"
+        params.append(user_id)
 
         rows = managed_conn.execute(
             f"""
@@ -471,18 +427,15 @@ def get_active_activities_for_date(
 
 
 def get_existing_activities_for_date(
-    date: str, user_id: Optional[int], is_admin: bool, conn: Optional[Any] = None
+    date: str, user_id: int, is_admin: bool, conn: Optional[Any] = None
 ) -> List[dict]:
     """Fetch existing activities for a date from entries with optional user scoping."""
     managed_conn = conn or sa_connection(db.engine)
     try:
         params: List[Any] = [date]
         where_clause = "WHERE date = ?"
-        if user_id is not None:
-            where_clause += (
-                f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
-            )
-            params.append(user_id)
+        where_clause += " AND user_id = ?"
+        params.append(user_id)
 
         rows = managed_conn.execute(
             f"SELECT activity FROM entries {where_clause}",
@@ -579,7 +532,7 @@ def create_missing_entries_for_day(
         return created
 
 
-def _fetch_activity_for_import(name: str, conn) -> Optional[Dict[str, Any]]:
+def _fetch_activity_for_import(name: str, user_id: int, conn) -> Optional[Dict[str, Any]]:
     """Retrieve activity row for import with all relevant metadata."""
     row = conn.execute(
         """
@@ -596,15 +549,15 @@ def _fetch_activity_for_import(name: str, conn) -> Optional[Dict[str, Any]]:
             deactivated_at,
             user_id
         FROM activities
-        WHERE name = ?
+        WHERE name = ? AND user_id = ?
         """,
-        (name,),
+        (name, user_id),
     ).fetchone()
     return dict(row) if row else None
 
 
 def _ensure_activity_for_import(
-    parsed_row: Dict[str, Any], user_id: Optional[int], conn
+    parsed_row: Dict[str, Any], user_id: int, conn
 ) -> Dict[str, Any]:
     """
     Create or update an activity for imported entries.
@@ -613,12 +566,7 @@ def _ensure_activity_for_import(
         ValueError: when the activity belongs to a different user.
     """
     activity_name = parsed_row["activity"]
-    activity = _fetch_activity_for_import(activity_name, conn)
-
-    if activity and user_id is not None:
-        owner = activity.get("user_id")
-        if owner not in (None, user_id):
-            raise ValueError(f"Activity '{activity_name}' already belongs to another user")
+    activity = _fetch_activity_for_import(activity_name, user_id, conn)
 
     if activity is None:
         goal_value = float(parsed_row.get("goal") or 0)
@@ -695,23 +643,19 @@ def _ensure_activity_for_import(
         updates.append("active = TRUE")
         updates.append("deactivated_at = NULL")
 
-    if user_id is not None and activity.get("user_id") is None:
-        updates.append("user_id = ?")
-        params.append(user_id)
-
     if updates:
         params.append(activity["id"])
         conn.execute(
             f"UPDATE activities SET {', '.join(updates)} WHERE id = ?",
             params,
         )
-        activity = _fetch_activity_for_import(activity_name, conn) or activity
+        activity = _fetch_activity_for_import(activity_name, user_id, conn) or activity
 
     return activity
 
 
 def _upsert_entry_for_import(
-    parsed_row: Dict[str, Any], activity_row: Dict[str, Any], user_id: Optional[int], conn
+    parsed_row: Dict[str, Any], activity_row: Dict[str, Any], user_id: int, conn
 ) -> str:
     """Insert or update a single entry during CSV import."""
     activity_category = parsed_row.get("category") or activity_row.get("category") or ""
@@ -723,10 +667,8 @@ def _upsert_entry_for_import(
     note_value = parsed_row.get("note") or ""
 
     entry_params: List[Any] = [parsed_row["date"], parsed_row["activity"]]
-    entry_query = "SELECT id, user_id FROM entries WHERE date = ? AND activity = ?"
-    if user_id is not None:
-        entry_query += " AND user_id = ?"
-        entry_params.append(user_id)
+    entry_query = "SELECT id, user_id FROM entries WHERE date = ? AND activity = ? AND user_id = ?"
+    entry_params.append(user_id)
 
     existing_entry = conn.execute(entry_query, entry_params).fetchone()
     if existing_entry:
@@ -779,10 +721,6 @@ def _upsert_entry_for_import(
         activity_type_value,
     ]
 
-    if user_id is not None and not existing_entry.get("user_id"):
-        update_fields.append("user_id = ?")
-        update_params.append(user_id)
-
     update_params.append(existing_entry["id"])
     conn.execute(
         f"UPDATE entries SET {', '.join(update_fields)} WHERE id = ?",
@@ -792,7 +730,7 @@ def _upsert_entry_for_import(
 
 
 def import_entries_from_rows(
-    rows: List[Dict[str, Any]], user_id: Optional[int]
+    rows: List[Dict[str, Any]], user_id: int
 ) -> Tuple[int, int, int, List[Dict[str, Any]]]:
     """
     Import validated CSV rows into activities and entries tables.
@@ -808,7 +746,7 @@ def import_entries_from_rows(
 
 
 def import_entries_from_rows_dry_run(
-    rows: List[Dict[str, Any]], user_id: Optional[int]
+    rows: List[Dict[str, Any]], user_id: int
 ) -> Tuple[int, int, int, List[Dict[str, Any]]]:
     """
     Simulate CSV import within a rolled-back transaction to return validation details
@@ -832,7 +770,7 @@ def import_entries_from_rows_dry_run(
 
 
 def _import_entries_using_connection(
-    rows: List[Dict[str, Any]], user_id: Optional[int], conn
+    rows: List[Dict[str, Any]], user_id: int, conn
 ) -> Tuple[int, int, int, List[Dict[str, Any]]]:
     created = 0
     updated = 0

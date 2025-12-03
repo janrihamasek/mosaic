@@ -2,7 +2,7 @@ import pytest
 from app import app
 from extensions import db
 from import_data import import_csv
-from models import Entry
+from models import Entry, User
 from repositories import entries_repo
 from sqlalchemy import func, select
 
@@ -27,9 +27,17 @@ def test_import_csv_rolls_back_on_failure(tmp_path, client, monkeypatch):
 
     monkeypatch.setattr(entries_repo, "_upsert_entry_for_import", failing_upsert)
 
+    with app.app_context():
+        user = User(username="import_txn", password_hash="x")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
     with pytest.raises(RuntimeError):
-        import_csv(str(csv_path))
+        import_csv(str(csv_path), user_id=user_id)
 
     with app.app_context():
-        total = db.session.execute(select(func.count()).select_from(Entry)).scalar()
+        total = db.session.execute(
+            select(func.count()).select_from(Entry).where(Entry.user_id == user_id)
+        ).scalar()
         assert total == 0

@@ -1,19 +1,9 @@
 """Repository responsible for statistical data queries and aggregation."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from db_utils import connection as sa_connection
 from extensions import db
-
-
-def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
-    """Build a WHERE clause fragment for user scoping with optional unassigned inclusion."""
-    clause = f"{column} = ?"
-    if include_unassigned:
-        clause = f"({clause} OR {column} IS NULL)"
-    return clause
-
-
 def get_progress_data(
     user_id: int, is_admin: bool, start_date: str, end_date: str
 ) -> List[dict]:
@@ -21,12 +11,8 @@ def get_progress_data(
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [start_date, end_date]
-        where_clause = "WHERE e.date >= ? AND e.date <= ?"
-        if user_id is not None:
-            where_clause += (
-                f" AND {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
-            )
-            params.append(user_id)
+        where_clause = "WHERE e.date >= ? AND e.date <= ? AND e.user_id = ?"
+        params.append(user_id)
 
         rows = conn.execute(
             f"""
@@ -40,7 +26,7 @@ def get_progress_data(
             FROM entries e
             LEFT JOIN activities a
               ON a.name = e.activity
-             AND (a.user_id = e.user_id OR a.user_id IS NULL)
+             AND a.user_id = e.user_id
             {where_clause}
             GROUP BY activity, category, activity_type, target
             """,
@@ -59,12 +45,8 @@ def get_category_aggregates(
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [start_date, end_date]
-        where_clause = "WHERE e.date >= ? AND e.date <= ?"
-        if user_id is not None:
-            where_clause += (
-                f" AND {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
-            )
-            params.append(user_id)
+        where_clause = "WHERE e.date >= ? AND e.date <= ? AND e.user_id = ?"
+        params.append(user_id)
 
         rows = conn.execute(
             f"""
@@ -77,7 +59,7 @@ def get_category_aggregates(
             FROM entries e
             LEFT JOIN activities a
               ON a.name = e.activity
-             AND (a.user_id = e.user_id OR a.user_id IS NULL)
+             AND a.user_id = e.user_id
             {where_clause}
             GROUP BY category, activity_type
             """,
@@ -94,10 +76,8 @@ def get_today_entries(user_id: int, is_admin: bool, date: str) -> List[dict]:
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = [date]
-        where_clause = "WHERE e.date = ?"
-        if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('COALESCE(e.user_id, a.user_id)', include_unassigned=is_admin)}"
-            params.append(user_id)
+        where_clause = "WHERE e.date = ? AND e.user_id = ?"
+        params.append(user_id)
 
         rows = conn.execute(
             f"""
@@ -112,7 +92,7 @@ def get_today_entries(user_id: int, is_admin: bool, date: str) -> List[dict]:
             FROM entries e
             LEFT JOIN activities a
               ON a.name = e.activity
-             AND (a.user_id = e.user_id OR a.user_id IS NULL)
+             AND a.user_id = e.user_id
             {where_clause}
             ORDER BY e.activity ASC
             """,
@@ -132,11 +112,8 @@ def get_active_activities_for_today(
     try:
         params: List[Any] = [date]
         where_clause = "WHERE (active = TRUE OR (deactivated_at IS NOT NULL AND ? < deactivated_at))"
-        if user_id is not None:
-            where_clause += (
-                f" AND {_user_scope_clause('user_id', include_unassigned=is_admin)}"
-            )
-            params.append(user_id)
+        where_clause += " AND user_id = ?"
+        params.append(user_id)
 
         rows = conn.execute(
             f"""
@@ -159,17 +136,14 @@ def get_active_activities_for_today(
 
 
 def get_active_positive_goals_by_category(
-    user_id: Optional[int], include_unassigned: bool
+    user_id: int, include_unassigned: bool
 ) -> List[dict]:
     """Retrieve positive active activity goals grouped by category."""
     conn = sa_connection(db.engine)
     try:
-        params: List[Any] = []
+        params: List[Any] = [user_id]
         # Only positive activities count towards goals (not negative or neutral)
-        where_clause = "WHERE active = TRUE AND activity_type = 'positive'"
-        if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=include_unassigned)}"
-            params.append(user_id)
+        where_clause = "WHERE active = TRUE AND activity_type = 'positive' AND user_id = ?"
         where_clause += " GROUP BY category"
 
         rows = conn.execute(
@@ -189,16 +163,13 @@ def get_active_positive_goals_by_category(
 
 
 def get_daily_positive_totals(
-    user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str
+    user_id: int, include_unassigned: bool, start_date: str, end_date: str
 ) -> List[dict]:
     """Retrieve daily totals for positive entries within a date range."""
     conn = sa_connection(db.engine)
     try:
-        params: List[Any] = [start_date, end_date]
-        where_clause = "WHERE date BETWEEN ? AND ? AND activity_type = 'positive'"
-        if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=include_unassigned)}"
-            params.append(user_id)
+        params: List[Any] = [start_date, end_date, user_id]
+        where_clause = "WHERE date BETWEEN ? AND ? AND activity_type = 'positive' AND user_id = ?"
         where_clause += " GROUP BY date"
 
         rows = conn.execute(
@@ -220,16 +191,13 @@ def get_daily_positive_totals(
 
 
 def get_category_daily_totals(
-    user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str
+    user_id: int, include_unassigned: bool, start_date: str, end_date: str
 ) -> List[dict]:
     """Retrieve daily totals by category for positive entries."""
     conn = sa_connection(db.engine)
     try:
-        params: List[Any] = [start_date, end_date]
-        where_clause = "WHERE date BETWEEN ? AND ? AND activity_type = 'positive'"
-        if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=include_unassigned)}"
-            params.append(user_id)
+        params: List[Any] = [start_date, end_date, user_id]
+        where_clause = "WHERE date BETWEEN ? AND ? AND activity_type = 'positive' AND user_id = ?"
         where_clause += " GROUP BY date, category"
 
         rows = conn.execute(
@@ -251,16 +219,13 @@ def get_category_daily_totals(
 
 
 def get_positive_distribution(
-    user_id: Optional[int], include_unassigned: bool, start_date: str, end_date: str
+    user_id: int, include_unassigned: bool, start_date: str, end_date: str
 ) -> List[dict]:
     """Retrieve entry distribution counts for positive entries grouped by category."""
     conn = sa_connection(db.engine)
     try:
-        params: List[Any] = [start_date, end_date]
-        where_clause = "WHERE date BETWEEN ? AND ? AND activity_type = 'positive'"
-        if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=include_unassigned)}"
-            params.append(user_id)
+        params: List[Any] = [start_date, end_date, user_id]
+        where_clause = "WHERE date BETWEEN ? AND ? AND activity_type = 'positive' AND user_id = ?"
         where_clause += " GROUP BY category"
 
         rows = conn.execute(
@@ -280,7 +245,7 @@ def get_positive_distribution(
 
 
 def get_frequent_categories(
-    user_id: Optional[int],
+    user_id: int,
     include_unassigned: bool,
     start_date: str,
     end_date: str,
@@ -289,11 +254,8 @@ def get_frequent_categories(
     """Retrieve most frequent categories within a date range."""
     conn = sa_connection(db.engine)
     try:
-        params: List[Any] = [start_date, end_date]
-        where_clause = "WHERE date BETWEEN ? AND ?"
-        if user_id is not None:
-            where_clause += f" AND {_user_scope_clause('user_id', include_unassigned=include_unassigned)}"
-            params.append(user_id)
+        params: List[Any] = [start_date, end_date, user_id]
+        where_clause = "WHERE date BETWEEN ? AND ? AND user_id = ?"
         where_clause += " GROUP BY category ORDER BY entry_count DESC LIMIT ?"
         params.append(limit)
 

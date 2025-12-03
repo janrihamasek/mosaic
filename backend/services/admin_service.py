@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 from repositories import users_repo
 from security import ValidationError
+from audit import log_event
 
 from .auth_service import _serialize_user_row
 
@@ -34,6 +35,23 @@ def delete_user(
 
     if rowcount == 0:
         raise ValidationError("User not found", code="not_found", status=404)
+
+    counts = users_repo.get_user_data_counts(user_id)
+    if any(counts.values()):
+        log_event(
+            "admin.delete_user_residual_data",
+            "Admin deleted user but related data remains",
+            user_id=requester_id,
+            level="warning",
+            context={"target_user_id": user_id, "residual_counts": counts},
+        )
+    else:
+        log_event(
+            "admin.delete_user",
+            "Admin deleted user with cascading cleanup",
+            user_id=requester_id,
+            context={"target_user_id": user_id},
+        )
 
     if invalidate_cache_cb:
         invalidate_cache_cb("today")

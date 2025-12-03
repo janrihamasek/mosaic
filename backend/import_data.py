@@ -8,7 +8,7 @@ from schemas import CSVImportRow
 
 
 def _import_csv_impl(
-    csv_path: str, *, dry_run: bool = False, user_id: Optional[int] = None
+    csv_path: str, *, dry_run: bool = False, user_id: int
 ) -> Dict[str, object]:
     created = 0
     updated = 0
@@ -135,6 +135,8 @@ def _import_csv_impl(
 def import_csv(
     csv_path: str, *, dry_run: bool = False, user_id: Optional[int] = None
 ) -> Dict[str, object]:
+    if user_id is None:
+        raise ValueError("user_id is required for CSV import")
     if has_app_context():
         return _import_csv_impl(csv_path, dry_run=dry_run, user_id=user_id)
 
@@ -156,16 +158,18 @@ if __name__ == "__main__":
         description="Import Mosaic activities and entries from CSV."
     )
     parser.add_argument("csv_path", help="Path to the CSV file.")
-    parser.add_argument("--username", help="Username that should own imported data.")
+    parser.add_argument(
+        "--username",
+        required=True,
+        help="Username that should own imported data (required).",
+    )
     args = parser.parse_args()
 
     with app.app_context():
-        owner_id: Optional[int] = None
-        if args.username:
-            owner = users_repo.get_user_by_username(args.username)
-            owner_id = owner["id"] if owner and "id" in owner else None
-            if owner_id is None:
-                raise SystemExit(f"User '{args.username}' not found")
+        owner = users_repo.get_user_by_username(args.username)
+        owner_id = owner["id"] if owner and "id" in owner else None
+        if owner_id is None:
+            raise SystemExit(f"User '{args.username}' not found")
         result = import_csv(args.csv_path, user_id=owner_id)
     print(
         f"Import finished. Created: {result['created']}, "

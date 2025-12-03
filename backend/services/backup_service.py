@@ -15,7 +15,9 @@ from services.backup_serializers import to_csv
 from security import ValidationError
 
 
-def get_backup_status(manager: BackupManager, *, user_id: int | None) -> Dict:
+def get_backup_status(manager: BackupManager, *, user_id: int) -> Dict:
+    if user_id is None:
+        raise ValidationError("Missing user context", code="unauthorized", status=401)
     try:
         return manager.get_status(user_id=user_id)
     except Exception as exc:
@@ -23,8 +25,10 @@ def get_backup_status(manager: BackupManager, *, user_id: int | None) -> Dict:
 
 
 def run_backup(
-    manager: BackupManager, *, operator_id: int | None, user_id: int | None
+    manager: BackupManager, *, operator_id: int | None, user_id: int
 ) -> Tuple[Dict[str, object], int]:
+    if user_id is None:
+        raise ValidationError("Missing user context", code="unauthorized", status=401)
     try:
         result = manager.create_backup(
             initiated_by="api", user_id=user_id, is_admin=False
@@ -52,6 +56,8 @@ def run_backup(
 def toggle_backup(
     manager: BackupManager, *, operator_id: int | None, payload: Dict[str, object]
 ) -> Tuple[Dict[str, object], int]:
+    if operator_id is None:
+        raise ValidationError("Missing user context", code="unauthorized", status=401)
     enabled = payload.get("enabled")
     interval = payload.get("interval_minutes")
 
@@ -72,7 +78,7 @@ def toggle_backup(
             )
 
     try:
-        status = manager.toggle(enabled=enabled, interval_minutes=interval)
+        status = manager.toggle(user_id=operator_id, enabled=enabled, interval_minutes=interval)
     except Exception as exc:
         log_event(
             "backup.toggle_failed",
@@ -94,8 +100,10 @@ def toggle_backup(
 
 
 def resolve_backup_path(
-    manager: BackupManager, filename: str, *, user_id: int | None
+    manager: BackupManager, filename: str, *, user_id: int
 ) -> Path:
+    if user_id is None:
+        raise ValidationError("Missing user context", code="unauthorized", status=401)
     try:
         return manager.get_backup_path(filename, user_id=user_id)
     except ValueError:
@@ -113,7 +121,6 @@ def fetch_export_data(
     limit: int,
     offset: int,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], int, int]:
-    stats_include_unassigned = False
     entries = backup_repo.get_export_entries(user_id, is_admin, limit, offset)
     activities = backup_repo.get_export_activities(user_id, is_admin, limit, offset)
 

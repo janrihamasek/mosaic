@@ -5,7 +5,7 @@ import pytest
 from app import app
 from extensions import db
 from import_data import import_csv
-from models import Activity, Entry
+from models import Activity, Entry, User
 from sqlalchemy import func, select
 
 
@@ -19,6 +19,12 @@ def _write_csv(tmp_path, name: str, rows: Sequence[str]) -> Path:
 
 @pytest.mark.usefixtures("client")
 def test_import_csv_skips_duplicate_rows(tmp_path):
+    with app.app_context():
+        user = User(username="import_duplicates", password_hash="x")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
     csv_path = _write_csv(
         tmp_path,
         "duplicates.csv",
@@ -28,7 +34,7 @@ def test_import_csv_skips_duplicate_rows(tmp_path):
         ],
     )
 
-    summary: Dict[str, Any] = import_csv(str(csv_path))
+    summary: Dict[str, Any] = import_csv(str(csv_path), user_id=user_id)
 
     assert summary["created"] == 1
     assert summary["skipped"] == 1
@@ -41,7 +47,9 @@ def test_import_csv_skips_duplicate_rows(tmp_path):
     with app.app_context():
         row = db.session.execute(
             select(Entry.value, Entry.note).where(
-                Entry.date == "2024-03-01", Entry.activity == "Swim"
+                Entry.date == "2024-03-01",
+                Entry.activity == "Swim",
+                Entry.user_id == user_id,
             )
         ).first()
         assert row is not None
@@ -51,6 +59,12 @@ def test_import_csv_skips_duplicate_rows(tmp_path):
 
 @pytest.mark.usefixtures("client")
 def test_import_csv_flags_missing_required_fields(tmp_path):
+    with app.app_context():
+        user = User(username="import_missing", password_hash="x")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
     csv_path = _write_csv(
         tmp_path,
         "missing.csv",
@@ -60,7 +74,7 @@ def test_import_csv_flags_missing_required_fields(tmp_path):
         ],
     )
 
-    summary = cast(Dict[str, Any], import_csv(str(csv_path)))
+    summary = cast(Dict[str, Any], import_csv(str(csv_path), user_id=user_id))
 
     assert summary["created"] == 0
     assert summary["skipped"] == 2
@@ -70,13 +84,19 @@ def test_import_csv_flags_missing_required_fields(tmp_path):
     assert any("activity is required" in reason for reason in reasons)
 
     with app.app_context():
-        total = db.session.execute(select(func.count()).select_from(Entry)).scalar()
+        total = db.session.execute(
+            select(func.count()).select_from(Entry).where(Entry.user_id == user_id)
+        ).scalar()
         assert total == 0
 
 
 @pytest.mark.usefixtures("client")
 def test_import_csv_updates_existing_and_creates_new(tmp_path):
     with app.app_context():
+        user = User(username="import_updates", password_hash="x")
+        db.session.add(user)
+        db.session.flush()
+
         activity_payload: Dict[str, Any] = {
             "name": "Run",
             "category": "Health",
@@ -86,6 +106,7 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
             "frequency_per_day": 1,
             "frequency_per_week": 7,
             "deactivated_at": None,
+            "user_id": user.id,
         }
         activity = Activity(**activity_payload)
         db.session.add(activity)
@@ -98,10 +119,12 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
             "note": "Existing note",
             "activity_category": "Health",
             "activity_goal": 10.0,
+            "user_id": user.id,
         }
         entry = Entry(**entry_payload)
         db.session.add(entry)
         db.session.commit()
+        user_id = user.id
 
     csv_path = _write_csv(
         tmp_path,
@@ -112,7 +135,7 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
         ],
     )
 
-    summary = cast(Dict[str, Any], import_csv(str(csv_path)))
+    summary = cast(Dict[str, Any], import_csv(str(csv_path), user_id=user_id))
 
     assert summary["created"] == 1
     assert summary["updated"] == 1
@@ -121,7 +144,9 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
     with app.app_context():
         updated_row = db.session.execute(
             select(Entry.value, Entry.note).where(
-                Entry.date == "2024-03-01", Entry.activity == "Run"
+                Entry.date == "2024-03-01",
+                Entry.activity == "Run",
+                Entry.user_id == user_id,
             )
         ).first()
         assert updated_row is not None
@@ -130,7 +155,7 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
 
         created_row = db.session.execute(
             select(Entry.date, Entry.activity_category, Entry.activity_goal).where(
-                Entry.activity == "Reading"
+                Entry.activity == "Reading", Entry.user_id == user_id
             )
         ).first()
         assert created_row is not None
@@ -141,6 +166,12 @@ def test_import_csv_updates_existing_and_creates_new(tmp_path):
 
 @pytest.mark.usefixtures("client")
 def test_import_csv_dry_run_does_not_persist(tmp_path):
+    with app.app_context():
+        user = User(username="import_dry", password_hash="x")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
     csv_path = _write_csv(
         tmp_path,
         "dry_run.csv",
@@ -149,7 +180,7 @@ def test_import_csv_dry_run_does_not_persist(tmp_path):
         ],
     )
 
-    summary = cast(Dict[str, Any], import_csv(str(csv_path), dry_run=True))
+    summary = cast(Dict[str, Any], import_csv(str(csv_path), dry_run=True, user_id=user_id))
 
     assert summary["dry_run"] is True
     assert summary["created"] == 1
@@ -157,5 +188,7 @@ def test_import_csv_dry_run_does_not_persist(tmp_path):
     assert summary["skipped"] == 0
 
     with app.app_context():
-        total_entries = db.session.execute(select(func.count()).select_from(Entry)).scalar()
+        total_entries = db.session.execute(
+            select(func.count()).select_from(Entry).where(Entry.user_id == user_id)
+        ).scalar()
         assert total_entries == 0

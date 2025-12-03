@@ -22,7 +22,7 @@ from .idempotency import store_response as idempotency_store_response
 
 def list_activities(
     *,
-    user_id: Optional[int],
+    user_id: int,
     is_admin: bool,
     show_all: bool,
     limit: int,
@@ -102,7 +102,7 @@ def add_activity(
 def update_activity(
     activity_id: int,
     *,
-    user_id: Optional[int],
+    user_id: int,
     is_admin: bool,
     payload: Dict[str, Any],
     invalidate_cache_cb=None,
@@ -139,7 +139,7 @@ def update_activity(
 def deactivate_activity(
     activity_id: int,
     *,
-    user_id: Optional[int],
+    user_id: int,
     is_admin: bool,
     invalidate_cache_cb=None,
 ) -> Tuple[Dict[str, str], int]:
@@ -166,7 +166,7 @@ def deactivate_activity(
 def activate_activity(
     activity_id: int,
     *,
-    user_id: Optional[int],
+    user_id: int,
     is_admin: bool,
     invalidate_cache_cb=None,
 ) -> Tuple[Dict[str, str], int]:
@@ -191,7 +191,7 @@ def activate_activity(
 def delete_activity(
     activity_id: int,
     *,
-    user_id: Optional[int],
+    user_id: int,
     is_admin: bool,
     invalidate_cache_cb=None,
 ) -> Tuple[Dict[str, str], int]:

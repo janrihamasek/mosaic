@@ -48,7 +48,7 @@ def test_upsert_creates_and_updates_entry():
 def test_upsert_adopts_shared_entry():
     with app.app_context():
         user = _create_user("repo_adopt")
-        shared_entry = Entry(
+        existing_entry = Entry(
             date="2024-02-01",
             activity="Read",
             description="existing",
@@ -57,9 +57,9 @@ def test_upsert_adopts_shared_entry():
             activity_category="Leisure",
             activity_goal=1.0,
             activity_type="positive",
-            user_id=None,
+            user_id=user.id,
         )
-        db.session.add(shared_entry)
+        db.session.add(existing_entry)
         db.session.commit()
 
         payload, status = entries_repo.upsert_entry_with_metadata_check(
@@ -69,7 +69,11 @@ def test_upsert_adopts_shared_entry():
         assert payload["message"]
 
         adopted = db.session.execute(
-            select(Entry).where(Entry.activity == "Read", Entry.date == "2024-02-01")
+            select(Entry).where(
+                Entry.activity == "Read",
+                Entry.date == "2024-02-01",
+                Entry.user_id == user.id,
+            )
         ).scalar_one()
         assert adopted.user_id == user.id
         assert adopted.value == pytest.approx(2.0)

@@ -11,7 +11,7 @@ docker compose up -d --build mosaic_backend_dev
 
 docker compose exec mosaic_backend_dev flask db upgrade
 in /backend
-docker compose exec mosaic_backend_dev pytest | tee pytest_output.txt
+docker compose exec mosaic_backend_dev pytest | tee backend/pytest_output.txt
 
 Snadný způsob, jak zjistit, co Docker právě dělá:
 

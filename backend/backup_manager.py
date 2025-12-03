@@ -29,23 +29,26 @@ class BackupManager:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._initialized = False
+        self._scheduler_user_id: Optional[int] = None
 
-    def _ensure_initialized(self) -> None:
+    def _ensure_initialized(self, user_id: int) -> None:
         """Lazy initialization - only connect to DB when actually needed."""
         if not self._initialized:
-            self._ensure_settings_row()
-            self._ensure_scheduler()
+            self._ensure_settings_row(user_id)
+            self._ensure_scheduler(user_id)
             self._initialized = True
+        else:
+            self._ensure_settings_row(user_id)
 
     # ------------------------------------------------------------------ public API
     def create_backup(
         self,
         *,
         initiated_by: str = "manual",
-        user_id: Optional[int] = None,
+        user_id: int,
         is_admin: bool = False,
     ) -> Dict[str, object]:
-        self._ensure_initialized()
+        self._ensure_initialized(user_id)
         with self._lock:
             now = datetime.now(timezone.utc)
             timestamp = now.strftime("%Y%m%d-%H%M%S")
@@ -88,7 +91,7 @@ class BackupManager:
                 archive.write(json_path, arcname=json_path.name)
                 archive.write(csv_path, arcname=csv_path.name)
 
-            self._update_last_run(now)
+            self._update_last_run(now, user_id)
             sha256 = self._hash_file(zip_path)
             size_bytes = zip_path.stat().st_size
 
@@ -102,9 +105,9 @@ class BackupManager:
                 "sha256": sha256,
             }
 
-    def list_backups(self, *, user_id: Optional[int] = None) -> List[Dict[str, object]]:
+    def list_backups(self, *, user_id: int) -> List[Dict[str, object]]:
         backups: List[Dict[str, object]] = []
-        pattern = "backup-u*-*.zip" if user_id is None else f"backup-u{user_id}-*.zip"
+        pattern = f"backup-u{user_id}-*.zip"
         for path in sorted(self.backup_dir.glob(pattern), reverse=True):
             stats = path.stat()
             backups.append(
@@ -119,18 +122,18 @@ class BackupManager:
             )
         return backups
 
-    def get_status(self, *, user_id: Optional[int] = None) -> Dict[str, object]:
-        self._ensure_initialized()
+    def get_status(self, *, user_id: int) -> Dict[str, object]:
+        self._ensure_initialized(user_id)
         row: Optional[Dict[str, object]] = None
 
         with self.app.app_context():
-            backup_repo.ensure_settings_row()
+            backup_repo.ensure_settings_row(user_id)
             try:
-                row = backup_repo.fetch_settings()
+                row = backup_repo.fetch_settings(user_id)
             except ProgrammingError:
                 # Table might not exist yet (e.g., fresh DB); ensure and retry.
-                backup_repo.ensure_settings_row()
-                row = backup_repo.fetch_settings()
+                backup_repo.ensure_settings_row(user_id)
+                row = backup_repo.fetch_settings(user_id)
 
         enabled_raw: Any = row["enabled"] if row else False
         interval_raw: Any = row["interval_minutes"] if row else 60
@@ -172,15 +175,15 @@ class BackupManager:
         }
 
     def toggle(
-        self, enabled: Optional[bool] = None, interval_minutes: Optional[int] = None
+        self, *, user_id: int, enabled: Optional[bool] = None, interval_minutes: Optional[int] = None
     ) -> Dict[str, object]:
-        self._ensure_initialized()
+        self._ensure_initialized(user_id)
         if interval_minutes is not None:
             interval_minutes = max(int(interval_minutes), 5)
 
         with self.app.app_context():
-            backup_repo.ensure_settings_row()
-            row = backup_repo.fetch_settings() or {}
+            backup_repo.ensure_settings_row(user_id)
+            row = backup_repo.fetch_settings(user_id) or {}
             existing_enabled_raw: Any = row.get("enabled", False)
             existing_interval_raw: Any = row.get("interval_minutes", 60)
 
@@ -198,11 +201,11 @@ class BackupManager:
                 candidate_interval = int(candidate_interval)
             new_interval = candidate_interval
 
-            backup_repo.update_settings(new_enabled, new_interval)
+            backup_repo.update_settings(user_id, new_enabled, new_interval)
 
-        return self.get_status()
+        return self.get_status(user_id=user_id)
 
-    def get_backup_path(self, filename: str, *, user_id: Optional[int] = None) -> Path:
+    def get_backup_path(self, filename: str, *, user_id: int) -> Path:
         if not self._is_valid_backup_filename(filename, user_id=user_id):
             raise ValueError("Invalid backup filename")
 
@@ -219,22 +222,28 @@ class BackupManager:
         return path
 
     # ------------------------------------------------------------------ internal helpers
-    def _ensure_settings_row(self) -> None:
+    def _ensure_settings_row(self, user_id: int) -> None:
         with self.app.app_context():
-            backup_repo.ensure_settings_row()
+            backup_repo.ensure_settings_row(user_id)
 
-    def _ensure_scheduler(self) -> None:
+    def _ensure_scheduler(self, user_id: int) -> None:
         if self._thread and self._thread.is_alive():
+            self._scheduler_user_id = user_id
             return
+        self._scheduler_user_id = user_id
         self._thread = threading.Thread(
             target=self._scheduler_loop, name="backup-scheduler", daemon=True
         )
         self._thread.start()
 
     def _scheduler_loop(self) -> None:
+        self._scheduler_user_id: Optional[int] = getattr(self, "_scheduler_user_id", None)
         while not self._stop_event.is_set():
+            if self._scheduler_user_id is None:
+                self._stop_event.wait(5)
+                continue
             try:
-                status = self.get_status()
+                status = self.get_status(user_id=self._scheduler_user_id)
             except Exception as exc:  # pragma: no cover - log and retry later
                 self.logger.exception("backup.scheduler_status_error", error=str(exc))
                 self._stop_event.wait(10)
@@ -258,7 +267,7 @@ class BackupManager:
 
             if last_run is None or (now - last_run).total_seconds() >= interval * 60:
                 try:
-                    self.create_backup(initiated_by="scheduler")
+                    self.create_backup(initiated_by="scheduler", user_id=self._scheduler_user_id)
                 except Exception as exc:  # pragma: no cover - logged by Flask later
                     self.logger.exception("backup.scheduler_failed", error=str(exc))
                 self._stop_event.wait(5)
@@ -267,7 +276,7 @@ class BackupManager:
                 self._stop_event.wait(max(5, min(remaining, 60)))
 
     def _fetch_database_payload(
-        self, *, user_id: Optional[int], is_admin: bool
+        self, *, user_id: int, is_admin: bool
     ) -> Dict[str, List[Dict[str, object]]]:
         with self.app.app_context():
             return {
@@ -287,9 +296,9 @@ class BackupManager:
         with csv_path.open("w", newline="", encoding="utf-8") as fh:
             fh.write(csv_text)
 
-    def _update_last_run(self, timestamp: datetime) -> None:
+    def _update_last_run(self, timestamp: datetime, user_id: int) -> None:
         with self.app.app_context():
-            backup_repo.update_last_run(timestamp)
+            backup_repo.update_last_run(timestamp, user_id)
 
     @staticmethod
     def _parse_iso(value: Optional[str]) -> Optional[datetime]:
@@ -310,11 +319,11 @@ class BackupManager:
 
     @staticmethod
     def _is_valid_backup_filename(
-        filename: str, user_id: Optional[int] = None
+        filename: str, user_id: int
     ) -> bool:
         # Enforce backup-u<id>-YYYYMMDD-HHMMSS.{json,csv,zip} pattern and reject traversal
         if not filename or len(filename) > 96:
             return False
-        user_part = r"u\d+" if user_id is None else f"u{user_id}"
+        user_part = f"u{user_id}"
         pattern = rf"^backup-{user_part}-\d{{8}}-\d{{6}}\.(json|csv|zip)$"
         return bool(re.match(pattern, filename))

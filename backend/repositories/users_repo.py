@@ -123,6 +123,30 @@ def delete_user(user_id: int) -> int:
         return result.rowcount
 
 
+def get_user_data_counts(user_id: int) -> Dict[str, int]:
+    """
+    Return counts of related records for a user across key tables.
+
+    Helps verify ON DELETE CASCADE clean-up after user removal.
+    """
+    conn = sa_connection(db.engine)
+    try:
+        counts = {
+            "activities": 0,
+            "entries": 0,
+            "backup_settings": 0,
+        }
+        for table in counts.keys():
+            row = conn.execute(
+                f"SELECT COUNT(1) AS count FROM {table} WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            counts[table] = int(row["count"]) if row else 0  # type: ignore[index]
+    finally:
+        conn.close()
+    return counts
+
+
 def list_all_users() -> List[dict]:
     """List all users ordered by username."""
     conn = sa_connection(db.engine)

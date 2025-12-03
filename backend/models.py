@@ -13,9 +13,10 @@ def _utcnow() -> datetime:
 
 class Activity(db.Model):
     __tablename__ = "activities"
+    __table_args__ = (db.UniqueConstraint("user_id", "name", name="uq_activities_user_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(db.String(120), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(db.String(120), nullable=False)
     category: Mapped[str] = mapped_column(db.String(120), nullable=False, default="")
     activity_type: Mapped[str] = mapped_column(
         db.String(16),
@@ -34,10 +35,10 @@ class Activity(db.Model):
     )
     deactivated_at: Mapped[Optional[str]] = mapped_column(db.String(32), nullable=True)
     is_system: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=False, server_default="0")
-    user_id: Mapped[Optional[int]] = mapped_column(
+    user_id: Mapped[int] = mapped_column(
         db.Integer,
         db.ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
 
@@ -53,6 +54,7 @@ class Activity(db.Model):
 
 class Entry(db.Model):
     __tablename__ = "entries"
+    __table_args__ = (db.UniqueConstraint("user_id", "date", "activity", name="uq_entries_user_date_activity"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     date: Mapped[str] = mapped_column(db.String(10), nullable=False)
@@ -70,10 +72,10 @@ class Entry(db.Model):
         default="positive",
         server_default="positive",
     )
-    user_id: Mapped[Optional[int]] = mapped_column(
+    user_id: Mapped[int] = mapped_column(
         db.Integer,
         db.ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
 
@@ -153,6 +155,12 @@ class User(db.Model):
         back_populates="user",
         passive_deletes=True,
     )
+    backup_settings: Mapped[Optional["BackupSettings"]] = relationship(
+        "BackupSettings",
+        back_populates="user",
+        passive_deletes=True,
+        uselist=False,
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - convenience
         return f"<User {self.username}>"
@@ -160,8 +168,15 @@ class User(db.Model):
 
 class BackupSettings(db.Model):
     __tablename__ = "backup_settings"
+    __table_args__ = (db.UniqueConstraint("user_id", name="uq_backup_settings_user_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     enabled: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=False)
     interval_minutes: Mapped[int] = mapped_column(
         db.Integer, nullable=False, default=60
@@ -169,6 +184,7 @@ class BackupSettings(db.Model):
     last_run: Mapped[Optional[datetime]] = mapped_column(
         db.DateTime(timezone=True), nullable=True
     )
+    user: Mapped["User"] = relationship(back_populates="backup_settings")
 
     def __repr__(self) -> str:  # pragma: no cover - convenience
         status = "enabled" if self.enabled else "disabled"

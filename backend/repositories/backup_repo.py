@@ -9,27 +9,14 @@ from extensions import db
 from sqlalchemy import text
 
 
-def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
-    """Build a WHERE clause for user scoping with optional unassigned inclusion."""
-    clause = f"{column} = ?"
-    if include_unassigned:
-        clause = f"({clause} OR {column} IS NULL)"
-    return clause
-
-
 def get_export_entries(
-    user_id: Optional[int], is_admin: bool, limit: int, offset: int
+    user_id: int, is_admin: bool, limit: int, offset: int
 ) -> List[dict]:
-    """Fetch entries for export with optional user scoping."""
+    """Fetch entries for export scoped to the current user."""
     conn = sa_connection(db.engine)
     try:
-        params: List[Any] = []
-        where_clause = ""
-        if user_id is not None:
-            where_clause = (
-                f"WHERE {_user_scope_clause('e.user_id', include_unassigned=is_admin)}"
-            )
-            params.append(user_id)
+        params: List[Any] = [user_id]
+        where_clause = "WHERE e.user_id = ?"
         params.extend([limit, offset])
 
         rows = conn.execute(
@@ -47,7 +34,7 @@ def get_export_entries(
             FROM entries e
             LEFT JOIN activities a
               ON a.name = e.activity
-             AND (a.user_id = e.user_id OR a.user_id IS NULL)
+             AND a.user_id = e.user_id
             {where_clause}
             ORDER BY e.date ASC, e.id ASC
             LIMIT ? OFFSET ?
@@ -59,24 +46,19 @@ def get_export_entries(
     return [dict(row) for row in rows]
 
 
-def get_export_entries_all(user_id: Optional[int], is_admin: bool) -> List[dict]:
+def get_export_entries_all(user_id: int, is_admin: bool) -> List[dict]:
     """Fetch all entries for backup/export (no pagination)."""
     return get_export_entries(user_id, is_admin, limit=10_000_000, offset=0)
 
 
 def get_export_activities(
-    user_id: Optional[int], is_admin: bool, limit: int, offset: int
+    user_id: int, is_admin: bool, limit: int, offset: int
 ) -> List[dict]:
-    """Fetch activities for export with optional user scoping."""
+    """Fetch activities for export scoped to the current user."""
     conn = sa_connection(db.engine)
     try:
-        params: List[Any] = []
-        where_clause = ""
-        if user_id is not None:
-            where_clause = (
-                f"WHERE {_user_scope_clause('a.user_id', include_unassigned=is_admin)}"
-            )
-            params.append(user_id)
+        params: List[Any] = [user_id]
+        where_clause = "WHERE a.user_id = ?"
         params.extend([limit, offset])
 
         rows = conn.execute(
@@ -104,21 +86,17 @@ def get_export_activities(
     return [dict(row) for row in rows]
 
 
-def get_export_activities_all(user_id: Optional[int], is_admin: bool) -> List[dict]:
+def get_export_activities_all(user_id: int, is_admin: bool) -> List[dict]:
     return get_export_activities(user_id, is_admin, limit=10_000_000, offset=0)
 
 
-def count_export_entries(user_id: Optional[int], is_admin: bool) -> int:
-    """Count entries for export with optional user scoping."""
+def count_export_entries(user_id: int, is_admin: bool) -> int:
+    """Count entries for export scoped to the current user."""
     conn = sa_connection(db.engine)
     try:
-        if user_id is None:
-            row = conn.execute("SELECT COUNT(1) FROM entries").fetchone()
-        else:
-            row = conn.execute(
-                f"SELECT COUNT(1) FROM entries WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}",
-                (user_id,),
-            ).fetchone()
+        row = conn.execute(
+            "SELECT COUNT(1) FROM entries WHERE user_id = ?", (user_id,)
+        ).fetchone()
     finally:
         conn.close()
     if not row:
@@ -129,17 +107,13 @@ def count_export_entries(user_id: Optional[int], is_admin: bool) -> int:
     return int(count_value) if count_value is not None else 0  # type: ignore[arg-type]
 
 
-def count_export_activities(user_id: Optional[int], is_admin: bool) -> int:
-    """Count activities for export with optional user scoping."""
+def count_export_activities(user_id: int, is_admin: bool) -> int:
+    """Count activities for export scoped to the current user."""
     conn = sa_connection(db.engine)
     try:
-        if user_id is None:
-            row = conn.execute("SELECT COUNT(1) FROM activities").fetchone()
-        else:
-            row = conn.execute(
-                f"SELECT COUNT(1) FROM activities WHERE {_user_scope_clause('user_id', include_unassigned=is_admin)}",
-                (user_id,),
-            ).fetchone()
+        row = conn.execute(
+            "SELECT COUNT(1) FROM activities WHERE user_id = ?", (user_id,)
+        ).fetchone()
     finally:
         conn.close()
     if not row:
@@ -149,7 +123,7 @@ def count_export_activities(user_id: Optional[int], is_admin: bool) -> int:
     return int(count_value) if count_value is not None else 0  # type: ignore[arg-type]
 
 
-def ensure_settings_row() -> None:
+def ensure_settings_row(user_id: int) -> None:
     """Create backup_settings table and ensure a default row exists."""
     # Use a direct engine transaction to avoid issues with nested transactions
     # inside Flask session context during app startup/scheduler threads.
@@ -159,42 +133,47 @@ def ensure_settings_row() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS backup_settings (
                     id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     interval_minutes INTEGER NOT NULL DEFAULT 60,
-                    last_run TIMESTAMPTZ
+                    last_run TIMESTAMPTZ,
+                    UNIQUE (user_id)
                 )
                 """
             )
         )
         has_row = raw_conn.execute(
-            text("SELECT 1 FROM backup_settings LIMIT 1")
+            text("SELECT 1 FROM backup_settings WHERE user_id = :user_id LIMIT 1"),
+            {"user_id": user_id},
         ).scalar()
         if not has_row:
             raw_conn.execute(
                 text(
-                    "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (:enabled, :interval)"
+                    "INSERT INTO backup_settings (user_id, enabled, interval_minutes) VALUES (:user_id, :enabled, :interval)"
                 ),
-                {"enabled": False, "interval": 60},
+                {"user_id": user_id, "enabled": False, "interval": 60},
             )
 
 
-def fetch_settings() -> Optional[Dict[str, Any]]:
-    """Fetch the single backup_settings row."""
+def fetch_settings(user_id: int) -> Optional[Dict[str, Any]]:
+    """Fetch the backup_settings row for the given user."""
     conn = sa_connection(db.engine)
     try:
         row = conn.execute(
-            "SELECT id, enabled, interval_minutes, last_run FROM backup_settings ORDER BY id ASC LIMIT 1"
+            "SELECT id, enabled, interval_minutes, last_run FROM backup_settings WHERE user_id = ? ORDER BY id ASC LIMIT 1",
+            (user_id,),
         ).fetchone()
     finally:
         conn.close()
     return dict(row) if row else None
 
 
-def update_settings(enabled: bool, interval_minutes: int) -> None:
-    """Update backup settings, inserting a row if absent."""
+def update_settings(user_id: int, enabled: bool, interval_minutes: int) -> None:
+    """Update backup settings, inserting a row if absent for the user."""
     with transactional_connection(db.engine) as conn:
         row = conn.execute(
-            "SELECT id FROM backup_settings ORDER BY id ASC LIMIT 1"
+            "SELECT id FROM backup_settings WHERE user_id = ? ORDER BY id ASC LIMIT 1",
+            (user_id,),
         ).fetchone()
         if row:
             conn.execute(
@@ -203,15 +182,15 @@ def update_settings(enabled: bool, interval_minutes: int) -> None:
             )
         else:
             conn.execute(
-                "INSERT INTO backup_settings (enabled, interval_minutes) VALUES (?, ?)",
-                (enabled, interval_minutes),
+                "INSERT INTO backup_settings (user_id, enabled, interval_minutes) VALUES (?, ?, ?)",
+                (user_id, enabled, interval_minutes),
             )
 
 
-def update_last_run(timestamp: datetime) -> None:
+def update_last_run(timestamp: datetime, user_id: int) -> None:
     """Persist the last run timestamp."""
     with transactional_connection(db.engine) as conn:
         conn.execute(
-            "UPDATE backup_settings SET last_run = ?, enabled = enabled",
-            (timestamp,),
+            "UPDATE backup_settings SET last_run = ?, enabled = enabled WHERE user_id = ?",
+            (timestamp, user_id),
         )

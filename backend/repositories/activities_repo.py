@@ -21,14 +21,6 @@ class ConflictError(RepositoryError):
     """Raised when an action conflicts with current state."""
 
 
-def _user_scope_clause(column: str, *, include_unassigned: bool = False) -> str:
-    """Build a WHERE clause fragment for user scoping with optional unassigned inclusion."""
-    clause = f"{column} = ?"
-    if include_unassigned:
-        clause = f"({clause} OR {column} IS NULL)"
-    return clause
-
-
 def _serialize_activity_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize DB activity rows for API responses."""
     item = dict(row)
@@ -44,22 +36,19 @@ def _build_activity_response(row: Dict[str, Any], message: str) -> Dict[str, Any
 
 
 def list_activities(
-    user_id: Optional[int],
+    user_id: int,
     is_admin: bool,
     show_all: bool,
     limit: int,
     offset: int,
 ) -> List[dict]:
-    """List activities based on user visibility and activity status flags."""
+    """List activities for the current user."""
     conn = sa_connection(db.engine)
     try:
         params: List[Any] = []
         where_clauses: List[str] = []
-        if user_id is not None:
-            where_clauses.append(
-                _user_scope_clause("user_id", include_unassigned=is_admin)
-            )
-            params.append(user_id)
+        where_clauses.append("user_id = ?")
+        params.append(user_id)
         if not show_all:
             where_clauses.append("active = TRUE")
 
@@ -82,16 +71,9 @@ def list_activities(
     return [_serialize_activity_row(dict(row)) for row in rows]
 
 
-def _fetch_activity_by_id(
-    conn, activity_id: int, user_id: Optional[int], is_admin: bool
-) -> Optional[dict]:
-    where_clause = "id = ?"
-    params: List[Any] = [activity_id]
-    if not is_admin:
-        where_clause += " AND " + _user_scope_clause(
-            "user_id", include_unassigned=False
-        )
-        params.append(user_id)
+def _fetch_activity_by_id(conn, activity_id: int, user_id: int) -> Optional[dict]:
+    where_clause = "id = ? AND user_id = ?"
+    params: List[Any] = [activity_id, user_id]
 
     row = conn.execute(
         f"""
@@ -115,7 +97,7 @@ def _fetch_activity_by_id(
     return dict(row) if row else None
 
 
-def _fetch_activity_by_name(conn, name: str) -> Optional[dict]:
+def _fetch_activity_by_name(conn, name: str, user_id: int) -> Optional[dict]:
     row = conn.execute(
         """
         SELECT
@@ -131,15 +113,15 @@ def _fetch_activity_by_name(conn, name: str) -> Optional[dict]:
             frequency_per_week,
             deactivated_at
         FROM activities
-        WHERE name = ?
+        WHERE name = ? AND user_id = ?
         """,
-        (name,),
+        (name, user_id),
     ).fetchone()
     return dict(row) if row else None
 
 
 def _propagate_entries(
-    conn, activity_name: str, owner_user_id: Optional[int], updates: Dict[str, Any]
+    conn, activity_name: str, owner_user_id: int, updates: Dict[str, Any]
 ) -> None:
     """Propagate selected activity fields to related entries."""
     key_map = {
@@ -160,11 +142,8 @@ def _propagate_entries(
 
     params.append(activity_name)
     where_clause = "activity = ?"
-    if owner_user_id is not None:
-        where_clause += " AND user_id = ?"
-        params.append(owner_user_id)
-    else:
-        where_clause += " AND user_id IS NULL"
+    where_clause += " AND user_id = ?"
+    params.append(owner_user_id)
 
     conn.execute(
         f"UPDATE entries SET {', '.join(assignments)} WHERE {where_clause}",
@@ -190,7 +169,7 @@ def insert_activity(
 
     with transactional_connection(db.engine) as conn:
         if overwrite_existing:
-            # Avoid IntegrityError/failed transactions: Postgres upsert by unique name
+            # Avoid IntegrityError/failed transactions: Postgres upsert by unique (user_id, name)
             conn.execute(
                 """
                 INSERT INTO activities (
@@ -206,7 +185,7 @@ def insert_activity(
                     user_id
                 )
                 VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, NULL, ?)
-                ON CONFLICT (name) DO UPDATE SET
+                ON CONFLICT (user_id, name) DO UPDATE SET
                     category = EXCLUDED.category,
                     activity_type = EXCLUDED.activity_type,
                     goal = EXCLUDED.goal,
@@ -215,11 +194,10 @@ def insert_activity(
                     frequency_per_week = EXCLUDED.frequency_per_week,
                     deactivated_at = NULL,
                     active = TRUE
-                WHERE activities.user_id = EXCLUDED.user_id OR activities.user_id IS NULL
                 """,
                 params,
             )
-            row = _fetch_activity_by_name(conn, name)
+            row = _fetch_activity_by_name(conn, name, user_id)
             if not row:
                 raise RepositoryError("Activity not found after overwrite")
             return _build_activity_response(row, "Kategorie aktualizována"), 200
@@ -243,7 +221,7 @@ def insert_activity(
                 """,
                 params,
             )
-            row = _fetch_activity_by_name(conn, name)
+            row = _fetch_activity_by_name(conn, name, user_id)
             if not row:
                 raise RepositoryError("Activity not found after insert")
             return _build_activity_response(row, "Kategorie přidána"), 201
@@ -253,7 +231,7 @@ def insert_activity(
 
 def update_activity(
     activity_id: int,
-    user_id: Optional[int],
+    user_id: int,
     is_admin: bool,
     updates: Dict[str, Any],
 ) -> Tuple[Dict[str, Any], int]:
@@ -277,15 +255,13 @@ def update_activity(
         return {"message": "No changes detected"}, 200
 
     with transactional_connection(db.engine) as conn:
-        row = _fetch_activity_by_id(conn, activity_id, user_id, is_admin)
+        row = _fetch_activity_by_id(conn, activity_id, user_id)
         if not row:
             raise NotFoundError("not_found")
 
         params.append(activity_id)
-        where_clause = "id = ?"
-        if not is_admin:
-            where_clause += " AND user_id = ?"
-            params.append(user_id)
+        where_clause = "id = ? AND user_id = ?"
+        params.append(user_id)
 
         conn.execute(
             f"UPDATE activities SET {', '.join(assignments)} WHERE {where_clause}",
@@ -297,27 +273,24 @@ def update_activity(
             if key in updates:
                 propagate_fields[key] = updates[key]
         if propagate_fields:
-            _propagate_entries(conn, row["name"], row.get("user_id"), propagate_fields)
+            _propagate_entries(conn, row["name"], row["user_id"], propagate_fields)
 
     return {"message": "Aktivita aktualizována"}, 200
 
 
 def deactivate_activity(
-    activity_id: int, deactivation_date: str, user_id: Optional[int], is_admin: bool
+    activity_id: int, deactivation_date: str, user_id: int, is_admin: bool
 ) -> Tuple[Dict[str, str], int]:
     """Deactivate an activity and set deactivation timestamp with state checks."""
     with transactional_connection(db.engine) as conn:
-        row = _fetch_activity_by_id(conn, activity_id, user_id, is_admin)
+        row = _fetch_activity_by_id(conn, activity_id, user_id)
         if not row:
             raise NotFoundError("not_found")
         if not row.get("active"):
             raise ConflictError("already_inactive")
 
-        params: List[Any] = [deactivation_date, activity_id]
-        where_clause = "id = ?"
-        if not is_admin:
-            where_clause += " AND user_id = ?"
-            params.append(user_id)
+        params: List[Any] = [deactivation_date, activity_id, user_id]
+        where_clause = "id = ? AND user_id = ?"
 
         conn.execute(
             f"UPDATE activities SET active = FALSE, deactivated_at = ? WHERE {where_clause}",
@@ -327,21 +300,18 @@ def deactivate_activity(
 
 
 def activate_activity(
-    activity_id: int, user_id: Optional[int], is_admin: bool
+    activity_id: int, user_id: int, is_admin: bool
 ) -> Tuple[Dict[str, str], int]:
     """Activate an activity with state checks."""
     with transactional_connection(db.engine) as conn:
-        row = _fetch_activity_by_id(conn, activity_id, user_id, is_admin)
+        row = _fetch_activity_by_id(conn, activity_id, user_id)
         if not row:
             raise NotFoundError("not_found")
         if row.get("active"):
             raise ConflictError("already_active")
 
-        params: List[Any] = [activity_id]
-        where_clause = "id = ?"
-        if not is_admin:
-            where_clause += " AND user_id = ?"
-            params.append(user_id)
+        params: List[Any] = [activity_id, user_id]
+        where_clause = "id = ? AND user_id = ?"
 
         conn.execute(
             f"UPDATE activities SET active = TRUE, deactivated_at = NULL WHERE {where_clause}",
@@ -351,11 +321,11 @@ def activate_activity(
 
 
 def delete_activity(
-    activity_id: int, user_id: Optional[int], is_admin: bool
+    activity_id: int, user_id: int, is_admin: bool
 ) -> Tuple[Dict[str, str], int]:
     """Delete an activity after ensuring it is inactive."""
     with transactional_connection(db.engine) as conn:
-        row = _fetch_activity_by_id(conn, activity_id, user_id, is_admin)
+        row = _fetch_activity_by_id(conn, activity_id, user_id)
         if not row:
             raise NotFoundError("not_found")
         if row.get("is_system"):
@@ -363,11 +333,8 @@ def delete_activity(
         if row.get("active"):
             raise ConflictError("active")
 
-        params: List[Any] = [activity_id]
-        where_clause = "id = ?"
-        if not is_admin:
-            where_clause += " AND user_id = ?"
-            params.append(user_id)
+        params: List[Any] = [activity_id, user_id]
+        where_clause = "id = ? AND user_id = ?"
 
         conn.execute(
             f"DELETE FROM activities WHERE {where_clause}",
@@ -377,7 +344,7 @@ def delete_activity(
 
 
 def batch_update_activities(
-    action: str, ids: List[int], user_id: Optional[int], is_admin: bool
+    action: str, ids: List[int], user_id: int, is_admin: bool
 ) -> Dict[str, Any]:
     """
     Perform batch activate/deactivate/delete with per-item validation.
@@ -404,7 +371,7 @@ def batch_update_activities(
     deactivation_date = datetime.now().strftime("%Y-%m-%d")
     with transactional_connection(db.engine) as conn:
         for activity_id in unique_ids:
-            row = _fetch_activity_by_id(conn, activity_id, user_id, is_admin)
+            row = _fetch_activity_by_id(conn, activity_id, user_id)
             if not row:
                 skipped.append({"id": activity_id, "reason": "not_found"})
                 continue
@@ -416,11 +383,8 @@ def batch_update_activities(
                 if row.get("active"):
                     skipped.append({"id": activity_id, "reason": "already_active"})
                     continue
-                params: List[Any] = [activity_id]
-                where_clause = "id = ?"
-                if not is_admin:
-                    where_clause += " AND user_id = ?"
-                    params.append(user_id)
+                params: List[Any] = [activity_id, user_id]
+                where_clause = "id = ? AND user_id = ?"
                 conn.execute(
                     f"UPDATE activities SET active = TRUE, deactivated_at = NULL WHERE {where_clause}",
                     params,
@@ -429,11 +393,8 @@ def batch_update_activities(
                 if not row.get("active"):
                     skipped.append({"id": activity_id, "reason": "already_inactive"})
                     continue
-                params = [deactivation_date, activity_id]
-                where_clause = "id = ?"
-                if not is_admin:
-                    where_clause += " AND user_id = ?"
-                    params.append(user_id)
+                params = [deactivation_date, activity_id, user_id]
+                where_clause = "id = ? AND user_id = ?"
                 conn.execute(
                     f"UPDATE activities SET active = FALSE, deactivated_at = ? WHERE {where_clause}",
                     params,
@@ -442,11 +403,8 @@ def batch_update_activities(
                 if row.get("active"):
                     skipped.append({"id": activity_id, "reason": "active"})
                     continue
-                params = [activity_id]
-                where_clause = "id = ?"
-                if not is_admin:
-                    where_clause += " AND user_id = ?"
-                    params.append(user_id)
+                params = [activity_id, user_id]
+                where_clause = "id = ? AND user_id = ?"
                 conn.execute(
                     f"DELETE FROM activities WHERE {where_clause}",
                     params,
