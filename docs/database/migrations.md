@@ -11,12 +11,12 @@
 
 - **2024-11-15 (migration id `20241115_000001_initial_schema`)** – Alembic migration creating `users`, `activities`, `entries`, `backup_settings` tables and indexes (Postgres). Mirrors SQLite bootstrap schema.  
   File: `backend/migrations/versions/20241115_000001_initial_schema.py`.
+- **2025-01-08 (migration id `20250108_000010_user_scoped_schema`)** – Recreates `activities`, `entries`, and `backup_settings` with `user_id` FKs (ON DELETE CASCADE) and per-user uniques: `(user_id, name)` for activities, `(user_id, date, activity)` for entries, and `UNIQUE(user_id)` for backup_settings. Aligns schema with per-user isolation.
 
-## Known gaps / next migrations to plan
-- Add `user_id` to `activities` and `entries`, enforce unique `(user_id, name)` and `(user_id, date, activity)`, add FK or switch to `activity_id` references.
-- Add FK between entries and activities, aligned with per-user scope.
-- Backfill existing data to per-user-scoped schema; update import/export/backup accordingly.
+## Notes
+- All user-owned data now cascades when a user is deleted.
+- Import/export/backup continue to use the same external CSV/JSON formats; imported rows are bound to the provided `user_id`.
 
 ## Artifacts
 - SQLite bootstrap: `backend/database/schema.sql`
-- Postgres migration: `backend/migrations/versions/20241115_000001_initial_schema.py`
+- Postgres migrations: `backend/migrations/versions/`

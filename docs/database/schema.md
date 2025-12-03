@@ -12,45 +12,43 @@ This document summarizes the current Mosaic database schema, key constraints, an
 
 ### activities
 - `id` (PK, integer)
-- `name` (text, unique, not null) **Note:** currently global unique – no `user_id` column yet.
+- `user_id` (integer, not null, FK → `users.id` ON DELETE CASCADE)
+- `name` (text, not null, unique per user via `UNIQUE(user_id, name)`)
 - `category` (text, not null, default `""`)
-- `activity_type` (text; in SQLite schema defaults to `positive`, in Postgres migration column exists)
+- `activity_type` (text, default `positive`)
 - `goal` (real/float, not null, default `0`)
 - `description` (text, nullable)
 - `active` (boolean/int, not null, default `true`)
 - `frequency_per_day` (int, default `1`)
 - `frequency_per_week` (int, default `1`)
 - `deactivated_at` (text/timestamp, nullable)
+- `is_system` (boolean, default `false`)
 
 ### entries
 - `id` (PK, integer)
+- `user_id` (integer, not null, FK → `users.id` ON DELETE CASCADE)
 - `date` (text, not null)
-- `activity` (text, not null) – references `activities.name` by convention, no FK.
+- `activity` (text, not null) – matches the activity name for the same `user_id`
 - `description` (text, nullable)
 - `value` (real/float, default `0`)
 - `note` (text, nullable)
 - `activity_category` (text, not null, default `""`)
 - `activity_goal` (real/float, not null, default `0`)
-- **Unique constraint:** `(date, activity)` in SQLite schema.
-- **Missing scoping:** no `user_id` column; all rows share the same namespace.
+- `activity_type` (text, default `positive`)
+- **Unique constraint:** `(user_id, date, activity)`
 
 ### backup_settings
 - `id` (PK, integer)
+- `user_id` (integer, not null, FK → `users.id` ON DELETE CASCADE, unique)
 - `enabled` (boolean/int, default `false`)
 - `interval_minutes` (int, default `60`)
 - `last_run` (timestamp/text, nullable)
 
-## Known Gaps / Risks
-- **No per-user scoping:** `activities` and `entries` lack a `user_id` column. Activity names are globally unique, so two users cannot have the same activity name; imports may skip rows with “belongs to another user”.
-- **Foreign keys:** none are enforced between `entries` and `activities`; integrity relies on application logic.
-- **Backups/imports:** backup/export currently filter data by user in code, but the underlying schema is shared. Importers may collide on activity names across users.
-
-## Planned Fixes (proposed)
-- Introduce `user_id` on `activities` and `entries` with unique `(user_id, name)` for activities and `(user_id, date, activity)` for entries.
-- Add foreign keys from `entries.activity` to `activities.name` (or better: `activity_id`), aligned with user scope.
-- Migrate existing data to per-user scoped tables; update import/export to carry `user_id` (or enforce current user) to prevent leakage.
+## Data ownership
+- All user-generated data is scoped by `user_id`. Different users can safely have the same activity names without collisions.
+- Cascading deletes from `users` will remove activities, entries, and backup_settings for that user.
 
 ## Artifacts
-- SQLite bootstrap schema: `backend/database/schema.sql`
-- Postgres Alembic migration: `backend/migrations/versions/20241115_000001_initial_schema.py`
+- SQLite/Postgres schema reference: `backend/database/schema.sql`
+- Postgres Alembic migrations: `backend/migrations/versions/`
 - Models: `backend/models.py`
