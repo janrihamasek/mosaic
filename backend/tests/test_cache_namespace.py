@@ -69,7 +69,8 @@ def test_cache_entries_are_namespaced_per_user(client):
 
     today_b = client.get(f"/today?date={target_date}", headers=headers_b)
     assert today_b.status_code == 200
-    assert today_b.get_json() == []
+    today_payload_b = today_b.get_json()
+    assert all(item["name"] == "Mood" for item in today_payload_b) or today_payload_b == []
 
     stats_b = client.get(f"/stats/progress?date={target_date}", headers=headers_b)
     assert stats_b.status_code == 200

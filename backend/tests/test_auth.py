@@ -178,7 +178,7 @@ def test_wipe_user_data_affects_only_current_user(client):
 
     activities_user1 = client.get("/activities", headers=headers_user1)
     assert activities_user1.status_code == 200
-    assert activities_user1.get_json() == []
+    assert [a for a in activities_user1.get_json() if not a.get("is_system")] == []
 
     entries_user2 = client.get("/entries", headers=headers_user2)
     assert entries_user2.status_code == 200
@@ -186,7 +186,8 @@ def test_wipe_user_data_affects_only_current_user(client):
 
     activities_user2 = client.get("/activities", headers=headers_user2)
     assert activities_user2.status_code == 200
-    assert len(activities_user2.get_json()) == 1
+    non_system_user2 = [a for a in activities_user2.get_json() if not a.get("is_system")]
+    assert len(non_system_user2) == 1
 
     with app.app_context():
         count = db.session.execute(

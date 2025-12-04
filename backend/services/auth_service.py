@@ -20,7 +20,8 @@ from security import (
     validate_register_payload,
     validate_user_update_payload,
 )
-from sqlalchemy.exc import IntegrityError
+from services.system_activities import ensure_default_system_activities
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -70,6 +71,21 @@ def register_user(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
             context={"username": username},
         )
         raise ValidationError("Username already exists", code="conflict", status=409)
+    try:
+        ensure_default_system_activities(new_user_id)
+    except SQLAlchemyError as exc:
+        log_event(
+            "auth.register_failed",
+            "Failed to create default activities",
+            user_id=new_user_id,
+            level="error",
+            context={"username": username, "error": str(exc)},
+        )
+        raise ValidationError(
+            "Failed to create default activities",
+            code="database_error",
+            status=500,
+        )
 
     log_event(
         "auth.register",

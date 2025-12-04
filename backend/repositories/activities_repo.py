@@ -88,7 +88,8 @@ def _fetch_activity_by_id(conn, activity_id: int, user_id: int) -> Optional[dict
             description,
             frequency_per_day,
             frequency_per_week,
-            deactivated_at
+            deactivated_at,
+            is_system
         FROM activities
         WHERE {where_clause}
         """,
@@ -111,7 +112,8 @@ def _fetch_activity_by_name(conn, name: str, user_id: int) -> Optional[dict]:
             description,
             frequency_per_day,
             frequency_per_week,
-            deactivated_at
+            deactivated_at,
+            is_system
         FROM activities
         WHERE name = ? AND user_id = ?
         """,
@@ -415,3 +417,67 @@ def batch_update_activities(
             processed.append(activity_id)
 
     return {"processed": processed, "skipped": skipped}
+
+
+def ensure_system_activities(
+    user_id: int, activities: List[Dict[str, Any]]
+) -> None:
+    """
+    Ensure system activities exist for a user.
+
+    Inserts the provided activities for the user when missing and marks existing
+    records as system activities without overriding user-controlled state such as
+    activation status or notes.
+    """
+    if not activities:
+        return
+
+    with transactional_connection(db.engine) as conn:
+        for activity in activities:
+            name = activity["name"]
+            category = activity.get("category") or ""
+            activity_type = activity.get("activity_type") or "neutral"
+            goal = float(activity.get("goal") or 0.0)
+            description = activity.get("description")
+            freq_day = int(activity.get("frequency_per_day") or 1)
+            freq_week = int(activity.get("frequency_per_week") or 7)
+            is_system = True if activity.get("is_system", True) else False
+
+            conn.execute(
+                """
+                INSERT INTO activities (
+                    name,
+                    category,
+                    activity_type,
+                    goal,
+                    description,
+                    active,
+                    frequency_per_day,
+                    frequency_per_week,
+                    deactivated_at,
+                    user_id,
+                    is_system
+                )
+                VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, NULL, ?, ?)
+                ON CONFLICT (user_id, name) DO UPDATE SET
+                    is_system = EXCLUDED.is_system,
+                    activity_type = EXCLUDED.activity_type,
+                    goal = EXCLUDED.goal,
+                    category = CASE
+                        WHEN COALESCE(activities.category, '') = '' THEN EXCLUDED.category
+                        ELSE activities.category
+                    END,
+                    description = COALESCE(activities.description, EXCLUDED.description)
+                """,
+                (
+                    name,
+                    category,
+                    activity_type,
+                    goal,
+                    description,
+                    freq_day,
+                    freq_week,
+                    user_id,
+                    is_system,
+                ),
+            )

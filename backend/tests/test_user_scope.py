@@ -50,8 +50,12 @@ def test_multi_user_isolation(client):
     resp = client.post("/add_entry", json=entry_payload, headers=headers_b)
     assert resp.status_code in (200, 201)
 
-    activities_a = client.get("/activities", headers=headers_a).get_json()
-    activities_b = client.get("/activities", headers=headers_b).get_json()
+    activities_a = [
+        a for a in client.get("/activities", headers=headers_a).get_json() if not a.get("is_system")
+    ]
+    activities_b = [
+        a for a in client.get("/activities", headers=headers_b).get_json() if not a.get("is_system")
+    ]
     assert len(activities_a) == 1
     assert len(activities_b) == 1
     assert activities_a[0]["name"] == "SharedName"

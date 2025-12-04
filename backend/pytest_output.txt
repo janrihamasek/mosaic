@@ -4,25 +4,26 @@ rootdir: /app
 configfile: pytest.ini
 testpaths: tests
 plugins: cov-5.0.0
-collected 102 items
+collected 104 items
 
 tests/test_activities_batch.py ...                                       [  2%]
 tests/test_activities_repo.py ...                                        [  5%]
 tests/test_activities_service_unit.py ..                                 [  7%]
-tests/test_api.py ............................                           [ 35%]
-tests/test_auth.py .......                                               [ 42%]
-tests/test_backup_manager.py ........                                    [ 50%]
+tests/test_api.py ............................                           [ 34%]
+tests/test_auth.py .......                                               [ 41%]
+tests/test_backup_manager.py ........                                    [ 49%]
 tests/test_backup_serializers.py .                                       [ 50%]
-tests/test_cache_namespace.py .                                          [ 51%]
-tests/test_entries_repo.py ...                                           [ 54%]
-tests/test_export.py ....                                                [ 58%]
-tests/test_health.py ...                                                 [ 61%]
-tests/test_idempotent_writes.py ..                                       [ 63%]
-tests/test_import_validation.py ......                                   [ 69%]
-tests/test_metrics.py ..                                                 [ 71%]
-tests/test_neutral_activity_type.py ...                                  [ 74%]
-tests/test_stats_repo.py ..                                              [ 76%]
-tests/test_stream_proxy.py ....                                          [ 80%]
+tests/test_cache_namespace.py .                                          [ 50%]
+tests/test_entries_repo.py ...                                           [ 53%]
+tests/test_export.py ....                                                [ 57%]
+tests/test_health.py ...                                                 [ 60%]
+tests/test_idempotent_writes.py ..                                       [ 62%]
+tests/test_import_validation.py ......                                   [ 68%]
+tests/test_metrics.py ..                                                 [ 70%]
+tests/test_neutral_activity_type.py ...                                  [ 73%]
+tests/test_stats_repo.py ..                                              [ 75%]
+tests/test_stream_proxy.py ....                                          [ 78%]
+tests/test_system_activities.py ..                                       [ 80%]
 tests/test_transactions.py .                                             [ 81%]
 tests/test_user_scope.py ...                                             [ 84%]
 tests/test_users_repo.py .                                               [ 85%]
@@ -60,4 +61,4 @@ tests/test_wearable_repo.py::test_ingest_wearable_batch_creates_source_and_raw
   /home/jan/Dokumenty/code/mosaic/backend/tests/test_wearable_repo.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-====================== 102 passed, 20 warnings in 56.18s =======================
+====================== 104 passed, 20 warnings in 56.04s =======================

@@ -73,10 +73,11 @@ def get_export_activities(
                 a.active,
                 a.frequency_per_day,
                 a.frequency_per_week,
-                a.deactivated_at
+                a.deactivated_at,
+                a.is_system
             FROM activities a
             {where_clause}
-            ORDER BY a.name ASC, a.id ASC
+            ORDER BY a.is_system ASC, a.name ASC, a.id ASC
             LIMIT ? OFFSET ?
             """,
             params,

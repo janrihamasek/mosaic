@@ -79,13 +79,15 @@ def test_export_json_includes_entries_and_activities(client, auth_headers):
     payload = response.get_json()
     assert payload["meta"]["entries"]["limit"] == 1
     assert payload["meta"]["entries"]["total"] == 2
-    assert payload["meta"]["activities"]["total"] == 2
+    # Includes Mood system activity
+    assert payload["meta"]["activities"]["total"] == 3
     assert len(payload["entries"]) == 1
-    assert len(payload["activities"]) == 1
+    non_system_activities = [a for a in payload["activities"] if not a.get("is_system")]
+    assert len(non_system_activities) == 1
     assert payload["entries"][0]["activity"] == "Reading"
-    assert payload["activities"][0]["name"] == "Reading"
+    assert non_system_activities[0]["name"] == "Reading"
     assert response.headers["X-Total-Entries"] == "2"
-    assert response.headers["X-Total-Activities"] == "2"
+    assert response.headers["X-Total-Activities"] == "3"
 
 
 def test_export_pagination_offset(client, auth_headers):
@@ -105,7 +107,8 @@ def test_export_csv_format(client, auth_headers):
     assert response.status_code == 200
     assert response.headers["Content-Type"].startswith("text/csv")
     assert response.headers["X-Total-Entries"] == "2"
-    assert response.headers["X-Total-Activities"] == "2"
+    # Mood system activity is included in the export payload totals.
+    assert response.headers["X-Total-Activities"] == "3"
 
     csv_text = response.data.decode("utf-8")
     reader = csv.reader(io.StringIO(csv_text))
@@ -125,6 +128,14 @@ def test_export_csv_format(client, auth_headers):
     activities_header = next(reader)
     assert activities_header[:3] == ["dataset", "activity_id", "name"]
 
-    activity_row = next(reader)
+    # Find first non-system activity row
+    activity_row = None
+    for row in reader:
+        if not row:
+            continue
+        if row[0] == "activities" and row[2] != "Mood":
+            activity_row = row
+            break
+    assert activity_row is not None
     assert activity_row[0] == "activities"
     assert activity_row[2] == "Reading"

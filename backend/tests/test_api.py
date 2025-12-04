@@ -6,6 +6,10 @@ import pytest
 from infra.cache_manager import CacheScope, _cache_storage, build_cache_key
 
 
+def _non_system(activities):
+    return [a for a in activities if not a.get("is_system")]
+
+
 @pytest.fixture
 def auth_headers(client):
     username = f"user_{uuid.uuid4().hex[:8]}"
@@ -43,7 +47,7 @@ def test_add_activity_and_toggle(client, auth_headers):
     assert response.status_code == 201
 
     response = client.get("/activities", headers=auth_headers)
-    data = response.get_json()
+    data = _non_system(response.get_json())
     assert len(data) == 1
     activity_id = data[0]["id"]
     assert data[0]["active"] == 1
@@ -59,10 +63,10 @@ def test_add_activity_and_toggle(client, auth_headers):
     assert response.status_code == 200
 
     response = client.get("/activities", headers=auth_headers)
-    assert response.get_json() == []
+    assert [a for a in response.get_json() if not a.get("is_system")] == []
 
     response = client.get("/activities?all=true", headers=auth_headers)
-    data = response.get_json()
+    data = _non_system(response.get_json())
     assert len(data) == 1
     assert data[0]["active"] == 0
     assert data[0]["deactivated_at"] == datetime.now().strftime("%Y-%m-%d")
@@ -168,7 +172,7 @@ def test_today_and_finalize_day(client, auth_headers):
 
     target_date = "2024-02-20"
     response = client.get(f"/today?date={target_date}", headers=auth_headers)
-    today_data = response.get_json()
+    today_data = [r for r in response.get_json() if r["name"] != "Mood"]
     assert len(today_data) == 2
     assert all("goal" in row for row in today_data)
     assert {row["category"] for row in today_data} == {"Work", "Health"}
@@ -179,7 +183,7 @@ def test_today_and_finalize_day(client, auth_headers):
     assert response.status_code == 200
 
     response = client.get("/entries", headers=auth_headers)
-    entries = [e for e in response.get_json() if e["date"] == target_date]
+    entries = [e for e in response.get_json() if e["date"] == target_date and e["activity"] != "Mood"]
     assert len(entries) == 2
     assert all(float(e["value"]) == 0 for e in entries)
 
@@ -189,7 +193,7 @@ def test_today_and_finalize_day(client, auth_headers):
     )
     assert response.status_code == 200
     response = client.get("/entries", headers=auth_headers)
-    entries = [e for e in response.get_json() if e["date"] == target_date]
+    entries = [e for e in response.get_json() if e["date"] == target_date and e["activity"] != "Mood"]
     assert len(entries) == 2
 
 
@@ -343,7 +347,7 @@ def test_update_activity_propagates(client, auth_headers):
         },
         headers=auth_headers,
     )
-    activity = client.get("/activities", headers=auth_headers).get_json()[0]
+    activity = _non_system(client.get("/activities", headers=auth_headers).get_json())[0]
 
     client.post(
         "/add_entry",
@@ -364,7 +368,7 @@ def test_update_activity_propagates(client, auth_headers):
     )
     assert resp.status_code == 200
 
-    updated_activity = client.get("/activities", headers=auth_headers).get_json()[0]
+    updated_activity = _non_system(client.get("/activities", headers=auth_headers).get_json())[0]
     assert updated_activity["category"] == "Wellness"
     assert updated_activity["goal"] == pytest.approx((2 * 5) / 7)
     assert updated_activity["frequency_per_day"] == 2
@@ -387,7 +391,7 @@ def test_today_respects_deactivation_date(client, auth_headers):
         },
         headers=auth_headers,
     )
-    activity = client.get("/activities", headers=auth_headers).get_json()[0]
+    activity = _non_system(client.get("/activities", headers=auth_headers).get_json())[0]
     activity_id = activity["id"]
 
     today = datetime.now()
