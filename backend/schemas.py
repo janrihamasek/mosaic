@@ -384,6 +384,84 @@ class CSVImportRow(BaseModel):
         return self
 
 
+class CSVActivityImportRow(BaseModel):
+    name: str
+    category: str = ""
+    activity_type: str = "positive"
+    goal: float = 0.0
+    description: str = ""
+    active: bool = True
+    frequency_per_day: int = 1
+    frequency_per_week: int = 1
+    deactivated_at: Optional[str] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        if value is None:
+            raise ValueError("name is required")
+        name = str(value).strip()
+        if not name:
+            raise ValueError("name is required")
+        if len(name) > 120:
+            raise ValueError("name must be at most 120 characters")
+        return name
+
+    @field_validator("category", "description", "deactivated_at", mode="before")
+    @classmethod
+    def normalize_text(cls, value):
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("activity_type", mode="before")
+    @classmethod
+    def normalize_activity_type(cls, value):
+        if value is None:
+            return "positive"
+        activity_type = str(value).strip().lower()
+        if activity_type not in ("positive", "negative", "neutral"):
+            raise ValueError("activity_type must be positive, negative, or neutral")
+        return activity_type
+
+    @field_validator("goal", mode="before")
+    @classmethod
+    def parse_goal(cls, value):
+        if value in (None, ""):
+            return 0.0
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError("goal must be a number")
+        if number < 0:
+            raise ValueError("goal must be non-negative")
+        return number
+
+    @field_validator("active", mode="before")
+    @classmethod
+    def parse_active(cls, value):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return True
+        return str(value).strip().lower() in ("1", "true", "yes", "y", "t")
+
+    @field_validator("frequency_per_day", "frequency_per_week", mode="before")
+    @classmethod
+    def parse_frequency(cls, value, info: ValidationInfo):
+        if value in (None, ""):
+            return 1
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{info.field_name} must be an integer")
+        if number < 0:
+            raise ValueError(f"{info.field_name} must be non-negative")
+        return number
+
+
 class FinalizeDayPayload(BaseModel):
     date: Optional[str] = None
 

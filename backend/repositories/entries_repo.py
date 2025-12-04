@@ -1,6 +1,6 @@
 """Repository coordinating entry storage and retrieval."""
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from db_utils import connection as sa_connection
 from db_utils import transactional_connection
@@ -557,7 +557,11 @@ def _fetch_activity_for_import(name: str, user_id: int, conn) -> Optional[Dict[s
 
 
 def _ensure_activity_for_import(
-    parsed_row: Dict[str, Any], user_id: int, conn
+    parsed_row: Dict[str, Any],
+    user_id: int,
+    conn,
+    *,
+    locked_activity_names: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Create or update an activity for imported entries.
@@ -611,6 +615,9 @@ def _ensure_activity_for_import(
         )
         return new_activity
 
+    if activity_name.lower() in (locked_activity_names or set()):
+        return activity
+
     updates: List[str] = []
     params: List[Any] = []
 
@@ -639,10 +646,6 @@ def _ensure_activity_for_import(
         updates.append("frequency_per_week = ?")
         params.append(freq_week)
 
-    if not activity.get("active", True):
-        updates.append("active = TRUE")
-        updates.append("deactivated_at = NULL")
-
     if updates:
         params.append(activity["id"])
         conn.execute(
@@ -655,13 +658,19 @@ def _ensure_activity_for_import(
 
 
 def _upsert_entry_for_import(
-    parsed_row: Dict[str, Any], activity_row: Dict[str, Any], user_id: int, conn
+    parsed_row: Dict[str, Any],
+    activity_row: Dict[str, Any],
+    user_id: int,
+    conn,
+    *,
+    locked_activity_names: Optional[Set[str]] = None,
 ) -> str:
     """Insert or update a single entry during CSV import."""
+    locked = activity_row.get("name", "").lower() in (locked_activity_names or set())
     activity_category = parsed_row.get("category") or activity_row.get("category") or ""
-    activity_goal = (
-        float(parsed_row.get("goal")) if parsed_row.get("goal") is not None else float(activity_row.get("goal") or 0)  # type: ignore[arg-type]
-    )
+    activity_goal = float(activity_row.get("goal") or 0)
+    if not locked and parsed_row.get("goal") is not None:
+        activity_goal = float(parsed_row.get("goal"))  # type: ignore[arg-type]
     description = parsed_row.get("description") or activity_row.get("description") or ""
     activity_type_value = activity_row.get("activity_type") or "positive"
     note_value = parsed_row.get("note") or ""
@@ -730,7 +739,10 @@ def _upsert_entry_for_import(
 
 
 def import_entries_from_rows(
-    rows: List[Dict[str, Any]], user_id: int
+    rows: List[Dict[str, Any]],
+    user_id: int,
+    *,
+    locked_activity_names: Optional[Set[str]] = None,
 ) -> Tuple[int, int, int, List[Dict[str, Any]]]:
     """
     Import validated CSV rows into activities and entries tables.
@@ -742,11 +754,16 @@ def import_entries_from_rows(
         return 0, 0, 0, []
 
     with transactional_connection(db.engine) as conn:
-        return _import_entries_using_connection(rows, user_id, conn)
+        return _import_entries_using_connection(
+            rows, user_id, conn, locked_activity_names=locked_activity_names
+        )
 
 
 def import_entries_from_rows_dry_run(
-    rows: List[Dict[str, Any]], user_id: int
+    rows: List[Dict[str, Any]],
+    user_id: int,
+    *,
+    locked_activity_names: Optional[Set[str]] = None,
 ) -> Tuple[int, int, int, List[Dict[str, Any]]]:
     """
     Simulate CSV import within a rolled-back transaction to return validation details
@@ -761,7 +778,7 @@ def import_entries_from_rows_dry_run(
     trans = conn_wrapper._connection.begin()
     try:
         created, updated, skipped, details = _import_entries_using_connection(
-            rows, user_id, conn_wrapper
+            rows, user_id, conn_wrapper, locked_activity_names=locked_activity_names
         )
         return created, updated, skipped, details
     finally:
@@ -770,19 +787,26 @@ def import_entries_from_rows_dry_run(
 
 
 def _import_entries_using_connection(
-    rows: List[Dict[str, Any]], user_id: int, conn
+    rows: List[Dict[str, Any]],
+    user_id: int,
+    conn,
+    *,
+    locked_activity_names: Optional[Set[str]] = None,
 ) -> Tuple[int, int, int, List[Dict[str, Any]]]:
     created = 0
     updated = 0
     skipped = 0
     details: List[Dict[str, Any]] = []
+    locked_activity_names = {name.lower() for name in locked_activity_names or set()}
 
     for row in rows:
         row_index = row.get("row")
         date_value = row.get("date")
         activity_name = row.get("activity")
         try:
-            activity_row = _ensure_activity_for_import(row, user_id, conn)
+            activity_row = _ensure_activity_for_import(
+                row, user_id, conn, locked_activity_names=locked_activity_names
+            )
         except ValueError as exc:
             skipped += 1
             details.append(
@@ -796,7 +820,22 @@ def _import_entries_using_connection(
             )
             continue
 
-        status = _upsert_entry_for_import(row, activity_row, user_id, conn)
+        try:
+            status = _upsert_entry_for_import(
+                row,
+                activity_row,
+                user_id,
+                conn,
+                locked_activity_names=locked_activity_names,
+            )
+        except TypeError:
+            # Backward compatibility for monkeypatched tests without the keyword arg.
+            status = _upsert_entry_for_import(
+                row,
+                activity_row,
+                user_id,
+                conn,
+            )
         if status == "created":
             created += 1
         else:
