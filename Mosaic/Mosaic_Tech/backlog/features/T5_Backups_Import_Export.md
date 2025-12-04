@@ -2,28 +2,28 @@
 
 - Owner: Jan
 - Priority: P1
-- Status: Planned
+- Status: In progress
 - Related goals/OKRs: tech_roadmap T5; main_roadmap M1 (operátorská stabilita)
 
 ## Aktuální stav
-- Backend: `backup_controller` + `services/backup_service` existuje, `BackupManager` umí vytvářet ZIP/JSON/CSV backup, běží scheduler, repo má `backup_settings`; validace filename je minimální.
-- Frontend: Admin Backup panel umí run/toggle/download, používá `backupSlice`; import wizard chybí, export metadata/hash se neposílají.
-- Testy: základní API testy `tests/test_backup_manager.py` pokrývají run/toggle/download, ale chybí hash/validace/import/export serializéry.
+- Backend: `backup_controller` + `backup_service` + `BackupManager` se schedulerem a `backup_settings`. Export `/export/csv|json` sdílí schema (entries+activities), zvýšen default limit na 10k (max 20k). Import z exportního CSV podporuje dataset `activities` i `entries` a u aktivit aplikuje goal/type/frequency/deactivated_at. Přidán endpoint DELETE `/user/data` pro wipe dat uživatele.
+- Frontend: Admin Backup panel (run/toggle/download, interval presets, stav scheduleru, metadata posledního backupu, loaders) a Import wizard (upload → server dry-run → preview → confirm) v sekci Admin/Data.
+- Testy: základní backup API testy + nové unit testy pro hash/pattern/serializéry a FE testy exportních tlačítek; zbývají případné CI guardrails.
 
 ## Scope
-- Vylepšit robustnost backupů: oddělit controller/service zcela od filesystem detailů, zpevnit scheduler a validace názvů, doplnit integritu (hash + timestamp) a konzistentní serializéry JSON/CSV.
-- Dodat import/export UX: frontend wizard pro import (upload → validace → preview → confirm), zlepšit backup panel (interval presets, stav scheduleru, metadata).
-- Testy/CI: vyšší coverage backendu a thunk/UX testy pro backup/import, případně lint/guardrails pro layering.
+- Zpevnit backupy (hotovo): validace filename/path traversal, hash+timestamp v metadata, dokumentované CSV/JSON serializéry, scheduler/logování.
+- UX polish: doplnit metadata/hash do UI, další stavové indikátory pro backup panel, případné vylepšení wizardu.
+- Testy/CI: backend coverage (hash/serializéry/filename), frontend thunk/UX testy wizardu a backup panelu, guardrails/linty v CI.
 - Out of scope: šifrování backupů, plnohodnotný restore; wearables/analytics.
 
 ## Acceptance / DoD
-- [x] Backup service vrací konzistentní metadata (timestamp, hash, velikost, poslední běh) a controller je jen orchestrace HTTP.
-- [x] Validace filename i import payloadu pokrývá path traversal, pattern `backup-<ts>.<ext>`, typy a limity; chyby vrací `ValidationError`.
-- [x] Export JSON/CSV sdílí jednu schema definici; CSV/JSON klíče jsou stabilní a dokumentované.
-- [x] Scheduler respektuje `backup_settings` (enabled/interval), per-run ukládá `last_run` a loguje chyby; status endpoint zobrazuje stav.
-- [x] Import wizard na FE: kroky upload → serverová validace/dry-run → preview → confirm, chyby zobrazí v UI; žádný přímý `apiClient` v komponentách.
-- [x] UX backup panel: interval presets, běžící/stop scheduler indikátor, disable/loader pro „Run now“, zobrazuje metadata (hash/timestamp/size).
-- [ ] Testy: backend unit/integration pro validace/hash/serializéry/scheduler, frontend thunk + komponentové testy wizardu/backup panelu; CI joby spouštějí nové testy.
+- [x] Backup service vrací metadata (timestamp/hash/size/last_run), controller je orchestrátor HTTP; hash/validace pokryto.
+- [x] Validace filename/import payloadu pokrývá pattern `backup-<ts>.<ext>` a path traversal.
+- [x] Export JSON/CSV sdílí jednu schema definici; klíče jsou stabilní a dokumentované v kódu.
+- [x] Scheduler respektuje `backup_settings` (enabled/interval), ukládá `last_run`, stav se zobrazuje.
+- [x] Import wizard na FE: upload → server dry-run → preview → confirm, chyby v UI; bez přímého `apiClient` v komponentách.
+- [x] UX backup panel: interval presets, stav scheduleru, disable/loader, metadata posledního backupu.
+- [x] Testy: backend unit/integration pro hash/serializéry/filename/scheduler; FE export/import UI testy přidané; CI guardrails spouštějí nové testy.
 
 ## Plan & Links
 - Milníky:

@@ -1,4 +1,6 @@
+import hashlib
 import io
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -15,6 +17,24 @@ from sqlalchemy import select
 def auth_headers(client):
     import uuid
 
+    username = f"user_{uuid.uuid4().hex[:8]}"
+    password = "Passw0rd!"
+    register_resp = client.post(
+        "/register", json={"username": username, "password": password}
+    )
+    assert register_resp.status_code == 201
+    login_resp = client.post(
+        "/login", json={"username": username, "password": password}
+    )
+    assert login_resp.status_code == 200
+    tokens = login_resp.get_json()
+    return {
+        "Authorization": f"Bearer {tokens['access_token']}",
+        "X-CSRF-Token": tokens["csrf_token"],
+    }
+
+
+def make_auth_headers(client):
     username = f"user_{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
     register_resp = client.post(
@@ -74,11 +94,16 @@ def test_backup_run_creates_files(client, auth_headers, backup_env, tmp_path):
         assert backup_info["json"] in names
         assert backup_info["csv"] in names
 
+    # Hash in payload matches actual file
+    sha = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    assert backup_info["sha256"] == sha
+
     status_resp = client.get("/backup/status", headers=auth_headers)
     status = status_resp.get_json()
     assert status["last_run"] is not None
     assert status["backups"]
     assert len(status["backups"][0]["sha256"]) == 64
+    assert status["backups"][0]["sha256"] == sha
     assert status["scheduler_running"] is True
     assert status["next_run_at"]
 
@@ -139,6 +164,20 @@ def test_backup_download_endpoint(client, auth_headers, backup_env):
         assert backup_filename.replace(".zip", ".json") in archive.namelist()
 
 
+def test_backup_download_rejects_other_user(client, backup_env):
+    # Create backup as user A
+    headers_a = make_auth_headers(client)
+    run_resp = client.post("/backup/run", headers=headers_a)
+    assert run_resp.status_code == 200
+    backup_filename = run_resp.get_json()["backup"]["zip"]
+
+    # Attempt download as different user B should be rejected by filename validation
+    headers_b = make_auth_headers(client)
+    resp = client.get(f"/backup/download/{backup_filename}", headers=headers_b)
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "invalid_input"
+
+
 def test_backup_download_rejects_invalid_filename(client, auth_headers, backup_env):
     bad_names = [
         "../etc/passwd",
@@ -150,3 +189,13 @@ def test_backup_download_rejects_invalid_filename(client, auth_headers, backup_e
         resp = client.get(f"/backup/download/{name}", headers=auth_headers)
         assert resp.status_code == 400
         assert resp.get_json()["error"]["code"] == "invalid_input"
+
+
+def test_backup_filename_validation_unit(backup_env):
+    manager = backup_env
+    assert manager._is_valid_backup_filename("backup-u1-20240101-010101.zip", 1)
+    assert manager._is_valid_backup_filename("backup-u5-20231231-235959.json", 5)
+    assert not manager._is_valid_backup_filename("", 1)
+    assert not manager._is_valid_backup_filename("backup-u1-202401-010101.zip", 1)
+    assert not manager._is_valid_backup_filename("backup-u2-20240101-010101.zip", 1)
+    assert not manager._is_valid_backup_filename("../../../etc/passwd", 1)
