@@ -75,7 +75,7 @@ def export_json():
 
     from app import backup_manager  # local import to avoid circular init
 
-    pagination = parse_pagination(default_limit=500, max_limit=2000)
+    pagination = parse_pagination(default_limit=10000, max_limit=20000)
     limit = pagination["limit"]
     offset = pagination["offset"]
 
@@ -110,7 +110,7 @@ def export_csv():
 
     from app import backup_manager  # local import to avoid circular init
 
-    pagination = parse_pagination(default_limit=500, max_limit=2000)
+    pagination = parse_pagination(default_limit=10000, max_limit=20000)
     limit = pagination["limit"]
     offset = pagination["offset"]
 

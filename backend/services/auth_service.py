@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import jwt  # type: ignore[import]
 from audit import log_event
+from db_utils import transactional_connection
+from extensions import db
 from repositories import users_repo
 from security import (
     ValidationError,
@@ -220,3 +222,39 @@ def delete_user(
         invalidate_cache_cb("stats")
 
     return {"message": "Account deleted"}, 200
+
+
+def wipe_user_data(
+    user_id: int, *, invalidate_cache_cb=None
+) -> Tuple[Dict[str, Any], int]:
+    user = users_repo.get_user_by_id(user_id)
+    if not user:
+        raise ValidationError("User not found", code="not_found", status=404)
+
+    with transactional_connection(db.engine) as conn:
+        entries_deleted = conn.execute(
+            "DELETE FROM entries WHERE user_id = ?", (user_id,)
+        ).rowcount
+        activities_deleted = conn.execute(
+            "DELETE FROM activities WHERE user_id = ?", (user_id,)
+        ).rowcount
+        backup_settings_deleted = conn.execute(
+            "DELETE FROM backup_settings WHERE user_id = ?", (user_id,)
+        ).rowcount
+
+    log_event(
+        "auth.wipe_user_data",
+        "User wiped personal data",
+        user_id=user_id,
+        context={
+            "entries_deleted": entries_deleted,
+            "activities_deleted": activities_deleted,
+            "backup_settings_deleted": backup_settings_deleted,
+        },
+    )
+
+    if invalidate_cache_cb:
+        invalidate_cache_cb("today")
+        invalidate_cache_cb("stats")
+
+    return {"message": "User data deleted"}, 200

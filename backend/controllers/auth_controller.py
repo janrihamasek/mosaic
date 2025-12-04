@@ -74,3 +74,16 @@ def delete_current_user():
         current_user["id"], invalidate_cache_cb=invalidate_cache
     )
     return jsonify(result), status
+
+
+@auth_bp.delete("/user/data")
+@jwt_required()
+def wipe_current_user_data():
+    current_user = getattr(g, "current_user", None)
+    if not current_user:
+        return error_response("unauthorized", "Unauthorized", 401)
+
+    result, status = auth_service.wipe_user_data(
+        current_user["id"], invalidate_cache_cb=invalidate_cache
+    )
+    return jsonify(result), status

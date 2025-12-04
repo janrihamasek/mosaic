@@ -63,6 +63,11 @@ export async function deleteEntry(id) {
   return response.data;
 }
 
+export async function deleteUserData() {
+  const response = await apiClient.delete("/user/data");
+  return response.data;
+}
+
 // --- ACTIVITIES ---
 export async function fetchActivities({ all = false } = {}) {
   const response = await apiClient.get('/activities', { params: all ? { all: 'true' } : {} });
