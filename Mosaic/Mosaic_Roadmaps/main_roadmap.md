@@ -31,7 +31,7 @@ Mít Mosaic použitelný pro tebe a velmi úzký okruh (ty + max pár lidí), be
     
 - [x] T2 — Activities Management (v rozsahu potřebném pro denní používání; merge odloženo)
     
-- [ ] T5 — Backups / Import–Export (alespoň základní ruční zálohy, CSV)
+- [x] T5 — Backups / Import–Export (alespoň základní ruční zálohy, CSV)
     
 - [ ] T8 — UX / UI Quality (nejhorší špičaté hrany)
     

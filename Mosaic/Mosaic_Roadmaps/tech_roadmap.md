@@ -88,7 +88,7 @@
 
 ---
 
-## **T5 — Backups / Import–Export**
+## ~~**T5 — Backups / Import–Export**~~
 
 **Cíl:** robustní bezpečnost dat, správný scheduler, validace.
 
