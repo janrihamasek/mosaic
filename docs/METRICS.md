@@ -79,8 +79,10 @@ Within this window:
 
 ### Goal Completion Today (`goal_completion_today`)
 - **Purpose** Measures how much of the combined reference goals were achieved on `T`.
-- **Formula** `goal_completion_today = round(min(R_T, 1) * 100, 1)`.
-- **Example** `R_T = 0.75` ⇒ `goal_completion_today = 75.0`.
+- **Inputs** Only positive activities that are active (or not yet deactivated) on `T`; entries joined to activities carry `active` and `deactivated_at` to filter out inactive rows. Mood is excluded.
+- **Formula** Let `V_T = Σ value_T` and `G_T = Σ goal_T` over the filtered set.  
+  `goal_completion_today = round(min(V_T / G_T, 1) * 100, 1)` (0 if `G_T <= 0`).
+- **Example** `V_T = 15`, `G_T = 20` ⇒ `goal_completion_today = 75.0`. If an activity is marked inactive with `deactivated_at <= T`, its goal/value are not counted.
 
 ### Completion Streak (`streak_length`)
 - **Purpose** Counts consecutive productive days immediately preceding `T`.

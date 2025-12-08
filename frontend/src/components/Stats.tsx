@@ -17,12 +17,8 @@ import { fetchEntries } from "../api";
 import { useCompactLayout } from "../utils/useBreakpoints";
 import type { AppDispatch } from "../store";
 import type { 
-  Activity, 
   Entry, 
-  StatsSnapshot,
   ActivityDistributionBucket,
-  CategoryAverageGoalFulfilment,
-  ConsistentActivitiesByCategory 
 } from "../types/api";
 
 interface StatsProps {

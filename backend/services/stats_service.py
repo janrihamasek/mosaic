@@ -43,6 +43,11 @@ def get_today_payload(
         item = dict(r)
         if item.get("user_id") != user_id:
             continue
+        # Skip activities that are inactive for the target date
+        if not item.get("active"):
+            deactivated_at = item.get("deactivated_at")
+            if not deactivated_at or target_date >= str(deactivated_at):
+                continue
         if "active" in item:
             item["active"] = 1 if bool(item["active"]) else 0
         if item.get("activity_type") == "negative":
@@ -99,12 +104,42 @@ def get_progress_stats(
         raise ValidationError(str(exc), code="database_error", status=500)
 
     # Only positive entries count towards goals (not negative or neutral)
-    positive_entries = [
-        e for e in entries if e.get("activity_type") == "positive"
-    ]
-    negative_entries = [
-        e for e in entries if e.get("activity_type") == "negative"
-    ]
+    today_entries = stats_repo.get_today_entries(user_id, is_admin, today_str)
+    today_value = 0.0
+    today_goal = 0.0
+
+    aggregated: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for entry in entries:
+        if entry.get("activity_type") != "positive":
+            continue
+        # Align with Today: ignore inactive activities when deactivated or explicitly inactive
+        if entry.get("active") is False:
+            deactivated_at = entry.get("deactivated_at")
+            if not deactivated_at or (entry.get("date") or today_str) >= str(deactivated_at):
+                continue
+        day = entry.get("date") or today_str
+        activity = entry.get("activity") or entry.get("name") or "Unknown"
+        value = float(entry.get("value") or 0.0)
+        goal = float(entry.get("goal") or 0.0)
+        category = entry.get("category") or "Other"
+        key = (day, activity)
+        existing = aggregated.get(key)
+        if not existing:
+            aggregated[key] = {
+                "date": day,
+                "activity": activity,
+                "category": category,
+                "value": value,
+                "goal": goal,
+            }
+            continue
+        existing["value"] = max(existing["value"], value)
+        existing["goal"] = max(existing["goal"], goal)
+        if not existing.get("category") and category:
+            existing["category"] = category
+
+    positive_entries = list(aggregated.values())
+    negative_entries = [e for e in entries if e.get("activity_type") == "negative"]
 
     def ratio(total_value: float, total_goal: float) -> float:
         if total_goal <= 0:
@@ -145,14 +180,20 @@ def get_progress_stats(
     }
 
     active_day_threshold = 0.5
-    goal_completion_today = round(
-        ratio(
-            daily_totals.get(today_str, {}).get("value", 0.0),
-            daily_totals.get(today_str, {}).get("goal", 0.0),
-        )
-        * 100,
-        1,
-    )
+    # Recompute today's ratio directly from today's rows to avoid drift from other window data
+    for row in today_entries:
+        if row.get("activity_type") != "positive":
+            continue
+        name = (row.get("activity") or row.get("name") or "").lower()
+        if name == "mood":
+            continue
+        if row.get("active") is False:
+            deactivated_at = row.get("deactivated_at")
+            if not deactivated_at or today_str >= str(deactivated_at):
+                continue
+        today_value += float(row.get("value") or 0.0)
+        today_goal += float(row.get("goal") or 0.0)
+    goal_completion_today = round(ratio(today_value, today_goal) * 100, 1)
 
     def avg_completion_for_days(days: int) -> float:
         keys = set(

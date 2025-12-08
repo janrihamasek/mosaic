@@ -7,7 +7,6 @@ import { loadEntries, selectEntriesFilters, selectEntriesList } from "../store/e
 import { formatError } from "../utils/errors";
 import FormWrapper from "./shared/FormWrapper";
 import type { AppDispatch } from "../store";
-import type { EntriesFilters } from "../types/store";
 
 interface EntryFormProps {
   onNotify?: (message: string, type: "success" | "error" | "info") => void;

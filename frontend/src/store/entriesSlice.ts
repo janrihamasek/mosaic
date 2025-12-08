@@ -1,9 +1,7 @@
 import { createAsyncThunk, createSelector, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import {
   fetchEntries,
-  deleteEntry as deleteEntryApi,
   fetchToday as fetchTodayApi,
-  finalizeDay as finalizeDayApi,
   fetchProgressStats,
   importEntriesCsv,
 } from "../api";
@@ -206,7 +204,7 @@ export const saveDirtyTodayRows = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch; rejectValue: FriendlyError }
 >("entries/saveDirtyTodayRows", async (_, { getState, rejectWithValue, dispatch }) => {
   const state = getState();
-  const { today, filters, stats } = state.entries;
+  const { today } = state.entries;
   const entriesToSave = Object.values(today.dirty || {});
   if (!entriesToSave.length) {
     return { saved: 0, date: today.date };

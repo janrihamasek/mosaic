@@ -12,8 +12,6 @@ import {
   selectTodaySavingStatus,
   selectTodayError,
   selectStatsState,
-  selectStatsSnapshot,
-  selectStatsDate,
   setTodayDate,
   loadToday,
   updateTodayRow,
@@ -275,9 +273,10 @@ export default function Today({ onNotify, onNavigateToActivities }: TodayProps) 
       ? `${progressStats.totalValue.toFixed(1)} / ${progressStats.totalGoal.toFixed(1)}`
       : null;
   const goalProgressColor = clampedGoalPercent >= 50 ? "#2f9e44" : "#8b1e3f";
-  const streakLength = Number.isFinite(statsSnapshot?.streak_length)
-    ? statsSnapshot.streak_length
-    : null;
+  const streakLength =
+    statsDate === date && Number.isFinite(statsSnapshot?.streak_length)
+      ? statsSnapshot?.streak_length ?? null
+      : null;
   const statsLoading = statsState?.status === "loading" && statsDate !== date;
   const selectedDateLabel = useMemo(() => {
     if (!date) return null;

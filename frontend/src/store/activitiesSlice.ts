@@ -1,12 +1,11 @@
 import { createAsyncThunk, createSlice, isAnyOf, type PayloadAction } from "@reduxjs/toolkit";
 import { batchActivities, fetchActivities } from "../api";
-import { loadEntries, loadToday, markEntriesStale, markStatsStale, markTodayStale } from "./entriesSlice";
+import { markEntriesStale, markStatsStale, markTodayStale } from "./entriesSlice";
 import type { RootState, AppDispatch } from "./index";
 import type { ActivitiesState, FriendlyError } from "../types/store";
 import type { Activity, ActivityType } from "../types/api";
 import { isOfflineError, submitOfflineMutation } from "../offline/queue";
 import { readActivitiesSnapshot, saveActivitiesSnapshot } from "../offline/snapshots";
-import * as activitiesMutations from "../services/mutations/activities";
 import { emitMutationCompleted } from "../services/mutations/events";
 
 type ActivityMutationPayload = Record<string, unknown>;

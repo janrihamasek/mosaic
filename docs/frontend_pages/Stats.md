@@ -35,7 +35,8 @@
   - `status === 'loading'` shows blocking `Loading` within container
   - `status === 'failed'` surfaces `ErrorState` with retry bound to `loadStats`
 - Snapshot structure fields consumed:
-  - `goal_completion_today` → KPI percent + meter width
+- `goal_completion_today` → KPI percent + meter width
+- Backend filters for `goal_completion_today` match the Today view: only positive activities that are active (or not yet deactivated) on the selected day are included; mood is excluded.
   - `streak_length` → streak badge text
   - `active_days_ratio` → numerator/denominator and percent copy
   - `activity_distribution[]` → pie chart segments + legend rows (color assigned via index)

@@ -37,8 +37,8 @@ const BOUNDARY_BYTES = TEXT_ENCODER.encode(BOUNDARY_MARKER);
 const HEADER_SEPARATOR_BYTES = TEXT_ENCODER.encode("\r\n\r\n");
 
 function concatUint8Arrays(left: Uint8Array, right: Uint8Array): Uint8Array {
-  if (!left?.length) return right;
-  if (!right?.length) return left;
+  if (!left?.length) return new Uint8Array(right);
+  if (!right?.length) return new Uint8Array(left);
   const combined = new Uint8Array(left.length + right.length);
   combined.set(left, 0);
   combined.set(right, left.length);
@@ -298,7 +298,7 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
       dispatch(startStreamAction());
 
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-      let buffer = new Uint8Array();
+      let buffer: Uint8Array = new Uint8Array();
       let hasActivated = false;
       let encounteredError = false;
 
@@ -306,7 +306,7 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
         if (!frameBytes.length) {
           return;
         }
-        const frameBlob = new Blob([frameBytes], { type: "image/jpeg" });
+        const frameBlob = new Blob([new Uint8Array(frameBytes)], { type: 'image/jpeg' });
         const frameUrl = URL.createObjectURL(frameBlob);
         setStreamObjectUrl(frameUrl);
         if (!hasActivated) {
@@ -343,7 +343,7 @@ export default function NightMotion({ onNotify }: NightMotionProps) {
             continue;
           }
 
-          buffer = concatUint8Arrays(buffer, value);
+          buffer = concatUint8Arrays(buffer, new Uint8Array(value));
 
           // Process as many frames as possible from the buffer.
           while (true) {
