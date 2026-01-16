@@ -35,6 +35,8 @@ export interface Entry {
   category?: string;
   goal?: number;
   activity_type?: ActivityType;
+  active?: boolean;
+  deactivated_at?: string | null;
 }
 
 export interface ActivityDistributionBucket {

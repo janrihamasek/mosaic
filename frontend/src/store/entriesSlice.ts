@@ -15,6 +15,7 @@ import type {
   EntriesState,
   FriendlyError,
   TodayRow,
+  CalendarRow,
 } from "../types/store";
 import type { ActivityType, Entry, StatsSnapshot } from "../types/api";
 
@@ -58,6 +59,16 @@ const initialState: EntriesState = {
     stale: true,
   },
   finalizeStatus: "idle",
+  calendar: {
+    startDate: null,
+    endDate: null,
+    days: [],
+    rows: [],
+    status: "idle",
+    error: null,
+    saving: {},
+    lastFetchTime: null,
+  },
 };
 
 function toLocalDateString(dateObj: Date): string {
@@ -86,8 +97,11 @@ function serialiseError(error: unknown): FriendlyError | null {
   };
 }
 
-const toActivityType = (value: unknown): ActivityType =>
-  value === "negative" ? "negative" : "positive";
+const toActivityType = (value: unknown): ActivityType => {
+  if (value === "negative") return "negative";
+  if (value === "neutral") return "neutral";
+  return "positive";
+};
 
 type TodayRowInput = Partial<TodayRow> & {
   activity_goal?: number;
@@ -126,6 +140,120 @@ function sortRows(list: TodayRow[]): TodayRow[] {
     }
     return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
   });
+}
+
+const CALENDAR_PAGE_LIMIT = 500;
+const CALENDAR_MAX_PAGES = 20;
+
+const calendarSavingKey = (activity: string, date: string) => `${activity}__${date}`;
+
+function buildDayRange(startDate: string, endDate: string): string[] {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error("Invalid date range");
+  }
+  if (start > end) {
+    throw new Error("Start date must be before end date");
+  }
+  const days: string[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    days.push(toLocalDateString(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+function sortCalendarRows(list: CalendarRow[]): CalendarRow[] {
+  return [...list].sort((a, b) => {
+    const catCompare = (a.category || "").localeCompare(b.category || "", undefined, {
+      sensitivity: "base",
+    });
+    if (catCompare !== 0) return catCompare;
+    return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
+  });
+}
+
+function normalizeCalendarRows(
+  days: string[],
+  entries: Entry[],
+  baseline: TodayRow[]
+): CalendarRow[] {
+  const map = new Map<string, CalendarRow>();
+
+  baseline.forEach((row) => {
+    if (!row?.name) return;
+    map.set(row.name, {
+      name: row.name,
+      category: row.category ?? "",
+      goal: Number(row.goal ?? 0) || 0,
+      activity_type: row.activity_type,
+      active: true,
+      deactivated_at: undefined,
+      cells: {},
+    });
+  });
+
+  entries.forEach((entry) => {
+    const activityName = entry.activity;
+    if (!activityName) return;
+    const existing = map.get(activityName);
+    const row: CalendarRow =
+      existing ||
+      ({
+        name: activityName,
+        category: entry.category ?? "",
+        goal: Number(entry.goal ?? 0) || 0,
+        activity_type: toActivityType(entry.activity_type),
+        active: entry.active ?? true,
+        deactivated_at: (entry as any).deactivated_at ?? null,
+        cells: {},
+      } as CalendarRow);
+    row.category = row.category || entry.category || "";
+    row.goal = Number(row.goal || entry.goal || 0) || 0;
+    row.activity_type = toActivityType(entry.activity_type);
+    row.active = entry.active ?? row.active ?? true;
+    row.deactivated_at = (entry as any).deactivated_at ?? row.deactivated_at ?? null;
+
+    row.cells[entry.date] = {
+      date: entry.date,
+      value: Number(entry.value ?? 0) || 0,
+      note: entry.note || "",
+      entry_id: (entry as any).id,
+    };
+    map.set(activityName, row);
+  });
+
+  map.forEach((row) => {
+    days.forEach((day) => {
+      if (!row.cells[day]) {
+        row.cells[day] = { date: day, value: 0, note: "" };
+      }
+    });
+  });
+
+  return sortCalendarRows(Array.from(map.values()));
+}
+
+function applyCalendarCell(
+  state: EntriesState,
+  payload: { activity: string; date: string; changes: Partial<{ value: number; note?: string }> }
+) {
+  const { activity, date, changes } = payload;
+  if (!activity || !date) return;
+  const row = state.calendar.rows.find((r) => r.name === activity);
+  if (!row) {
+    return;
+  }
+  const existingCell = row.cells[date] || { date, value: 0, note: "" };
+  row.cells[date] = {
+    ...existingCell,
+    ...changes,
+    date,
+    value: Number(changes.value ?? existingCell.value ?? 0) || 0,
+    note: changes.note ?? existingCell.note ?? "",
+  };
 }
 
 const normaliseReject = (error: unknown): FriendlyError => serialiseError(error) ?? {};
@@ -198,6 +326,46 @@ export const loadToday = createAsyncThunk<
   }
 });
 
+export const loadCalendarRange = createAsyncThunk<
+  { startDate: string; endDate: string; days: string[]; rows: CalendarRow[] },
+  { startDate: string; endDate: string },
+  { state: RootState; rejectValue: FriendlyError }
+>("entries/loadCalendarRange", async ({ startDate, endDate }, { getState, rejectWithValue }) => {
+  try {
+    const days = buildDayRange(startDate, endDate);
+    const state = getState();
+    const baselineRows = state.entries.today.rows || [];
+
+    let offset = 0;
+    let page = 0;
+    const collected: Entry[] = [];
+    while (page < CALENDAR_MAX_PAGES) {
+      // Paginate because the backend caps limit at 500
+      const batch = (await fetchEntries({
+        startDate,
+        endDate,
+        limit: CALENDAR_PAGE_LIMIT,
+        offset,
+      })) as Entry[];
+      const normalized = (batch || []).map((entry) => ({
+        ...entry,
+        activity_type: toActivityType(entry.activity_type),
+      }));
+      collected.push(...normalized);
+      if (!batch || batch.length < CALENDAR_PAGE_LIMIT) {
+        break;
+      }
+      offset += CALENDAR_PAGE_LIMIT;
+      page += 1;
+    }
+
+    const rows = normalizeCalendarRows(days, collected, baselineRows);
+    return { startDate, endDate, days, rows };
+  } catch (error) {
+    return rejectWithValue(normaliseReject(error));
+  }
+});
+
 export const saveDirtyTodayRows = createAsyncThunk<
   { saved: number; date: string },
   void,
@@ -239,6 +407,32 @@ export const saveDirtyTodayRows = createAsyncThunk<
     });
     
     return { saved: entriesToSave.length, date: today.date };
+  } catch (error) {
+    return rejectWithValue(normaliseReject(error));
+  }
+});
+
+export const saveCalendarEntry = createAsyncThunk<
+  { activity: string; date: string; value: number; note: string },
+  { activity: string; date: string; value: number; note?: string },
+  { rejectValue: FriendlyError }
+>("entries/saveCalendarEntry", async (payload, { rejectWithValue }) => {
+  try {
+    const result = await entriesMutations.createOrUpdateEntry({
+      date: payload.date,
+      activity: payload.activity,
+      value: Number(payload.value) || 0,
+      note: payload.note ?? "",
+    });
+    if (!result.success) {
+      throw result.error || new Error("Failed to save entry");
+    }
+    return {
+      activity: payload.activity,
+      date: payload.date,
+      value: Number(payload.value) || 0,
+      note: payload.note ?? "",
+    };
   } catch (error) {
     return rejectWithValue(normaliseReject(error));
   }
@@ -370,6 +564,16 @@ const entriesSlice = createSlice({
       state.today.stale = true;
       state.stats.stale = true;
     },
+    updateCalendarCell(state, action: PayloadAction<{ activity: string; date: string; value?: number; note?: string }>) {
+      applyCalendarCell(state, {
+        activity: action.payload.activity,
+        date: action.payload.date,
+        changes: {
+          value: action.payload.value,
+          note: action.payload.note,
+        },
+      });
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -486,6 +690,39 @@ const entriesSlice = createSlice({
       .addCase(finalizeToday.rejected, (state, action) => {
         state.finalizeStatus = "failed";
         state.today.error = state.today.error || action.payload || serialiseError(action.error) || null;
+      })
+      .addCase(loadCalendarRange.pending, (state) => {
+        state.calendar.status = "loading";
+        state.calendar.error = null;
+      })
+      .addCase(loadCalendarRange.fulfilled, (state, action) => {
+        state.calendar.status = "succeeded";
+        state.calendar.startDate = action.payload.startDate;
+        state.calendar.endDate = action.payload.endDate;
+        state.calendar.days = action.payload.days;
+        state.calendar.rows = action.payload.rows;
+        state.calendar.error = null;
+        state.calendar.lastFetchTime = Date.now();
+      })
+      .addCase(loadCalendarRange.rejected, (state, action) => {
+        state.calendar.status = "failed";
+        state.calendar.error = action.payload ?? serialiseError(action.error) ?? null;
+        state.calendar.days = [];
+        state.calendar.rows = [];
+      })
+      .addCase(saveCalendarEntry.pending, (state, action) => {
+        const { activity, date } = action.meta.arg;
+        state.calendar.saving[calendarSavingKey(activity, date)] = true;
+      })
+      .addCase(saveCalendarEntry.fulfilled, (state, action) => {
+        const { activity, date, value, note } = action.payload;
+        applyCalendarCell(state, { activity, date, changes: { value, note } });
+        state.calendar.saving[calendarSavingKey(activity, date)] = false;
+      })
+      .addCase(saveCalendarEntry.rejected, (state, action) => {
+        const { activity, date } = action.meta.arg;
+        state.calendar.saving[calendarSavingKey(activity, date)] = false;
+        state.calendar.error = action.payload ?? serialiseError(action.error) ?? null;
       });
   },
 });
@@ -499,6 +736,7 @@ export const {
   markTodayStale,
   markStatsStale,
   markAllStale,
+  updateCalendarCell,
 } = entriesSlice.actions;
 
 // ===============================
@@ -509,6 +747,7 @@ export const selectEntriesList = (state: RootState) => state.entries.items;
 export const selectEntriesFilters = (state: RootState) => state.entries.filters;
 export const selectTodayState = (state: RootState) => state.entries.today;
 export const selectStatsState = (state: RootState) => state.entries.stats;
+export const selectCalendarState = (state: RootState) => state.entries.calendar;
 
 // ===============================
 // Memoized derived selectors
@@ -696,6 +935,29 @@ export const selectFinalizeStatus = createSelector(
 export const selectIsFinalizing = createSelector(
   [selectFinalizeStatus],
   (status) => status === "loading"
+);
+
+/**
+ * Calendar selectors
+ */
+export const selectCalendarRows = createSelector(
+  [selectCalendarState],
+  (calendar) => calendar.rows
+);
+
+export const selectCalendarDays = createSelector(
+  [selectCalendarState],
+  (calendar) => calendar.days
+);
+
+export const selectCalendarStatus = createSelector(
+  [selectCalendarState],
+  (calendar) => calendar.status
+);
+
+export const selectCalendarSaving = createSelector(
+  [selectCalendarState],
+  (calendar) => calendar.saving
 );
 
 // ===============================

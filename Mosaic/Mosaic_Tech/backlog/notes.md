@@ -10,7 +10,7 @@
 - vzorník barev, hlavně buttons
 - schéma databáze
 - událost
-- časová osa, timeline, přidat a odebrat na časovou orchestruje
+- časová osa, timeline, přidat a odebrat na časovou osu
 - grafy flexibilnější, verzatilní, práce s veličinami, ne už hotové a dost
 - počasí
 - senzory v mobilu
@@ -27,7 +27,6 @@
 
 - myšlenková mapa
 - max users
-- today má špatný refresh
 - metrics settings
 - mood musí být default pro každý účet
 - refaktor stats

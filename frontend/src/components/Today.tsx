@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { styles, VALENCE_COLORS, getValenceColor } from "../styles/common";
 import { formatError } from "../utils/errors";
@@ -25,6 +25,7 @@ import Loading from "./Loading";
 import ErrorState from "./ErrorState";
 import EmptyState from "./EmptyState";
 import SkeletonTable from "./SkeletonTable";
+import CalendarGrid from "./CalendarGrid";
 
 interface TodayProps {
   onNotify?: (message: string, type: "success" | "error" | "info") => void;
@@ -39,6 +40,7 @@ const toLocalDateString = (dateObj: Date): string => {
 
 export default function Today({ onNotify, onNavigateToActivities }: TodayProps) {
   const dispatch = useDispatch<AppDispatch>();
+  const [viewMode, setViewMode] = useState<"day" | "calendar">("day");
   
   // Use granular selectors for better performance
   const date = useSelector(selectTodayDate);
@@ -203,6 +205,22 @@ export default function Today({ onNotify, onNavigateToActivities }: TodayProps) 
   }, [dispatch]);
 
   const todayString = useMemo(() => toLocalDateString(new Date()), []);
+  const [calendarMonth, setCalendarMonth] = useState<string>(todayString.slice(0, 7));
+
+  const calendarRange = useMemo(() => {
+    const [yearStr, monthStr] = calendarMonth.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month) {
+      const now = new Date();
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+      return { start: toLocalDateString(start), end: toLocalDateString(end) };
+    }
+    const startDate = new Date(Date.UTC(year, month - 1, 1));
+    const endDate = new Date(Date.UTC(year, month, 0));
+    return { start: toLocalDateString(startDate), end: toLocalDateString(endDate) };
+  }, [calendarMonth]);
 
   const handleDateChange = useCallback(
     async (newDate) => {
@@ -322,6 +340,13 @@ export default function Today({ onNotify, onNavigateToActivities }: TodayProps) 
     alignItems: "center",
     gap: "0.5rem",
   };
+  const viewToggleButton = (isActive: boolean) => ({
+    ...styles.button,
+    padding: "0.45rem 0.9rem",
+    backgroundColor: isActive ? "#1f2937" : "#111218",
+    border: isActive ? "1px solid #3b82f6" : "1px solid #2f3338",
+    color: "#e5e7eb",
+  });
 
   const renderActivityContent = () => {
     if (isCompact) {
@@ -499,7 +524,7 @@ export default function Today({ onNotify, onNavigateToActivities }: TodayProps) 
     );
   };
 
-  if (status === "failed") {
+  if (viewMode === "day" && status === "failed") {
     const message = todayError?.friendlyMessage || todayError?.message || "Failed to load today view.";
     return (
       <ErrorState
@@ -511,7 +536,7 @@ export default function Today({ onNotify, onNavigateToActivities }: TodayProps) 
   }
 
   // Show skeleton on initial load
-  if (loading && rows.length === 0) {
+  if (viewMode === "day" && loading && rows.length === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         <div style={{ ...styles.textMuted, fontSize: "0.875rem" }}>
@@ -527,158 +552,216 @@ export default function Today({ onNotify, onNavigateToActivities }: TodayProps) 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      {loading && rows.length > 0 && <Loading message="Refreshing day…" inline />}
-      <div style={summaryGridStyle}>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
-          }}
-        >
-          <div
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.75rem",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => setViewMode("day")}
             style={{
-              display: "grid",
-              gridTemplateColumns: isCompact ? "repeat(3, minmax(0, 1fr))" : "auto auto auto",
-              gap: "0.5rem",
-              alignItems: "center",
-              width: "100%",
+              ...viewToggleButton(viewMode === "day"),
             }}
           >
-            <button
-              type="button"
-              onClick={() => shiftDay(-1)}
-              style={navigationButtonStyle}
-              aria-label="Previous day"
-            >
-              ◀
-            </button>
-            <input
-              type="date"
-              value={date}
-              max={todayString}
-              onChange={(e) => {
-                const newDate = e.target.value;
-                handleDateChange(newDate);
-              }}
-              style={{
-                ...dateFieldStyle,
-                ...(isCompact ? { gridColumn: "span 2" } : {}),
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => shiftDay(1)}
-              style={{ ...navigationButtonStyle, opacity: date >= todayString ? 0.6 : 1 }}
-              disabled={date >= todayString}
-              aria-label="Next day"
-            >
-              ▶
-            </button>
-          </div>
-          <div style={{ ...styles.textMuted, fontSize: "0.8125rem" }}>
-            Use the date selector to review or adjust daily activity notes.
-          </div>
+            Today view
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("calendar")}
+            style={{
+              ...viewToggleButton(viewMode === "calendar"),
+            }}
+          >
+            Calendar view
+          </button>
         </div>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.75rem",
-            padding: isCompact ? "0.9rem" : "1rem",
-            backgroundColor: "#232428",
-            borderRadius: "0.5rem",
-            border: "1px solid #303136",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              <span
+        {viewMode === "calendar" && (
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "#9ba3af", fontSize: "0.85rem" }}>
+              Month
+              <input
+                type="month"
+                value={calendarMonth}
+                max={todayString.slice(0, 7)}
+                onChange={(e) => setCalendarMonth(e.target.value)}
+                style={{ ...styles.input, minWidth: "9.5rem" }}
+              />
+            </label>
+            <div style={{ ...styles.textMuted, fontSize: "0.85rem" }}>
+              {calendarRange.start} → {calendarRange.end}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {viewMode === "calendar" ? (
+        <CalendarGrid
+          startDate={calendarRange.start}
+          endDate={calendarRange.end}
+          onNotify={onNotify}
+        />
+      ) : (
+        <>
+          {loading && rows.length > 0 && <Loading message="Refreshing day…" inline />}
+          <div style={summaryGridStyle}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.5rem",
+              }}
+            >
+              <div
                 style={{
-                  fontSize: "0.8125rem",
-                  color: "#9ba3af",
-                  textTransform: "uppercase",
+                  display: "grid",
+                  gridTemplateColumns: isCompact ? "repeat(3, minmax(0, 1fr))" : "auto auto auto",
+                  gap: "0.5rem",
+                  alignItems: "center",
+                  width: "100%",
                 }}
               >
-                Goal Completion
-              </span>
-              {selectedDateLabel && (
-                <span style={{ ...styles.textMuted, fontSize: "0.75rem", textTransform: "none" }}>
-                  {selectedDateLabel}
+                <button
+                  type="button"
+                  onClick={() => shiftDay(-1)}
+                  style={navigationButtonStyle}
+                  aria-label="Previous day"
+                >
+                  ◀
+                </button>
+                <input
+                  type="date"
+                  value={date}
+                  max={todayString}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    handleDateChange(newDate);
+                  }}
+                  style={{
+                    ...dateFieldStyle,
+                    ...(isCompact ? { gridColumn: "span 2" } : {}),
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => shiftDay(1)}
+                  style={{ ...navigationButtonStyle, opacity: date >= todayString ? 0.6 : 1 }}
+                  disabled={date >= todayString}
+                  aria-label="Next day"
+                >
+                  ▶
+                </button>
+              </div>
+              <div style={{ ...styles.textMuted, fontSize: "0.8125rem" }}>
+                Use the date selector to review or adjust daily activity notes.
+              </div>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+                padding: isCompact ? "0.9rem" : "1rem",
+                backgroundColor: "#232428",
+                borderRadius: "0.5rem",
+                border: "1px solid #303136",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <span
+                    style={{
+                      fontSize: "0.8125rem",
+                      color: "#9ba3af",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Goal Completion
+                  </span>
+                  {selectedDateLabel && (
+                    <span style={{ ...styles.textMuted, fontSize: "0.75rem", textTransform: "none" }}>
+                      {selectedDateLabel}
+                    </span>
+                  )}
+                  {moodValue !== null && (
+                    <span style={{ 
+                      ...styles.textMuted, 
+                      fontSize: "0.75rem", 
+                      textTransform: "none",
+                      color: VALENCE_COLORS.mood,
+                      fontWeight: 500,
+                    }}>
+                      Mood: {moodValue}/5
+                    </span>
+                  )}
+                </div>
+                {statsLoading && <span style={{ ...styles.textMuted, fontSize: "0.75rem" }}>Loading…</span>}
+              </div>
+              <div style={{ fontSize: "2rem", fontWeight: 600 }}>{goalPercentLabel}</div>
+              <div style={{ height: 8, backgroundColor: "#333", borderRadius: 4, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${clampedGoalPercent}%`,
+                    backgroundColor: goalProgressColor,
+                    height: "100%",
+                    transition: "width 0.3s ease",
+                  }}
+                  aria-label="Goal completion today"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Number.isFinite(resolvedGoalPercent) ? Math.round(clampedGoalPercent) : undefined}
+                />
+              </div>
+              {ratioLabel && (
+                <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
+                  Logged {ratioLabel} of the daily target
                 </span>
               )}
-              {moodValue !== null && (
-                <span style={{ 
-                  ...styles.textMuted, 
-                  fontSize: "0.75rem", 
-                  textTransform: "none",
-                  color: VALENCE_COLORS.mood,
-                  fontWeight: 500,
-                }}>
-                  Mood: {moodValue}/5
+              {typeof streakLength === "number" && (
+                <span
+                  style={{
+                    alignSelf: "flex-start",
+                    backgroundColor: "#3a7bd533",
+                    border: "1px solid #3a7bd5",
+                    borderRadius: "999px",
+                    padding: "0.25rem 0.75rem",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    color: "#c4d9ff",
+                  }}
+                >
+                  Streak: {streakLength} day{streakLength === 1 ? "" : "s"}
                 </span>
               )}
             </div>
-            {statsLoading && <span style={{ ...styles.textMuted, fontSize: "0.75rem" }}>Loading…</span>}
+            <div style={{ display: "flex", justifyContent: isDesktop ? "flex-end" : "flex-start" }}>
+              {autoSaving && <div style={styles.loadingText}>💾 Saving…</div>}
+              {!autoSaving && dirtyCount > 0 && (
+                <div style={statusMessageStyle}>{dirtyCount} change(s) pending...</div>
+              )}
+            </div>
           </div>
-          <div style={{ fontSize: "2rem", fontWeight: 600 }}>{goalPercentLabel}</div>
-          <div style={{ height: 8, backgroundColor: "#333", borderRadius: 4, overflow: "hidden" }}>
-            <div
-              style={{
-                width: `${clampedGoalPercent}%`,
-                backgroundColor: goalProgressColor,
-                height: "100%",
-                transition: "width 0.3s ease",
+
+          {loading && <div style={styles.loadingText}>⏳ Loading today&apos;s activities...</div>}
+
+          {showEmptyState ? (
+            <EmptyState
+              message="No activities for today"
+              action={{
+                label: "Add activity",
+                onClick: () => onNavigateToActivities?.(),
               }}
-              aria-label="Goal completion today"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Number.isFinite(resolvedGoalPercent) ? Math.round(clampedGoalPercent) : undefined}
             />
-          </div>
-          {ratioLabel && (
-            <span style={{ color: "#9ba3af", fontSize: "0.85rem" }}>
-              Logged {ratioLabel} of the daily target
-            </span>
+          ) : (
+            renderActivityContent()
           )}
-          {typeof streakLength === "number" && (
-            <span
-              style={{
-                alignSelf: "flex-start",
-                backgroundColor: "#3a7bd533",
-                border: "1px solid #3a7bd5",
-                borderRadius: "999px",
-                padding: "0.25rem 0.75rem",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                color: "#c4d9ff",
-              }}
-            >
-              Streak: {streakLength} day{streakLength === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
-        <div style={{ display: "flex", justifyContent: isDesktop ? "flex-end" : "flex-start" }}>
-          {autoSaving && <div style={styles.loadingText}>💾 Saving…</div>}
-          {!autoSaving && dirtyCount > 0 && (
-            <div style={statusMessageStyle}>{dirtyCount} change(s) pending...</div>
-          )}
-        </div>
-      </div>
-
-      {loading && <div style={styles.loadingText}>⏳ Loading today&apos;s activities...</div>}
-
-      {showEmptyState ? (
-        <EmptyState
-          message="No activities for today"
-          action={{
-            label: "Add activity",
-            onClick: () => onNavigateToActivities?.(),
-          }}
-        />
-      ) : (
-        renderActivityContent()
+        </>
       )}
     </div>
   );

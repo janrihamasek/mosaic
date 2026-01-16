@@ -48,6 +48,23 @@ export interface TodayRow {
   [key: string]: unknown;
 }
 
+export interface CalendarCell {
+  date: string;
+  value: number;
+  note?: string;
+  entry_id?: number;
+}
+
+export interface CalendarRow {
+  name: string;
+  category: string;
+  goal: number;
+  activity_type: ActivityType;
+  active?: boolean;
+  deactivated_at?: string | null;
+  cells: Record<string, CalendarCell>;
+}
+
 export interface EntriesState {
   items: Entry[];
   filters: EntriesFilters;
@@ -77,6 +94,16 @@ export interface EntriesState {
     stale: boolean;
   };
   finalizeStatus: AsyncRequestStatus;
+  calendar: {
+    startDate: string | null;
+    endDate: string | null;
+    days: string[];
+    rows: CalendarRow[];
+    status: AsyncRequestStatus;
+    error: FriendlyError | null;
+    saving: Record<string, boolean>;
+    lastFetchTime: number | null;
+  };
 }
 
 export interface ActivitiesState {
